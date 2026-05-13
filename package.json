@@ -1,0 +1,21 @@
+{
+  "name": "codetrap",
+  "version": "0.1.0",
+  "description": "Capture and retrieve coding pitfalls so AI doesn't repeat mistakes",
+  "type": "module",
+  "bin": {
+    "codetrap": "./dist/codetrap.exe"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build ./src/index.ts --compile --outfile dist/codetrap && bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve",
+    "build:cli": "bun build ./src/index.ts --compile --outfile dist/codetrap",
+    "build:serve": "bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

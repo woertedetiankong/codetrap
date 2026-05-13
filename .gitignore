@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+*.exe
+*.bun-build
+.*.bun-build
+
+# Local codetrap data
+.codetrap/
+*.db
+*.db-shm
+*.db-wal
+
+# Local agent/editor configuration
+.claude/
+.mcp.json
+
+# Logs and caches
+*.log
+.cache/
+.tmp/
+tmp/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
