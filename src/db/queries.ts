@@ -1,12 +1,16 @@
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import { DEFAULT_SEVERITY } from "../lib/constants";
 import { TRAP_UPDATE_FIELDS, type Trap, type TrapInput, type TrapSearchResult, type TrapUpdate } from "../domain/trap";
+import { prepareFTSQuery } from "../lib/fts-query";
+import { normalizeQuery } from "../lib/search-normalizer";
+import { buildTrapSearchText, passageFieldsChanged, searchTextFieldsChanged } from "../lib/trap-search-document";
 
 export function insertTrap(db: Database, input: TrapInput): number {
   const tags = JSON.stringify(input.tags ?? []);
+  const searchText = buildTrapSearchText({ ...input, tags });
   const stmt = db.prepare(`
-    INSERT INTO traps (title, category, tags, scope, context, mistake, fix, before_code, after_code, severity, project_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO traps (title, category, tags, scope, context, mistake, fix, search_text, before_code, after_code, severity, project_path)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     input.title,
@@ -16,6 +20,7 @@ export function insertTrap(db: Database, input: TrapInput): number {
     input.context,
     input.mistake,
     input.fix,
+    searchText,
     input.before_code ?? null,
     input.after_code ?? null,
     input.severity ?? DEFAULT_SEVERITY,
@@ -29,8 +34,11 @@ export function searchTraps(
   query: string,
   opts: { category?: string; scope?: string; limit?: number } = {}
 ): TrapSearchResult[] {
+  const prepared = prepareFTSQuery(normalizeQuery(query));
+  if (!prepared) return [];
+
   const conditions = ["traps_fts MATCH ?"];
-  const params: SQLQueryBindings[] = [query];
+  const params: SQLQueryBindings[] = [prepared];
 
   if (opts.category) {
     conditions.push("t.category = ?");
@@ -90,6 +98,7 @@ export function listTraps(
 export function updateTrap(db: Database, id: number, input: TrapUpdate): boolean {
   const updates: string[] = [];
   const params: SQLQueryBindings[] = [];
+  const current = searchTextFieldsChanged(input) || passageFieldsChanged(input) ? getTrap(db, id) : null;
 
   for (const key of TRAP_UPDATE_FIELDS) {
     if (key === "tags") continue;
@@ -102,6 +111,16 @@ export function updateTrap(db: Database, id: number, input: TrapUpdate): boolean
   if (input.tags !== undefined) {
     updates.push("tags = ?");
     params.push(JSON.stringify(input.tags));
+  }
+
+  if (current && searchTextFieldsChanged(input)) {
+    const merged = {
+      ...current,
+      ...input,
+      tags: input.tags !== undefined ? JSON.stringify(input.tags) : current.tags,
+    };
+    updates.push("search_text = ?");
+    params.push(buildTrapSearchText(merged));
   }
 
   if (updates.length === 0) return false;

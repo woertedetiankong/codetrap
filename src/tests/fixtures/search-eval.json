@@ -1,0 +1,81 @@
+{
+  "traps": [
+    {
+      "title": "Use fetchWrapper for HTTP requests",
+      "category": "api",
+      "tags": ["http", "fetch", "network"],
+      "scope": "global",
+      "context": "When making network requests or 网络请求, use the project fetchWrapper.",
+      "mistake": "Calling fetch or axios directly bypasses retry and timeout handling.",
+      "fix": "Use fetchWrapper and follow the HTTP request convention.",
+      "severity": "warning"
+    },
+    {
+      "title": "Use session helpers for authentication",
+      "category": "auth",
+      "tags": ["auth", "login", "session"],
+      "scope": "global",
+      "context": "When implementing 认证 or login flows, use the shared session helper.",
+      "mistake": "Reading cookies directly duplicates auth behavior.",
+      "fix": "Call the session helper and centralize redirects.",
+      "severity": "error"
+    },
+    {
+      "title": "Run SQLite migrations through schema.ts",
+      "category": "database",
+      "tags": ["sqlite", "migration", "schema_version"],
+      "scope": "global",
+      "context": "When changing the 数据库 schema, add an idempotent migration.",
+      "mistake": "Editing only queries leaves existing databases stale.",
+      "fix": "Increment SCHEMA_VERSION and backfill old rows.",
+      "severity": "critical"
+    },
+    {
+      "title": "Read configuration from env adapter",
+      "category": "convention",
+      "tags": ["config", "env"],
+      "scope": "global",
+      "context": "When reading 配置, use the env adapter.",
+      "mistake": "Scattering process.env reads makes tests brittle.",
+      "fix": "Read through the config/env module and inject values in tests.",
+      "severity": "warning"
+    },
+    {
+      "title": "Invalidate Redis cache after writes",
+      "category": "performance",
+      "tags": ["cache", "redis"],
+      "scope": "global",
+      "context": "When mutating cached records, clear 缓存 keys.",
+      "mistake": "Updating SQLite without clearing Redis returns stale results.",
+      "fix": "Invalidate cache keys in the same write path.",
+      "severity": "warning"
+    },
+    {
+      "title": "CLI flags must not become query text",
+      "category": "bug",
+      "tags": ["cli", "parseArgs"],
+      "scope": "global",
+      "context": "When parsing command arguments, consume flag values.",
+      "mistake": "Treating --mode hybrid as positionals appends hybrid to the search query.",
+      "fix": "Return opts and positionals from parseArgs.",
+      "severity": "error"
+    }
+  ],
+  "queries": [
+    { "query": "fetchWrapper", "mode": "fts", "goldTrapIds": [1], "phaseGate": "phase0", "minRecallAt5": 1 },
+    { "query": "schema_version", "mode": "fts", "goldTrapIds": [3], "phaseGate": "phase0", "minRecallAt5": 1 },
+    { "query": "parseArgs", "mode": "fts", "goldTrapIds": [6], "phaseGate": "phase0", "minRecallAt5": 1 },
+    { "query": "网络请求", "mode": "fts", "goldTrapIds": [1], "phaseGate": "phase1", "minRecallAt5": 1 },
+    { "query": "认证登录", "mode": "fts", "goldTrapIds": [2], "phaseGate": "phase1", "minRecallAt5": 1 },
+    { "query": "数据库迁移", "mode": "fts", "goldTrapIds": [3], "phaseGate": "phase1", "minRecallAt5": 1 },
+    { "query": "HTTP 请求约定", "mode": "hybrid", "goldTrapIds": [1], "phaseGate": "phase4", "minRecallAt5": 1 },
+    { "query": "缓存 redis", "mode": "hybrid", "goldTrapIds": [5], "phaseGate": "phase4", "minRecallAt5": 1 },
+    { "query": "where should environment variables be read", "mode": "hybrid", "goldTrapIds": [4], "phaseGate": "phase4", "minRecallAt5": 1 },
+    { "query": "remote API call convention", "mode": "semantic", "goldTrapIds": [1], "phaseGate": "phase4", "minRecallAt5": 1 },
+    { "query": "login state helper", "mode": "semantic", "goldTrapIds": [2], "phaseGate": "phase4", "minRecallAt5": 1 },
+    { "query": "existing databases are stale after a table change", "mode": "semantic", "goldTrapIds": [3], "phaseGate": "phase4", "minRecallAt5": 1 },
+    { "query": "do not scatter process environment reads", "mode": "semantic", "goldTrapIds": [4], "phaseGate": "phase4", "minRecallAt5": 1 },
+    { "query": "stale results after writes", "mode": "semantic", "goldTrapIds": [5], "phaseGate": "phase4", "minRecallAt5": 1 },
+    { "query": "flag value accidentally appended to user search", "mode": "hybrid", "goldTrapIds": [6], "phaseGate": "phase4", "minRecallAt5": 1 }
+  ]
+}

@@ -1,6 +1,8 @@
 import { openGlobal, openProject } from "../db/connection";
 import { TrapRepository, type TrapStats } from "../db/repository";
 import type { Trap, TrapInput, TrapSearchResult, TrapUpdate } from "../domain/trap";
+import type { SearchMode } from "./constants";
+import { createDefaultEmbeddingProvider, type EmbeddingProvider } from "./embedder";
 import { findProjectRoot } from "./scope";
 
 export { type TrapInput, type TrapSearchResult, type Trap, type TrapUpdate, type TrapStats };
@@ -11,9 +13,11 @@ export class TrapStore {
   private projectRoot: string | null;
   private globalRepository?: TrapRepository;
   private projectRepository?: TrapRepository;
+  private readonly embedder?: EmbeddingProvider;
 
-  constructor(cwd: string) {
+  constructor(cwd: string, embedder: EmbeddingProvider | undefined = createDefaultEmbeddingProvider()) {
     this.projectRoot = findProjectRoot(cwd);
+    this.embedder = embedder;
   }
 
   add(input: TrapInput): { id: number; scope: string } {
@@ -30,15 +34,19 @@ export class TrapStore {
     return { id, scope };
   }
 
-  search(query: string, opts: { category?: string; scope?: string; limit?: number } = {}): { results: TrapSearchResult[]; scope: string }[] {
+  async search(
+    query: string,
+    opts: { category?: string; scope?: string; limit?: number; mode?: SearchMode } = {}
+  ): Promise<{ results: TrapSearchResult[]; scope: string }[]> {
     const out: { results: TrapSearchResult[]; scope: string }[] = [];
     const limit = opts.limit ?? 20;
 
     for (const scoped of this.repositoriesForRead(opts.scope)) {
-      const results = scoped.repository.search(query, {
+      const results = await scoped.repository.search(query, {
         category: opts.category,
         scope: scoped.scope,
         limit,
+        mode: opts.mode ?? "hybrid",
       });
       if (results.length > 0) out.push({ results, scope: scoped.scope });
     }
@@ -129,6 +137,34 @@ export class TrapStore {
     return this.projectRoot;
   }
 
+  async ensureEmbeddings(opts: { scope?: string; category?: string; limit?: number; force?: boolean; batchSize?: number } = {}): Promise<{
+    generated: number;
+    skipped: number;
+    batches: number;
+    scopes: { scope: string; generated: number; skipped: number; batches: number }[];
+  }> {
+    const scopes: { scope: string; generated: number; skipped: number; batches: number }[] = [];
+    let generated = 0;
+    let skipped = 0;
+    let batches = 0;
+
+    for (const scoped of this.repositoriesForRead(opts.scope)) {
+      const result = await scoped.repository.ensureEmbeddings({
+        scope: scoped.scope,
+        category: opts.category,
+        limit: opts.limit,
+        force: opts.force,
+        batchSize: opts.batchSize,
+      });
+      scopes.push({ scope: scoped.scope, ...result });
+      generated += result.generated;
+      skipped += result.skipped;
+      batches += result.batches;
+    }
+
+    return { generated, skipped, batches, scopes };
+  }
+
   private repositoriesForRead(scope?: string): { scope: Scope; repository: TrapRepository }[] {
     const resolvedScope = optionalScope(scope);
     if (resolvedScope) return this.repositoryEntry(resolvedScope) ? [this.repositoryEntry(resolvedScope)!] : [];
@@ -161,14 +197,14 @@ export class TrapStore {
       throw new Error("Not in a project. Run 'codetrap init' first, or use --scope global.");
     }
     if (!this.projectRepository) {
-      this.projectRepository = new TrapRepository(openProject(this.projectRoot));
+      this.projectRepository = new TrapRepository(openProject(this.projectRoot), this.embedder);
     }
     return this.projectRepository;
   }
 
   private globalRepo(): TrapRepository {
     if (!this.globalRepository) {
-      this.globalRepository = new TrapRepository(openGlobal());
+      this.globalRepository = new TrapRepository(openGlobal(), this.embedder);
     }
     return this.globalRepository;
   }

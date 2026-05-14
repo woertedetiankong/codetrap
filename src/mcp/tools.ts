@@ -1,8 +1,9 @@
-import { CATEGORIES, SCOPES } from "../lib/constants";
+import { CATEGORIES, SCOPES, SEARCH_MODES } from "../lib/constants";
 import { trapInputSchema, trapUpdateSchema } from "../domain/trap";
 
 const categoryEnum = [...CATEGORIES] as string[];
 const scopeEnum = [...SCOPES] as string[];
+const searchModeEnum = [...SEARCH_MODES] as string[];
 
 export const toolDefinitions = [
   {
@@ -15,6 +16,7 @@ export const toolDefinitions = [
         query: { type: "string", description: "Search query for full-text search" },
         scope: { type: "string", enum: scopeEnum, description: "Limit to a specific scope" },
         category: { type: "string", enum: categoryEnum, description: "Filter by category" },
+        mode: { type: "string", enum: searchModeEnum, description: "Search mode (default hybrid)" },
         limit: { type: "number", description: "Max results (default 20)" },
       },
       required: ["query"],

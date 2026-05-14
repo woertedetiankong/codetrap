@@ -17,6 +17,11 @@ dist/
 .claude/
 .mcp.json
 
+# Secrets
+.env
+.env.*
+!.env.example
+
 # Logs and caches
 *.log
 .cache/

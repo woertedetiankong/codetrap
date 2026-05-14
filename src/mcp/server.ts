@@ -33,9 +33,10 @@ export async function start(): Promise<void> {
     try {
       switch (name) {
         case "search_traps": {
-          const results = store.search(args.query, {
+          const results = await store.search(args.query, {
             scope: args.scope,
             category: args.category,
+            mode: args.mode,
             limit: args.limit ?? 20,
           });
           const flat = results.flatMap((g) =>
@@ -43,6 +44,9 @@ export async function start(): Promise<void> {
               ...r.trap,
               scope: g.scope,
               rank: r.rank,
+              score: r.score,
+              sources: r.sources,
+              diagnostics: r.diagnostics,
             }))
           );
           return { content: [{ type: "text", text: JSON.stringify(flat, null, 2) }] };

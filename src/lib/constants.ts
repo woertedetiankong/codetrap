@@ -34,12 +34,15 @@ export const SEVERITY_ICONS: Record<Severity, string> = {
 export const SCOPES = ["project", "global"] as const;
 export type Scope = (typeof SCOPES)[number];
 
+export const SEARCH_MODES = ["fts", "semantic", "hybrid"] as const;
+export type SearchMode = (typeof SEARCH_MODES)[number];
+
 export const DEFAULT_SEVERITY: Severity = "warning";
 export const DEFAULT_CATEGORY: Category = "other";
 
 // Increment this when schema changes in a breaking way.
 // Migrations are stored in src/db/migrations.ts
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 3;
 
 // Directory and file names
 export const CODETRAP_DIR = ".codetrap";

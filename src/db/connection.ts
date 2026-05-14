@@ -31,5 +31,6 @@ export function openProject(root: string): Database {
 function configureDatabase(db: Database): void {
   db.exec("PRAGMA journal_mode=WAL");
   db.exec("PRAGMA foreign_keys=ON");
+  db.exec("PRAGMA busy_timeout=5000");
   initSchema(db);
 }

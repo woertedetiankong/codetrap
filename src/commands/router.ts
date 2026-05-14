@@ -1,9 +1,15 @@
 import { readFileSync } from "node:fs";
 import { TrapStore } from "../lib/store";
 import { formatTrapShort, formatTrapDetail } from "../lib/format";
-import { pickTrapUpdate } from "../domain/trap";
+import { pickTrapUpdate, type TrapSearchResult } from "../domain/trap";
+import { SEARCH_MODES, type SearchMode } from "../lib/constants";
 
-export function run(strip: string[], store: TrapStore): void {
+type ParsedArgs = {
+  opts: Record<string, string>;
+  positionals: string[];
+};
+
+export async function run(strip: string[], store: TrapStore): Promise<void> {
   const sub = strip[0];
   const args = strip.slice(1);
 
@@ -29,27 +35,28 @@ export function run(strip: string[], store: TrapStore): void {
       return cmdImport(args, store);
     case "stats":
       return cmdStats(args, store);
+    case "embed":
+      return cmdEmbed(args, store);
     default:
       console.log(`Unknown command: ${sub}`);
-      console.log("Commands: init, add, search, list, show, edit, delete, export, import, stats");
+      console.log("Commands: init, add, search, list, show, edit, delete, export, import, stats, embed");
       process.exit(1);
   }
 }
 
-function parseArgs(args: string[]): Record<string, string> {
+export function parseArgs(args: string[]): ParsedArgs {
   const opts: Record<string, string> = {};
+  const positionals: string[] = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith("--")) {
       const key = args[i].slice(2);
       const val = args[i + 1] && !args[i + 1].startsWith("--") ? args[++i] : "true";
       opts[key] = val;
+    } else {
+      positionals.push(args[i]);
     }
   }
-  return opts;
-}
-
-function positionalArgs(args: string[]): string[] {
-  return args.filter((a) => !a.startsWith("--"));
+  return { opts, positionals };
 }
 
 // ---- commands ----
@@ -64,16 +71,15 @@ function cmdInit(_args: string[], store: TrapStore): void {
 }
 
 function cmdAdd(args: string[], store: TrapStore): void {
+  const { opts, positionals } = parseArgs(args);
   // --json mode for AI/script usage
-  const jsonIdx = args.indexOf("--json");
-  if (jsonIdx !== -1) {
-    const jsonStr = args[jsonIdx + 1];
-    if (!jsonStr) {
+  if (opts.json !== undefined) {
+    if (!opts.json || opts.json === "true") {
       console.error("Error: --json requires a JSON string argument");
       process.exit(1);
     }
     try {
-      const input = JSON.parse(jsonStr);
+      const input = JSON.parse(opts.json);
       const result = store.add(input);
       console.log(`Trap #${result.id} added to ${result.scope} scope.`);
     } catch (e: any) {
@@ -84,10 +90,9 @@ function cmdAdd(args: string[], store: TrapStore): void {
   }
 
   // Quick mode: codetrap add "title"
-  const pos = positionalArgs(args);
-  if (pos.length > 0) {
+  if (positionals.length > 0) {
     console.log(`Use --json mode for structured input.`);
-    console.log(`Quick add: codetrap add --json '{"title":"${pos.join(" ")}","category":"other","scope":"global","context":"...","mistake":"...","fix":"..."}'`);
+    console.log(`Quick add: codetrap add --json '{"title":"${positionals.join(" ")}","category":"other","scope":"global","context":"...","mistake":"...","fix":"..."}'`);
     return;
   }
 
@@ -96,19 +101,25 @@ function cmdAdd(args: string[], store: TrapStore): void {
   console.log('Example: codetrap add --json \'{"title":"...","category":"convention","scope":"project","context":"...","mistake":"...","fix":"..."}\'');
 }
 
-function cmdSearch(args: string[], store: TrapStore): void {
-  const opts = parseArgs(args);
-  const pos = positionalArgs(args);
-  if (pos.length === 0) {
-    console.error("Usage: codetrap search <query> [--category X] [--limit N]");
+async function cmdSearch(args: string[], store: TrapStore): Promise<void> {
+  const { opts, positionals } = parseArgs(args);
+  if (positionals.length === 0) {
+    console.error("Usage: codetrap search <query> [--category X] [--limit N] [--mode fts|semantic|hybrid]");
     process.exit(1);
   }
-
-  const results = store.search(pos.join(" "), {
-    category: opts.category,
-    scope: opts.scope,
-    limit: opts.limit ? parseInt(opts.limit) : 20,
-  });
+  let results: { results: TrapSearchResult[]; scope: string }[];
+  try {
+    const mode = opts.mode ? parseSearchMode(opts.mode) : undefined;
+    results = await store.search(positionals.join(" "), {
+      category: opts.category,
+      scope: opts.scope,
+      limit: opts.limit ? parseInt(opts.limit) : 20,
+      mode,
+    });
+  } catch (e: any) {
+    console.error(`Error: ${e.message}`);
+    process.exit(1);
+  }
 
   let count = 0;
   for (const group of results) {
@@ -121,7 +132,7 @@ function cmdSearch(args: string[], store: TrapStore): void {
 }
 
 function cmdList(args: string[], store: TrapStore): void {
-  const opts = parseArgs(args);
+  const { opts } = parseArgs(args);
 
   const groups = store.list({
     category: opts.category,
@@ -140,14 +151,13 @@ function cmdList(args: string[], store: TrapStore): void {
 }
 
 function cmdShow(args: string[], store: TrapStore): void {
-  const opts = parseArgs(args);
-  const pos = positionalArgs(args);
-  if (pos.length === 0) {
+  const { opts, positionals } = parseArgs(args);
+  if (positionals.length === 0) {
     console.error("Usage: codetrap show <id> [--scope project|global]");
     process.exit(1);
   }
 
-  const id = parseInt(pos[0]);
+  const id = parseInt(positionals[0]);
   if (isNaN(id)) {
     console.error("Error: id must be a number");
     process.exit(1);
@@ -164,14 +174,13 @@ function cmdShow(args: string[], store: TrapStore): void {
 }
 
 function cmdEdit(args: string[], store: TrapStore): void {
-  const opts = parseArgs(args);
-  const pos = positionalArgs(args);
-  if (pos.length === 0) {
+  const { opts, positionals } = parseArgs(args);
+  if (positionals.length === 0) {
     console.error("Usage: codetrap edit <id> --json '{\"title\":\"new title\"}' [--scope project|global]");
     process.exit(1);
   }
 
-  const id = parseInt(pos[0]);
+  const id = parseInt(positionals[0]);
   if (isNaN(id)) {
     console.error("Error: id must be a number");
     process.exit(1);
@@ -200,14 +209,13 @@ function cmdEdit(args: string[], store: TrapStore): void {
 }
 
 function cmdDelete(args: string[], store: TrapStore): void {
-  const opts = parseArgs(args);
-  const pos = positionalArgs(args);
-  if (pos.length === 0) {
+  const { opts, positionals } = parseArgs(args);
+  if (positionals.length === 0) {
     console.error("Usage: codetrap delete <id> [--scope project|global]");
     process.exit(1);
   }
 
-  const id = parseInt(pos[0]);
+  const id = parseInt(positionals[0]);
   if (isNaN(id)) {
     console.error("Error: id must be a number");
     process.exit(1);
@@ -223,19 +231,19 @@ function cmdDelete(args: string[], store: TrapStore): void {
 }
 
 function cmdExport(args: string[], store: TrapStore): void {
-  const opts = parseArgs(args);
+  const { opts } = parseArgs(args);
   const traps = store.exportAll({ scope: opts.scope });
   console.log(JSON.stringify(traps, null, 2));
 }
 
 function cmdImport(args: string[], store: TrapStore): void {
-  const pos = positionalArgs(args);
-  if (pos.length === 0) {
+  const { positionals } = parseArgs(args);
+  if (positionals.length === 0) {
     console.error("Usage: codetrap import <file.json>");
     process.exit(1);
   }
 
-  const data = readFileSync(pos[0], "utf-8");
+  const data = readFileSync(positionals[0], "utf-8");
   const traps = JSON.parse(data);
   if (!Array.isArray(traps)) {
     console.error("Error: JSON file must contain an array of traps");
@@ -257,6 +265,26 @@ function cmdStats(_args: string[], store: TrapStore): void {
   printStats(stats.global);
 }
 
+async function cmdEmbed(args: string[], store: TrapStore): Promise<void> {
+  const { opts } = parseArgs(args);
+  try {
+    const result = await store.ensureEmbeddings({
+      scope: opts.scope,
+      category: opts.category,
+      limit: opts.limit ? parseInt(opts.limit) : undefined,
+      force: opts.force === "true",
+      batchSize: opts["batch-size"] ? parseInt(opts["batch-size"]) : undefined,
+    });
+    for (const scoped of result.scopes) {
+      console.log(`[${scoped.scope}] embeddings generated: ${scoped.generated}, skipped: ${scoped.skipped}, batches: ${scoped.batches}`);
+    }
+    console.log(`Total generated: ${result.generated}, skipped: ${result.skipped}, batches: ${result.batches}`);
+  } catch (e: any) {
+    console.error(`Error: ${e.message}`);
+    process.exit(1);
+  }
+}
+
 function printStats(s: { total: number; byCategory: Record<string, number>; bySeverity: Record<string, number> }): void {
   console.log(`  Total: ${s.total}`);
   console.log("  By category:");
@@ -267,4 +295,9 @@ function printStats(s: { total: number; byCategory: Record<string, number>; bySe
   for (const [sev, count] of Object.entries(s.bySeverity)) {
     console.log(`    ${sev}: ${count}`);
   }
+}
+
+function parseSearchMode(mode: string): SearchMode {
+  if ((SEARCH_MODES as readonly string[]).includes(mode)) return mode as SearchMode;
+  throw new Error(`Invalid search mode: ${mode}. Expected one of: ${SEARCH_MODES.join(", ")}`);
 }

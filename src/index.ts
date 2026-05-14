@@ -21,7 +21,7 @@ if (args.length === 0) {
   }
 } else {
   const store = new TrapStore(process.cwd());
-  run(args, store);
+  await run(args, store);
 }
 
 function showHelp(): void {
@@ -30,11 +30,12 @@ function showHelp(): void {
   console.log("Commands:");
   console.log("  init                  Initialize .codetrap/ in current project");
   console.log("  add                   Add a trap (use --json for structured input)");
-  console.log("  search <query>        Search traps by keyword");
+  console.log("  search <query>        Search traps by keyword/semantic/hybrid mode");
   console.log("  list [--category X]   List traps");
   console.log("  show <id>             Show trap details");
   console.log("  edit <id> --json '{}' Edit a trap");
   console.log("  delete <id>           Delete a trap");
+  console.log("  embed                 Generate embeddings for semantic search");
   console.log("  export                Export traps as JSON");
   console.log("  import <file.json>    Import traps from JSON");
   console.log("  stats                 Show statistics");
@@ -43,5 +44,7 @@ function showHelp(): void {
   console.log("Flags:");
   console.log("  --scope project|global  Filter by scope");
   console.log("  --category <name>       Filter by category");
+  console.log("  --mode fts|semantic|hybrid  Search mode");
+  console.log("  --batch-size <n>        Embedding generation batch size");
   console.log("  --json '{}'             JSON input for add/edit");
 }

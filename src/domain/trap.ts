@@ -9,6 +9,7 @@ export interface Trap {
   context: string;
   mistake: string;
   fix: string;
+  search_text: string;
   before_code: string | null;
   after_code: string | null;
   severity: string;
@@ -35,6 +36,9 @@ export interface TrapInput {
 export interface TrapSearchResult {
   trap: Trap;
   rank: number;
+  sources?: ("fts" | "semantic")[];
+  score?: number;
+  diagnostics?: { code: string; message: string }[];
 }
 
 export type TrapUpdate = Partial<Omit<TrapInput, "scope" | "project_path">>;
