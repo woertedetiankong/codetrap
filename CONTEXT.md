@@ -2,6 +2,8 @@
 
 codetrap records coding pitfalls as reusable "traps" so an AI coding agent can search known mistakes before writing or changing code.
 
+References that shaped the design: `lerim-cli` (SQLite + FTS architecture), `mattpocock/skills` (skill-based workflows), `plannotator` (Bun standalone binary builds).
+
 ## Domain Vocabulary
 
 ### Trap
@@ -47,6 +49,8 @@ By default, search checks project scope first when a project exists, then global
 
 Chinese search is a known future improvement: default FTS5 tokenization is not enough for good Chinese word segmentation.
 
+Retrieval roadmap and reference analysis: `docs/retrieval-memory-roadmap.md` and `docs/reference-analysis.md`.
+
 ## Adapter Rules
 
 ### CLI
@@ -72,8 +76,82 @@ Keep domain concepts centralized and adapters thin:
 
 - Domain definitions belong in `src/domain/`.
 - `TrapRepository` in `src/db/repository.ts` owns single-database trap operations.
-- `TrapStore` owns project/global scope policy and composes repositories.
+- `TrapStore` in `src/lib/store.ts` owns project/global scope policy and composes repositories.
 - CLI and MCP should share execution logic where possible, then render results differently.
 - Future search changes should be isolated behind the search/query layer so ICU, jieba, or vector search can be added without rewriting adapters.
+- `openDatabase(":memory:")` from `src/db/connection.ts` creates schema-initialized in-memory databases for tests.
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Runtime | Bun + TypeScript |
+| Database | SQLite through `bun:sqlite` + FTS5 |
+| MCP | `@modelcontextprotocol/sdk` |
+| Build | `bun build --compile` standalone binaries |
+
+## Key Paths
+
+```text
+src/
+  index.ts              -- CLI entry point
+  mcp-server.ts         -- MCP server entry point
+  domain/
+    trap.ts             -- canonical types, schema metadata, builders
+  lib/
+    constants.ts        -- categories, severities, defaults
+    scope.ts            -- scope resolution (walk up to .codetrap/)
+    store.ts            -- TrapStore: project/global scope policy
+    format.ts           -- CLI formatting helpers
+  db/
+    connection.ts       -- openDatabase, PRAGMA, schema init
+    schema.ts           -- schema versioning, migration
+    queries.ts          -- raw SQL operations
+    repository.ts       -- TrapRepository class wrapping queries
+  commands/
+    router.ts           -- CLI command dispatch
+  mcp/
+    server.ts           -- MCP server (stdio transport)
+    tools.ts            -- MCP tool schemas (7 tools)
+    resources.ts        -- MCP resource URIs (4 resources)
+skills/
+  codetrap-add.md
+  codetrap-check.md
+  codetrap-search.md
+docs/
+  retrieval-memory-roadmap.md
+  reference-analysis.md
+```
+
+## Development
+
+```bash
+cd D:\llm\windsurf\codetrap
+bun run src/index.ts                          # run CLI directly
+bun build ./src/index.ts --compile --outfile dist/codetrap.exe      # build CLI binary
+bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve.exe  # build MCP binary
+bunx tsc --noEmit                             # type-check
+```
 
 For tests, use `openDatabase(":memory:")` from `src/db/connection.ts` and pass the database to `new TrapRepository(db)`. This initializes schema without touching project or global files.
+
+## Current Priorities
+
+Based on `docs/reference-analysis.md`.
+
+**P0 — immediate:**
+- Search stability: safe FTS query compilation, PRAGMA busy_timeout
+- Chinese/mixed-language search: pre-tokenize, add `search_text` field, synonym map
+- Evaluation set: 15 queries with annotated gold trap IDs
+
+**P1 — next:**
+- Semantic search MVP: Jina embedding API, `trap_embeddings` table, brute-force cosine
+- Hybrid ranking: RRF fusion with FTS5, length normalization, hard min score
+
+**P2 — later:**
+- Cross-encoder reranker (Jina, optional)
+- Trap lifecycle: `state_key`, `status`, `supersede` / `archive` commands
+
+**P3 — future:**
+- `codetrap doctor`: index health, duplicate detection
+- Team sharing, multimodal evidence
