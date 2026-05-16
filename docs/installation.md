@@ -72,11 +72,11 @@ Release binaries are built by `.github/workflows/release.yml` when a version tag
 3. Create and push a matching tag:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
-The release tag must match `package.json` exactly. For example, package version `0.1.0` must use tag `v0.1.0`.
+The release tag must match `package.json` exactly. For example, package version `0.1.1` must use tag `v0.1.1`.
 
 The workflow runs:
 
@@ -192,7 +192,7 @@ npm pack --dry-run
 npm publish --access public
 ```
 
-The package is source-based: the npm package installs the `codetrap` command from `src/index.ts`, so users still need Bun installed.
+The package is source-based: the npm package installs the `codetrap` command from `bin/codetrap`, so users still need Bun installed.
 
 You can preview the npm package locally:
 

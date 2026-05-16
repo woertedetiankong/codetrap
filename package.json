@@ -1,6 +1,6 @@
 {
   "name": "codetrap",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Capture and retrieve coding pitfalls so AI doesn't repeat mistakes",
   "type": "module",
   "license": "MIT",
@@ -24,6 +24,7 @@
     "bun": ">=1.0.0"
   },
   "files": [
+    "bin",
     "src/commands",
     "src/db",
     "src/domain",
@@ -39,11 +40,11 @@
     "LICENSE"
   ],
   "bin": {
-    "codetrap": "./src/index.ts"
+    "codetrap": "bin/codetrap"
   },
   "scripts": {
     "dev": "bun run src/index.ts",
-    "install:cli": "ln -sf \"$PWD/src/index.ts\" \"$(bun pm bin -g)/codetrap\"",
+    "install:cli": "ln -sf \"$PWD/bin/codetrap\" \"$(bun pm bin -g)/codetrap\"",
     "build:release": "bun run scripts/build-release.ts",
     "check:release-version": "bun run scripts/check-release-version.ts",
     "build": "bun build ./src/index.ts --compile --outfile dist/codetrap && bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve",
