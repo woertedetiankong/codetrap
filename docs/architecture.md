@@ -209,7 +209,8 @@ Storage notes:
 - `traps_fts` is an FTS5 virtual table synchronized by SQLite triggers.
 - `search_text` is derived from Trap fields for CJK bigram and synonym-expanded lexical search.
 - `trap_embeddings` is a rebuildable cache. Freshness is determined by provider/model/dimensions/passage_version/passage_hash.
-- `schema_version` controls migrations. Current schema version is `3`.
+- `schema_version` controls migrations. Current schema version is `4`.
+- Version 4 adds trap lifecycle metadata (`status`, `state_key`, `supersedes_id`, `valid_from`, `valid_until`) and `trap_evidence`.
 
 ## Search Flow
 

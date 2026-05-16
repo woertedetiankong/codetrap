@@ -77,9 +77,9 @@ Full-text search uses SQLite FTS5 over `title`, `context`, `mistake`, `fix`, `ta
 
 By default, search checks project scope first when a project exists, then global scope. It returns only `active` traps unless callers pass `status=all` or a specific lifecycle status. Callers may pass `scope` to restrict search to one database and `category` to filter results.
 
-Chinese search is a known future improvement: default FTS5 tokenization is not enough for good Chinese word segmentation.
+Chinese and mixed-language search are implemented through derived `search_text`, CJK bigram expansion, and a Chinese-English synonym map before FTS query compilation.
 
-Retrieval roadmap and reference analysis: `docs/retrieval-memory-roadmap.md` and `docs/reference-analysis.md`.
+Retrieval background and the next CLI-first product direction live in `docs/reference-analysis.md` and `docs/codetrap-optimization-roadmap.zh-CN.md`.
 
 ## Adapter Rules
 
@@ -155,39 +155,41 @@ skills/
   codetrap-check/SKILL.md
   codetrap-search/SKILL.md
 docs/
-  retrieval-memory-roadmap.md
+  architecture.md
+  installation.md
+  codetrap-optimization-roadmap.zh-CN.md
   reference-analysis.md
 ```
 
 ## Development
 
 ```bash
-cd D:\llm\windsurf\codetrap
+cd /path/to/codetrap
 bun run src/index.ts                          # run CLI directly
-bun build ./src/index.ts --compile --outfile dist/codetrap.exe      # build CLI binary
-bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve.exe  # build MCP binary
-bunx tsc --noEmit                             # type-check
+bun test src/tests                            # run tests
+bun run build                                 # build CLI + MCP binaries into dist/
+bun run build:release                        # build release assets into dist/release/
 ```
 
 For tests, use `openDatabase(":memory:")` from `src/db/connection.ts` and pass the database to `new TrapRepository(db)`. This initializes schema without touching project or global files.
 
 ## Current Priorities
 
-Based on `docs/reference-analysis.md`.
+Based on `docs/codetrap-optimization-roadmap.zh-CN.md`.
 
-**P0 — immediate:**
-- Search stability: safe FTS query compilation, PRAGMA busy_timeout
-- Chinese/mixed-language search: pre-tokenize, add `search_text` field, synonym map
-- Evaluation set: 15 queries with annotated gold trap IDs
+**P0 — CLI JSON contract:**
+- Make `search --json` return stable action cards that are easy for agents to consume.
+- Add `show --json` for full `TrapDetails` drill-down.
+- Keep JSON stdout clean and send diagnostics/errors to stderr or stable error objects.
 
-**P1 — next:**
-- Semantic search MVP: Jina embedding API, `trap_embeddings` table, brute-force cosine
-- Hybrid ranking: RRF fusion with FTS5, length normalization, hard min score
+**P1 — CLI-first agent protocol:**
+- Document an `AGENTS.md` pattern where agents use `codetrap search ... --json` before risky edits.
+- Keep MCP as a thin optional adapter over the same domain/store/search behavior.
 
-**P2 — later:**
-- Cross-encoder reranker (Jina, optional)
-- Trap lifecycle and evidence are implemented; future work can deepen ranking and review workflows around them.
+**P2 — Scope and lifecycle hardening:**
+- Keep project/global scope rules explicit and testable.
+- Deepen lifecycle and evidence workflows around `active`, `archived`, and `superseded` traps.
 
-**P3 — future:**
-- `codetrap doctor`: index health, duplicate detection
-- Team sharing, multimodal evidence
+**P3 — Search operations:**
+- Add `codetrap doctor` for index, embedding freshness, duplicate, and scope diagnostics.
+- Evaluate optional local embeddings or reranking without weakening the current local-first baseline.

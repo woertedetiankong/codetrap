@@ -48,13 +48,13 @@ codetrap show 1
 
 ## Features
 
-- **Structured trap recording** — title, category, context, mistake, fix, severity, tags, before/after code
+- **Structured trap recording** — title, category, context, mistake, fix, severity, tags, lifecycle, evidence, before/after code
 - **Dual scope** — project-scoped (`.codetrap/traps.db`) and global (`~/.codetrap/traps.db`)
 - **Three search modes** — FTS (SQLite FTS5), semantic (Jina embeddings), hybrid (RRF fusion)
 - **Chinese + mixed-language search** — CJK bigram tokenizer, synonym map for Chinese-English terms
 - **MCP server** — 10 tools + 4 resources for AI agent integration
 - **Embedding cache** with freshness tracking — embeddings are rebuildable, stale ones auto-invalidated
-- **Schema migrations** — in-code migration system from v0 through current v3
+- **Schema migrations** — in-code migration system from v0 through current v4
 - **Single-binary builds** — `bun build --compile` produces standalone binaries in `dist/`
 
 ## Directory Structure
@@ -67,19 +67,24 @@ codetrap/
 │   ├── commands/router.ts    CLI command dispatch
 │   ├── mcp/
 │   │   ├── server.ts         MCP stdio transport + handlers
-│   │   ├── tools.ts          7 MCP tool definitions
+│   │   ├── tools.ts          10 MCP tool definitions
 │   │   └── resources.ts      4 MCP resource URIs
 │   ├── domain/trap.ts        Trap types, builders, schemas
 │   ├── lib/
 │   │   ├── store.ts          Project/global scope orchestration
+│   │   ├── trap-operations.ts Shared CLI/MCP operation semantics
 │   │   ├── search-service.ts FTS/semantic/hybrid search, RRF fusion
+│   │   ├── search-result-card.ts Compact agent-facing result cards
 │   │   ├── search-normalizer.ts  CJK bigram, synonyms, search_text
 │   │   ├── fts-query.ts      Safe FTS5 literal query compiler
+│   │   ├── trap-search-document.ts Derived search text + embedding passage
+│   │   ├── trap-json-fields.ts Tags/evidence JSON array codec
+│   │   ├── trap-archive.ts   Import/export compatibility
 │   │   ├── embedder.ts       Jina Embeddings adapter
 │   │   ├── embedding-job.ts  Batch embedding generation
 │   │   ├── format.ts         CLI output formatting
 │   │   ├── scope.ts          Project root detection
-│   │   └── constants.ts      Categories, severities, defaults
+│   │   └── constants.ts      Categories, severities, statuses, defaults
 │   ├── db/
 │   │   ├── connection.ts     SQLite connection + PRAGMAs
 │   │   ├── schema.ts         Schema init + migrations
@@ -87,11 +92,11 @@ codetrap/
 │   │   ├── embedding-queries.ts  Embedding storage SQL
 │   │   └── repository.ts     Single-DB facade
 │   └── tests/
-│       ├── search-safety.test.ts
-│       ├── search-normalizer.test.ts
-│       ├── search-chinese.test.ts
-│       ├── search-semantic.test.ts
-│       ├── search-eval.test.ts
+│       ├── search-*.test.ts
+│       ├── trap-*.test.ts
+│       ├── mcp-tools.test.ts
+│       ├── scope.test.ts
+│       ├── import-export-cli.test.ts
 │       └── fixtures/search-eval.json
 ├── skills/                   Agent skill definitions
 ├── docs/                     Architecture + reference docs
@@ -105,12 +110,15 @@ codetrap/
 | Command | Description |
 |---|---|
 | `init` | Initialize `.codetrap/` in current project |
-| `add` | Record a new trap (JSON or interactive) |
-| `search <query>` | Search traps (--mode fts\|semantic\|hybrid) |
-| `list` | List traps (--category, --severity, --scope, --limit) |
+| `add` | Record a new trap (`--json` structured input; interactive mode is not implemented) |
+| `search <query>` | Search traps (--mode fts\|semantic\|hybrid, --category, --scope, --status, --limit) |
+| `list` | List traps (--category, --scope, --status, --limit) |
 | `show <id>` | Show full trap details |
 | `edit <id>` | Edit a trap |
 | `delete <id>` | Delete a trap |
+| `add_trap_evidence <id>` | Attach source/evidence metadata |
+| `archive_trap <id>` | Archive a trap so default search skips it |
+| `supersede_trap <old_id> <new_id>` | Mark one trap as replaced by another |
 | `export` | Export traps to JSON |
 | `import` | Import traps from JSON |
 | `stats` | Show database statistics |

@@ -1,10 +1,10 @@
 # codetrap ASCII 架构说明
 
-日期：2026-05-14
+更新日期：2026-05-16
 
 本文用纯 ASCII 流程图整理 codetrap 当前代码里的架构、数据流，以及已经落到代码中的思想架构。
 
-范围说明：本文只写当前代码已经体现出来的架构。`docs/tencentdb-agent-memory-lessons.md` 里提到的 compact action card、evidence/source metadata、progressive disclosure 等思想目前还没有实现，所以本文先不展开。
+范围说明：本文只写当前代码已经体现出来的架构。compact action card、evidence/source metadata、lifecycle、archive/supersede 等能力已经落到代码中；`codetrap doctor`、team sharing、multimodal evidence、cross-encoder reranking 仍属于未来方向。
 
 ## 1. 一句话理解 codetrap
 
@@ -54,10 +54,14 @@ codetrap/
 |   +-- lib/                     策略、搜索、格式化、embedding
 |   |   +-- store.ts
 |   |   +-- scope.ts
+|   |   +-- trap-operations.ts
+|   |   +-- search-result-card.ts
 |   |   +-- search-service.ts
 |   |   +-- search-normalizer.ts
 |   |   +-- fts-query.ts
 |   |   +-- trap-search-document.ts
+|   |   +-- trap-json-fields.ts
+|   |   +-- trap-archive.ts
 |   |   +-- embedder.ts
 |   |   +-- embedding-job.ts
 |   |   +-- format.ts
@@ -151,8 +155,10 @@ codetrap/
 +------------------------------+-----------------------------------------+
 | src/domain/trap.ts           | Trap 类型、输入 schema、字段筛选        |
 | src/lib/store.ts             | project/global scope 策略               |
+| src/lib/trap-operations.ts   | CLI/MCP 共享命令语义                    |
 | src/db/repository.ts         | 单个 SQLite 数据库的门面                |
 | src/lib/search-service.ts    | FTS / semantic / hybrid 检索协调        |
+| src/lib/search-result-card.ts | agent-facing action card 构建          |
 | src/db/queries.ts            | traps 表 SQL                            |
 | src/db/embedding-queries.ts  | trap_embeddings 表 SQL                  |
 | src/db/schema.ts             | schema 初始化和迁移                     |
@@ -160,6 +166,8 @@ codetrap/
 | src/lib/search-normalizer.ts | CJK bigram、同义词、search_text 构建    |
 | src/lib/fts-query.ts         | 安全 FTS literal query 编译             |
 | src/lib/trap-search-document.ts | search_text / passage / hash 派生数据 |
+| src/lib/trap-json-fields.ts  | tags / related_files JSON 数组编解码    |
+| src/lib/trap-archive.ts      | import/export 兼容与 evidence remap     |
 | src/lib/embedder.ts          | EmbeddingProvider 和 JinaEmbedder       |
 | src/lib/embedding-job.ts     | 批量生成 embedding                      |
 | src/commands/router.ts       | CLI 命令解析和输出                      |
@@ -192,10 +200,17 @@ Global scope:
 +-------------------+        SQLite triggers        +-------------------+
 | traps             | ----------------------------> | traps_fts         |
 | canonical rows    |                               | FTS5 search index |
-+---------+---------+                               +-------------------+
-          |
-          | optional cached vector
-          v
++----+---------+----+                               +-------------------+
+     |         |
+     |         | traceable source metadata
+     |         v
+     |   +-------------------+
+     |   | trap_evidence     |
+     |   | source metadata   |
+     |   +-------------------+
+     |
+     | optional cached vector
+     v
 +-------------------+
 | trap_embeddings   |
 | rebuildable cache |
@@ -217,6 +232,11 @@ search_text
 before_code
 after_code
 severity
+state_key
+status
+supersedes_id
+valid_from
+valid_until
 project_path
 hit_count
 created_at
@@ -226,6 +246,8 @@ updated_at
 关键点：
 
 - `traps` 是原始事实表。
+- `status` 支持 `active`、`superseded`、`archived` 三种 lifecycle 状态。
+- `trap_evidence` 保存来源、相关文件、观察时间和备注，用于下钻解释 trap 来历。
 - `traps_fts` 是由 `traps` 派生出来的 FTS5 索引表。
 - `search_text` 是由 Trap 字段派生出来的检索文本，用于中文 bigram 和同义词扩展。
 - `trap_embeddings` 是可重建缓存，不是事实来源。
@@ -283,10 +305,10 @@ Terminal command
 +----------+-----------+
            |
            v
-+----------------------+
-| formatTrapShort()    |
-| human-readable text  |
-+----------------------+
++-----------------------+
+| formatTrapActionCard()|
+| compact search cards  |
++-----------------------+
 ```
 
 补充：
@@ -349,6 +371,9 @@ get_trap
 list_traps
 update_trap
 delete_trap
+add_trap_evidence
+archive_trap
+supersede_trap
 get_stats
 ```
 
@@ -879,6 +904,7 @@ evaluation tests
 ```text
 Canonical:
   traps table
+  trap_evidence table
 
 Derived:
   search_text
@@ -888,23 +914,47 @@ Derived:
 
 这让项目以后可以继续改进检索和 embedding，而不改变 trap 本身的含义。
 
+### 13.8 Progressive disclosure
+
+搜索默认返回 compact action card，而不是把完整 trap 和 evidence 全塞进结果。需要更多上下文时，再用 `show <id>` 或 MCP `get_trap` 下钻。
+
+```text
+search query
+   |
+   v
+action cards
+   |
+   v
+show/get_trap for selected result
+   |
+   v
+full TrapDetails + evidence
+```
+
+### 13.9 Lifecycle-aware memory
+
+trap 可以被归档或被新的 trap 取代。默认搜索只返回 `active`，历史规则仍可通过 `--status archived|superseded|all` 查询。
+
+```text
+active trap
+   |
+   +--> archive_trap
+   |
+   +--> supersede_trap -> newer trap
+```
+
 ## 14. 当前没有实现的内容
 
 下面这些不是当前 runtime 架构的一部分：
 
 ```text
-compact action cards
-evidence/source metadata layer
-progressive search-result disclosure
-state_key lifecycle
-supersede/archive commands
 team sharing
 multimodal evidence
 cross-encoder reranking
 codetrap doctor
 ```
 
-其中一些想法出现在计划或参考文档中，但目前还没有形成完整代码功能。
+其中一些想法出现在计划或参考文档中，但目前还没有形成完整代码功能。action cards、evidence/source metadata、lifecycle、supersede/archive commands 已经是当前 runtime 功能。
 
 ## 15. 最简心智模型
 
