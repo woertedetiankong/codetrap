@@ -1,3 +1,5 @@
+#!/usr/bin/env bun
+
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { findProjectRoot } from "./lib/scope";
@@ -7,6 +9,8 @@ import { run } from "./commands/router";
 const args = process.argv.slice(2);
 
 if (args.length === 0) {
+  showHelp();
+} else if (args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
   showHelp();
 } else if (args[0] === "serve") {
   import("./mcp/server").then((m) => m.start());

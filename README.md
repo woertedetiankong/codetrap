@@ -10,16 +10,22 @@ AI coding agents make the same mistakes repeatedly across sessions and projects.
 
 ## Quick Start
 
+For detailed setup options, see [Installation](docs/installation.md).
+
 ```bash
 # Prerequisites: Bun >= 1.x (https://bun.sh)
 
-# Install & init
+# Source install
 git clone <repo-url> && cd codetrap
 bun install
-bun run src/index.ts init
+bun run install:cli
+codetrap --help
+
+# Initialize codetrap data in a project
+codetrap init
 
 # Record your first trap
-bun run src/index.ts add --json '{
+codetrap add --json '{
   "title": "Dont use fetch() without timeout",
   "category": "api",
   "scope": "global",
@@ -31,13 +37,13 @@ bun run src/index.ts add --json '{
 }'
 
 # Search for relevant traps
-bun run src/index.ts search "HTTP request timeout" --mode hybrid
+codetrap search "HTTP request timeout" --mode hybrid
 
 # List all traps
-bun run src/index.ts list
+codetrap list
 
 # Show trap details
-bun run src/index.ts show 1
+codetrap show 1
 ```
 
 ## Features
@@ -49,7 +55,7 @@ bun run src/index.ts show 1
 - **MCP server** — 10 tools + 4 resources for AI agent integration
 - **Embedding cache** with freshness tracking — embeddings are rebuildable, stale ones auto-invalidated
 - **Schema migrations** — in-code migration system from v0 through current v3
-- **Single-binary builds** — `bun build --compile` produces standalone `.exe` binaries
+- **Single-binary builds** — `bun build --compile` produces standalone binaries in `dist/`
 
 ## Directory Structure
 
@@ -111,22 +117,78 @@ codetrap/
 | `embed` | Generate embeddings (requires JINA_API_KEY) |
 | `serve` | Start MCP server |
 
-## MCP Integration
+## Agent Integration
 
-Add to your MCP client config (e.g., Claude Code):
+For AI coding agents, use three layers:
+
+- **MCP** gives the agent structured tools like `search_traps` and `add_trap`.
+- **AGENTS.md / CLAUDE.md** tells the agent when to use codetrap.
+- **CLI** is the fallback that works even when MCP is unavailable.
+
+MCP and project guidance are complementary. MCP tells the agent what it can call; `AGENTS.md` or `CLAUDE.md` tells it when to call it.
+
+### MCP Setup
+
+Codex:
+
+```bash
+codex mcp add codetrap -- codetrap serve
+```
+
+Generic MCP client config:
 
 ```json
 {
   "mcpServers": {
     "codetrap": {
-      "command": "bun",
-      "args": ["run", "src/mcp-server.ts"]
+      "command": "codetrap",
+      "args": ["serve"]
     }
   }
 }
 ```
 
-### Tools
+### Project Guidance
+
+Add this to `AGENTS.md` for Codex, or to `CLAUDE.md` for Claude Code:
+
+````md
+## Codetrap
+
+Before non-trivial code edits, check codetrap for relevant pitfalls.
+
+Prefer MCP tools when available:
+- `search_traps`
+- `get_trap`
+- `add_trap`
+
+Fallback to CLI:
+
+```bash
+codetrap search "<keywords>" --mode hybrid
+```
+
+When a new recurring mistake or project convention is discovered, ask whether to record it with codetrap.
+````
+
+Recommended behavior:
+
+- Use `search_traps` or `codetrap search` before risky edits in APIs, auth, database, security, migrations, or project conventions.
+- Call `get_trap` for highly relevant results before editing code.
+- Apply the recorded `avoid` and `do_instead` guidance while making changes.
+- Ask before recording a new trap unless the user explicitly requested it.
+
+### Codex Skills
+
+Codex users can optionally install the bundled skills from `skills/`:
+
+- `codetrap-check` — pre-flight check before code changes.
+- `codetrap-search` — search existing lessons.
+- `codetrap-add` — record a new pitfall.
+
+Skills are a convenience layer for Codex users. They do not replace MCP or `AGENTS.md`; they make manual triggers like "run codetrap-check" easier.
+
+### MCP Tools
 
 | Tool | Description |
 |---|---|
@@ -157,12 +219,68 @@ Add to your MCP client config (e.g., Claude Code):
 
 All other behavior is configured via sensible defaults — see `src/lib/constants.ts`.
 
+### Jina Embeddings Setup
+
+codetrap works without a Jina API key. In that mode, search uses SQLite FTS keyword matching. If you want semantic search or stronger hybrid search, configure `JINA_API_KEY`.
+
+1. Create a Jina API key from the [Jina AI dashboard](https://jina.ai/api-dashboard/).
+
+2. Add it to your shell environment.
+
+macOS or Linux with zsh:
+
+```bash
+echo 'export JINA_API_KEY="your-jina-api-key"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+macOS or Linux with bash:
+
+```bash
+echo 'export JINA_API_KEY="your-jina-api-key"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Windows PowerShell:
+
+```powershell
+setx JINA_API_KEY "your-jina-api-key"
+```
+
+After `setx`, open a new PowerShell window.
+
+3. Verify that the key is visible without printing the secret:
+
+```bash
+bun -e 'console.log(process.env.JINA_API_KEY ? "has-key" : "no-key")'
+```
+
+4. Generate embeddings for the traps you want semantic search to use:
+
+```bash
+cd /path/to/your/project
+codetrap embed --scope project
+codetrap embed --scope global
+```
+
+5. Search with hybrid mode:
+
+```bash
+codetrap search "HTTP request timeout" --mode hybrid
+```
+
+If `JINA_API_KEY` is not set:
+
+- `codetrap search "<query>" --mode fts` works normally.
+- `codetrap search "<query>" --mode hybrid` works, but falls back to FTS.
+- `codetrap search "<query>" --mode semantic` and `codetrap embed` require `JINA_API_KEY`.
+
 ## Build
 
 ```bash
 bun run build          # Build CLI + MCP server binaries → dist/
-bun run build:cli      # dist/codetrap.exe
-bun run build:serve    # dist/codetrap-serve.exe
+bun run build:cli      # dist/codetrap
+bun run build:serve    # dist/codetrap-serve
 ```
 
 ## Test
