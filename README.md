@@ -10,7 +10,7 @@ AI coding agents make the same mistakes repeatedly across sessions and projects.
 
 ## Quick Start
 
-For detailed setup options, see [Installation](docs/installation.md).
+For detailed setup options, see [Installation](docs/installation.md). Maintainers can use the Chinese [Release Playbook](docs/release-playbook.zh-CN.md) when publishing updates.
 
 ```bash
 # Prerequisites: Bun >= 1.x (https://bun.sh)
