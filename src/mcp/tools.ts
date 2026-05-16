@@ -1,15 +1,22 @@
-import { CATEGORIES, SCOPES, SEARCH_MODES } from "../lib/constants";
-import { trapInputSchema, trapUpdateSchema } from "../domain/trap";
+import { CATEGORIES, SCOPES, SEARCH_MODES, TRAP_STATUSES } from "../lib/constants";
+import {
+  archiveTrapInputSchema,
+  supersedeTrapInputSchema,
+  trapEvidenceInputSchema,
+  trapInputSchema,
+  trapUpdateSchema,
+} from "../domain/trap";
 
 const categoryEnum = [...CATEGORIES] as string[];
 const scopeEnum = [...SCOPES] as string[];
 const searchModeEnum = [...SEARCH_MODES] as string[];
+const statusEnum = [...TRAP_STATUSES, "all"] as string[];
 
 export const toolDefinitions = [
   {
     name: "search_traps",
     description:
-      "Search the trap database for coding pitfalls matching the query. Searches both project and global scopes by default. Use this before writing code in a new area to check for known mistakes.",
+      "Search for relevant coding pitfalls. Returns compact action cards by default; call get_trap with the returned id and scope before making code changes when details or examples are needed.",
     inputSchema: {
       type: "object",
       properties: {
@@ -18,6 +25,7 @@ export const toolDefinitions = [
         category: { type: "string", enum: categoryEnum, description: "Filter by category" },
         mode: { type: "string", enum: searchModeEnum, description: "Search mode (default hybrid)" },
         limit: { type: "number", description: "Max results (default 20)" },
+        status: { type: "string", enum: statusEnum, description: "Lifecycle filter (default active; use all for history)" },
       },
       required: ["query"],
     },
@@ -30,7 +38,7 @@ export const toolDefinitions = [
   },
   {
     name: "get_trap",
-    description: "Get full details of a specific trap by ID.",
+    description: "Drill down into a trap returned by search_traps. Use the id and scope from the action card to get full details, examples, lifecycle, and evidence.",
     inputSchema: {
       type: "object",
       properties: {
@@ -48,6 +56,7 @@ export const toolDefinitions = [
       properties: {
         scope: { type: "string", enum: scopeEnum },
         category: { type: "string", enum: categoryEnum },
+        status: { type: "string", enum: statusEnum, description: "Lifecycle filter (default active; use all for history)" },
         limit: { type: "number", description: "Max results (default 50)" },
       },
     },
@@ -68,6 +77,21 @@ export const toolDefinitions = [
       },
       required: ["id"],
     },
+  },
+  {
+    name: "add_trap_evidence",
+    description: "Attach traceable evidence/source metadata to an existing trap.",
+    inputSchema: trapEvidenceInputSchema(),
+  },
+  {
+    name: "archive_trap",
+    description: "Archive an active trap so default search no longer returns it while history remains recoverable.",
+    inputSchema: archiveTrapInputSchema(),
+  },
+  {
+    name: "supersede_trap",
+    description: "Mark one trap as superseded by another trap in the same scope.",
+    inputSchema: supersedeTrapInputSchema(),
   },
   {
     name: "get_stats",

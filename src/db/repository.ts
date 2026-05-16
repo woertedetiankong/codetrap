@@ -1,5 +1,13 @@
 import type { Database } from "bun:sqlite";
-import type { Trap, TrapInput, TrapSearchResult, TrapUpdate } from "../domain/trap";
+import type {
+  Trap,
+  TrapDetails,
+  TrapEvidenceInput,
+  TrapExportRecord,
+  TrapInput,
+  TrapSearchResult,
+  TrapUpdate,
+} from "../domain/trap";
 import * as embeddingQueries from "./embedding-queries";
 import { SearchService, type SearchOptions } from "../lib/search-service";
 import {
@@ -10,6 +18,7 @@ import {
 import { runEmbeddingJob } from "../lib/embedding-job";
 import { passageFieldsChanged } from "../lib/trap-search-document";
 import * as queries from "./queries";
+import type { TrapStatus } from "../lib/constants";
 
 export type TrapStats = ReturnType<typeof queries.getStats>;
 
@@ -35,7 +44,17 @@ export class TrapRepository {
     return queries.getTrap(this.db, id);
   }
 
-  list(opts: { category?: string; scope?: string; limit?: number; offset?: number } = {}): Trap[] {
+  getDetails(id: number, scope: "project" | "global"): TrapDetails | null {
+    const trap = queries.getTrap(this.db, id);
+    if (!trap) return null;
+    return {
+      trap,
+      evidence: queries.listTrapEvidence(this.db, id),
+      scope,
+    };
+  }
+
+  list(opts: { category?: string; scope?: string; limit?: number; offset?: number; status?: TrapStatus | "all" } = {}): Trap[] {
     return queries.listTraps(this.db, opts);
   }
 
@@ -51,6 +70,19 @@ export class TrapRepository {
     return queries.deleteTrap(this.db, id);
   }
 
+  addEvidence(trapId: number, input: TrapEvidenceInput): number | null {
+    if (!queries.getTrap(this.db, trapId)) return null;
+    return queries.addTrapEvidence(this.db, trapId, input);
+  }
+
+  archive(id: number): boolean {
+    return queries.archiveTrap(this.db, id);
+  }
+
+  supersede(id: number, supersededById: number, stateKey?: string): boolean {
+    return queries.supersedeTrap(this.db, id, supersededById, stateKey);
+  }
+
   hit(id: number): void {
     queries.incrementHitCount(this.db, id);
   }
@@ -63,7 +95,7 @@ export class TrapRepository {
     return queries.getStats(this.db);
   }
 
-  exportAll(): Trap[] {
+  exportAll(): TrapExportRecord[] {
     return queries.exportTraps(this.db);
   }
 
@@ -81,7 +113,7 @@ export class TrapRepository {
 
   getTrapsNeedingEmbeddings(
     config: EmbeddingConfig,
-    opts: { scope?: string; category?: string; force?: boolean; limit?: number } = {}
+    opts: { scope?: string; category?: string; status?: TrapStatus | "all"; force?: boolean; limit?: number } = {}
   ): Trap[] {
     return embeddingQueries.getTrapsNeedingEmbeddings(this.db, config, opts);
   }

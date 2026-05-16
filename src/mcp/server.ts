@@ -9,9 +9,91 @@ import {
 import { TrapStore } from "../lib/store";
 import { toolDefinitions } from "./tools";
 import { resourceDefinitions } from "./resources";
-import { buildTrapInput, pickTrapUpdate } from "../domain/trap";
+import { TrapOperations } from "../lib/trap-operations";
 
 type ToolArgs = Record<string, any>;
+
+export async function handleToolCall(store: TrapStore, name: string, args: ToolArgs) {
+  const operations = new TrapOperations(store);
+  try {
+    switch (name) {
+      case "search_traps": {
+        const cards = await operations.searchTrapCards({
+          query: args.query,
+          scope: args.scope,
+          category: args.category,
+          mode: args.mode,
+          limit: args.limit ?? 20,
+          status: args.status,
+        });
+        return { content: [{ type: "text", text: JSON.stringify(cards, null, 2) }] };
+      }
+
+      case "add_trap": {
+        const result = operations.addTrap(args);
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      }
+
+      case "get_trap": {
+        const result = operations.getTrapDetails(args.id, args.scope);
+        if (!result) {
+          return { content: [{ type: "text", text: JSON.stringify({ error: "not found" }) }], isError: true };
+        }
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case "list_traps": {
+        const groups = operations.listTraps({
+          scope: args.scope,
+          category: args.category,
+          status: args.status,
+          limit: args.limit ?? 50,
+        });
+        const flat = groups.flatMap((g) =>
+          g.traps.map((t) => ({ ...t, scope: g.scope }))
+        );
+        return { content: [{ type: "text", text: JSON.stringify(flat, null, 2) }] };
+      }
+
+      case "update_trap": {
+        const result = operations.updateTrap(args.id, args, args.scope);
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      }
+
+      case "delete_trap": {
+        const result = operations.deleteTrap(args.id, args.scope);
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      }
+
+      case "add_trap_evidence": {
+        const result = operations.addTrapEvidence(args.id, args, args.scope);
+        return { content: [{ type: "text", text: JSON.stringify(result) }], isError: !result.success };
+      }
+
+      case "archive_trap": {
+        const result = operations.archiveTrap(args.id, args.scope);
+        return { content: [{ type: "text", text: JSON.stringify(result) }], isError: !result.success };
+      }
+
+      case "supersede_trap": {
+        const result = operations.supersedeTrap(args.id, args.superseded_by_id, args.scope, args.state_key);
+        return { content: [{ type: "text", text: JSON.stringify(result) }], isError: !result.success };
+      }
+
+      case "get_stats": {
+        const stats = operations.getStats();
+        const out: Record<string, unknown> = { global: stats.global };
+        if (stats.project) out.project = stats.project;
+        return { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] };
+      }
+
+      default:
+        return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
+    }
+  } catch (e: any) {
+    return { content: [{ type: "text", text: e.message }], isError: true };
+  }
+}
 
 export async function start(): Promise<void> {
   const store = new TrapStore(process.cwd());
@@ -30,76 +112,7 @@ export async function start(): Promise<void> {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name } = request.params;
     const args = (request.params.arguments ?? {}) as ToolArgs;
-    try {
-      switch (name) {
-        case "search_traps": {
-          const results = await store.search(args.query, {
-            scope: args.scope,
-            category: args.category,
-            mode: args.mode,
-            limit: args.limit ?? 20,
-          });
-          const flat = results.flatMap((g) =>
-            g.results.map((r) => ({
-              ...r.trap,
-              scope: g.scope,
-              rank: r.rank,
-              score: r.score,
-              sources: r.sources,
-              diagnostics: r.diagnostics,
-            }))
-          );
-          return { content: [{ type: "text", text: JSON.stringify(flat, null, 2) }] };
-        }
-
-        case "add_trap": {
-          const result = store.add(buildTrapInput(args));
-          return { content: [{ type: "text", text: JSON.stringify(result) }] };
-        }
-
-        case "get_trap": {
-          const result = store.get(args.id, args.scope);
-          if (!result) {
-            return { content: [{ type: "text", text: JSON.stringify({ error: "not found" }) }], isError: true };
-          }
-          return { content: [{ type: "text", text: JSON.stringify({ ...result.trap, scope: result.scope }, null, 2) }] };
-        }
-
-        case "list_traps": {
-          const groups = store.list({
-            scope: args.scope,
-            category: args.category,
-            limit: args.limit ?? 50,
-          });
-          const flat = groups.flatMap((g) =>
-            g.traps.map((t) => ({ ...t, scope: g.scope }))
-          );
-          return { content: [{ type: "text", text: JSON.stringify(flat, null, 2) }] };
-        }
-
-        case "update_trap": {
-          const result = store.update(args.id, pickTrapUpdate(args), args.scope);
-          return { content: [{ type: "text", text: JSON.stringify(result) }] };
-        }
-
-        case "delete_trap": {
-          const result = store.delete(args.id, args.scope);
-          return { content: [{ type: "text", text: JSON.stringify(result) }] };
-        }
-
-        case "get_stats": {
-          const stats = store.stats();
-          const out: Record<string, unknown> = { global: stats.global };
-          if (stats.project) out.project = stats.project;
-          return { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] };
-        }
-
-        default:
-          return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
-      }
-    } catch (e: any) {
-      return { content: [{ type: "text", text: e.message }], isError: true };
-    }
+    return handleToolCall(store, name, args);
   });
 
   // List resources
@@ -138,7 +151,8 @@ export async function start(): Promise<void> {
             if (!result) {
               return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify({ error: "not found" }) }] };
             }
-            return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(result.trap, null, 2) }] };
+            const details = store.getDetails(parseInt(match[2]), match[1]);
+            return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(details ?? result.trap, null, 2) }] };
           }
           return { contents: [{ uri, mimeType: "text/plain", text: "Unknown resource" }] };
         }

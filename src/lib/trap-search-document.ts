@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Trap, TrapInput, TrapUpdate } from "../domain/trap";
 import type { EmbeddingConfig, StoredEmbedding } from "./embedder";
 import { buildSearchText, SEARCH_TEXT_FIELD_NAMES, type SearchTextFields } from "./search-normalizer";
+import { parseTrapTags } from "./trap-json-fields";
 
 export const PASSAGE_VERSION = 1;
 
@@ -28,7 +29,7 @@ export function buildTrapSearchText(fields: SearchTextFields): string {
 }
 
 export function buildTrapPassage(trap: TrapSearchDocumentFields): string {
-  const tags = parseTags(trap.tags).join(", ");
+  const tags = parseTrapTags(trap.tags).join(", ");
   return [
     trap.title ? `Title: ${trap.title}` : "",
     trap.category ? `Category: ${trap.category}` : "",
@@ -69,15 +70,4 @@ export function embeddingIsFresh(trap: Trap, embedding: StoredEmbedding | null, 
       embedding.passage_version === config.passageVersion &&
       embedding.passage_hash === passageHashForTrap(trap)
   );
-}
-
-function parseTags(tags: string | string[] | null | undefined): string[] {
-  if (Array.isArray(tags)) return tags.map(String);
-  if (!tags) return [];
-  try {
-    const parsed = JSON.parse(tags);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [tags];
-  }
 }

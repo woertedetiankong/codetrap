@@ -106,6 +106,40 @@ function applyMigrations(db: Database, from: number): void {
     `);
     db.prepare("UPDATE schema_version SET version = ?").run(3);
   }
+
+  if (from < 4) {
+    if (!columnExists(db, "traps", "state_key")) {
+      db.exec("ALTER TABLE traps ADD COLUMN state_key TEXT");
+    }
+    if (!columnExists(db, "traps", "status")) {
+      db.exec("ALTER TABLE traps ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+    }
+    if (!columnExists(db, "traps", "supersedes_id")) {
+      db.exec("ALTER TABLE traps ADD COLUMN supersedes_id INTEGER REFERENCES traps(id) ON DELETE SET NULL");
+    }
+    if (!columnExists(db, "traps", "valid_from")) {
+      db.exec("ALTER TABLE traps ADD COLUMN valid_from TEXT");
+      db.exec("UPDATE traps SET valid_from = COALESCE(created_at, datetime('now')) WHERE valid_from IS NULL");
+    }
+    if (!columnExists(db, "traps", "valid_until")) {
+      db.exec("ALTER TABLE traps ADD COLUMN valid_until TEXT");
+    }
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS trap_evidence (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trap_id INTEGER NOT NULL REFERENCES traps(id) ON DELETE CASCADE,
+        source_type TEXT NOT NULL,
+        source_ref TEXT,
+        observed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        related_files TEXT NOT NULL DEFAULT '[]',
+        note TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
+    db.prepare("UPDATE schema_version SET version = ?").run(4);
+  }
 }
 
 function columnExists(db: Database, table: string, column: string): boolean {

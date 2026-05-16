@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import * as embeddingQueries from "../db/embedding-queries";
 import * as queries from "../db/queries";
 import type { Trap, TrapSearchResult } from "../domain/trap";
-import type { SearchMode } from "./constants";
+import type { SearchMode, TrapStatus } from "./constants";
 import {
   cosineSimilarity,
   EmbeddingProviderUnavailableError,
@@ -15,6 +15,7 @@ export interface SearchOptions {
   scope?: string;
   limit?: number;
   mode?: SearchMode;
+  status?: TrapStatus | "all";
 }
 
 export interface RankingConfig {
@@ -74,6 +75,7 @@ export class SearchService {
     const candidates = embeddingQueries.getAllFreshEmbeddings(this.db, config, {
       category: opts.category,
       scope: opts.scope,
+      status: opts.status,
     });
 
     return candidates

@@ -123,9 +123,13 @@ flowchart LR
 Key locality rules:
 
 - `TrapStore` owns Scope policy. It decides whether reads go project-first/global-second or only to an explicit scope.
+- `TrapOperations` owns shared Trap command execution semantics for CLI and MCP adapters.
+- `trap-archive.ts` owns archive import/export compatibility, including evidence remapping.
+- `trap-json-fields.ts` owns JSON string-array conversion for `tags` and `related_files`.
 - `TrapRepository` owns one SQLite database. It does not know where project/global roots come from.
 - `SearchService` owns retrieval and ranking inside one database.
 - `trap-search-document.ts` owns derived Trap search data: `search_text`, embedding passage, passage hash, and freshness rules.
+- `search-result-card.ts` owns compact action-card shape for agent-facing search results.
 - CLI and MCP are adapters. They should not implement search, ranking, embedding, or schema rules.
 
 ## Storage Model
@@ -145,6 +149,11 @@ erDiagram
     TEXT before_code
     TEXT after_code
     TEXT severity
+    TEXT state_key
+    TEXT status
+    INTEGER supersedes_id
+    TEXT valid_from
+    TEXT valid_until
     TEXT project_path
     INTEGER hit_count
     TEXT created_at
@@ -172,9 +181,22 @@ erDiagram
     TEXT updated_at
   }
 
+  trap_evidence {
+    INTEGER id PK
+    INTEGER trap_id FK
+    TEXT source_type
+    TEXT source_ref
+    TEXT observed_at
+    TEXT related_files
+    TEXT note
+    TEXT created_at
+  }
+
   schema_version {
     INTEGER version
   }
+
+  traps ||--o{ trap_evidence : has
 
   traps ||--o| trap_embeddings : "has cached embedding"
   traps ||--|| traps_fts : "indexed by triggers"
@@ -183,6 +205,7 @@ erDiagram
 Storage notes:
 
 - `traps` is canonical Trap storage.
+- `trap_evidence` stores drill-down source metadata and is not loaded by default search.
 - `traps_fts` is an FTS5 virtual table synchronized by SQLite triggers.
 - `search_text` is derived from Trap fields for CJK bigram and synonym-expanded lexical search.
 - `trap_embeddings` is a rebuildable cache. Freshness is determined by provider/model/dimensions/passage_version/passage_hash.
@@ -391,9 +414,9 @@ bun run src/index.ts search "HTTP 请求约定" --mode hybrid
 flowchart TB
   Current["Current Search Slice"]
   Reranker["Optional reranker<br/>after hybrid top-k"]
-  Lifecycle["Trap lifecycle<br/>active/superseded/archived"]
-  Evidence["Evidence/source metadata<br/>source_ref, related_files"]
-  Cards["Compact action cards<br/>agent-friendly search result"]
+  Lifecycle["Implemented lifecycle<br/>active/superseded/archived"]
+  Evidence["Implemented evidence metadata<br/>source_ref, related_files"]
+  Cards["Implemented compact action cards<br/>agent-friendly search result"]
   Doctor["codetrap doctor<br/>index and embedding health"]
 
   Current --> Reranker
@@ -403,9 +426,12 @@ flowchart TB
   Current --> Doctor
 ```
 
-Likely next modules:
+Implemented modules:
 
 - `search-result-card.ts`: compact action cards for MCP/agent consumption.
 - Trap lifecycle fields: `state_key`, `status`, `supersedes_id`, `valid_from`, `valid_until`.
 - Evidence/source metadata for traceable Trap origin.
+
+Likely next modules:
+
 - `codetrap doctor` for FTS index and embedding cache health.

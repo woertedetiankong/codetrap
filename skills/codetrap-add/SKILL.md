@@ -1,6 +1,6 @@
 ---
 name: codetrap-add
-description: Record a coding pitfall — an AI mistake pattern and the right way to do it
+description: Record a coding pitfall as a structured codetrap entry. Use when the user wants to save a lesson learned, recurring AI mistake, project convention, or runs /codetrap-add.
 ---
 
 You are helping the user record a "coding pitfall" (a mistake pattern that AI coding assistants tend to make, and the correct approach). These pitfalls are stored in a local database and will be used to warn AI in future sessions.

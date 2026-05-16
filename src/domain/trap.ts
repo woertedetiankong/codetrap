@@ -1,4 +1,15 @@
-import { CATEGORIES, DEFAULT_SEVERITY, SCOPES, SEVERITIES } from "../lib/constants";
+import {
+  CATEGORIES,
+  DEFAULT_SEVERITY,
+  EVIDENCE_SOURCE_TYPES,
+  SCOPES,
+  SEVERITIES,
+  TRAP_STATUSES,
+  type Scope,
+  type TrapStatus,
+} from "../lib/constants";
+
+export type { TrapStatus } from "../lib/constants";
 
 export interface Trap {
   id: number;
@@ -13,6 +24,11 @@ export interface Trap {
   before_code: string | null;
   after_code: string | null;
   severity: string;
+  state_key: string | null;
+  status: TrapStatus;
+  supersedes_id: number | null;
+  valid_from: string;
+  valid_until: string | null;
   project_path: string | null;
   hit_count: number;
   created_at: string;
@@ -41,13 +57,96 @@ export interface TrapSearchResult {
   diagnostics?: { code: string; message: string }[];
 }
 
+export interface TrapActionCard {
+  trap_id: number;
+  scope: Scope;
+  title: string;
+  why_relevant: string;
+  avoid: string;
+  do_instead: string;
+  severity: string;
+  score: number | null;
+  sources: ("fts" | "semantic")[];
+  next_action: {
+    details_tool: "get_trap";
+    details_args: {
+      id: number;
+      scope: Scope;
+    };
+  };
+}
+
 export type TrapUpdate = Partial<Omit<TrapInput, "scope" | "project_path">>;
+
+export interface TrapEvidence {
+  id: number;
+  trap_id: number;
+  source_type: string;
+  source_ref: string | null;
+  observed_at: string;
+  related_files: string;
+  note: string | null;
+  created_at: string;
+}
+
+export interface TrapEvidenceInput {
+  source_type: string;
+  source_ref?: string | null;
+  observed_at?: string | null;
+  related_files?: string[];
+  note?: string | null;
+}
+
+export interface TrapExportEvidence extends Omit<TrapEvidence, "related_files"> {
+  related_files: string[];
+}
+
+export interface TrapExportRecord extends Trap {
+  evidence: TrapExportEvidence[];
+}
+
+export type TrapImportEvidence = Partial<Omit<TrapEvidence, "related_files">> & {
+  source_type: string;
+  related_files?: string[] | string | null;
+};
+
+export type TrapImportRecord = Omit<TrapInput, "tags" | "before_code" | "after_code" | "project_path"> & {
+  tags?: string[] | string | null;
+  before_code?: string | null;
+  after_code?: string | null;
+  project_path?: string | null;
+  evidence?: TrapImportEvidence[];
+};
+
+export interface TrapDetails {
+  trap: Trap;
+  evidence: TrapEvidence[];
+  scope: Scope;
+}
+
+export interface ArchiveTrapInput {
+  id: number;
+  scope?: string;
+}
+
+export interface SupersedeTrapInput {
+  id: number;
+  superseded_by_id: number;
+  scope?: string;
+  state_key?: string;
+}
 
 type JsonSchemaProperty = {
   type: string;
   enum?: string[];
   items?: { type: string };
   description?: string;
+};
+
+type JsonSchema = {
+  type: string;
+  properties: Record<string, JsonSchemaProperty>;
+  required?: string[];
 };
 
 export const TRAP_REQUIRED_INPUT_FIELDS = [
@@ -111,6 +210,54 @@ export function trapUpdateSchema() {
   };
 }
 
+export function trapEvidenceInputSchema(): JsonSchema {
+  return {
+    type: "object",
+    properties: {
+      id: { type: "number", description: "Trap ID to attach evidence to" },
+      scope: { type: "string", enum: [...SCOPES] as string[], description: "Which scope to look in" },
+      source_type: {
+        type: "string",
+        enum: [...EVIDENCE_SOURCE_TYPES] as string[],
+        description: "Where this evidence came from",
+      },
+      source_ref: { type: "string", description: "Optional file path, commit SHA, issue URL, or transcript ID" },
+      observed_at: { type: "string", description: "When this was observed (ISO-like timestamp, optional)" },
+      related_files: {
+        type: "array",
+        items: { type: "string" },
+        description: "Optional related file paths",
+      },
+      note: { type: "string", description: "Optional short note about the evidence" },
+    },
+    required: ["id", "source_type"],
+  };
+}
+
+export function archiveTrapInputSchema(): JsonSchema {
+  return {
+    type: "object",
+    properties: {
+      id: { type: "number", description: "Trap ID to archive" },
+      scope: { type: "string", enum: [...SCOPES] as string[], description: "Which scope to look in" },
+    },
+    required: ["id"],
+  };
+}
+
+export function supersedeTrapInputSchema(): JsonSchema {
+  return {
+    type: "object",
+    properties: {
+      id: { type: "number", description: "Trap ID being superseded" },
+      superseded_by_id: { type: "number", description: "Trap ID that replaces the older trap" },
+      scope: { type: "string", enum: [...SCOPES] as string[], description: "Which scope to look in" },
+      state_key: { type: "string", description: "Optional lifecycle group key for this rule family" },
+    },
+    required: ["id", "superseded_by_id"],
+  };
+}
+
 export function buildTrapInput(args: Record<string, any>): TrapInput {
   return {
     title: args.title,
@@ -124,6 +271,26 @@ export function buildTrapInput(args: Record<string, any>): TrapInput {
     after_code: args.after_code,
     severity: args.severity ?? DEFAULT_SEVERITY,
   };
+}
+
+export function buildTrapEvidenceInput(args: Record<string, any>): TrapEvidenceInput {
+  if (!(EVIDENCE_SOURCE_TYPES as readonly string[]).includes(args.source_type)) {
+    throw new Error(`Invalid evidence source_type: ${args.source_type}. Expected one of: ${EVIDENCE_SOURCE_TYPES.join(", ")}`);
+  }
+  return {
+    source_type: args.source_type,
+    source_ref: args.source_ref,
+    observed_at: args.observed_at,
+    related_files: Array.isArray(args.related_files) ? args.related_files.map(String) : undefined,
+    note: args.note,
+  };
+}
+
+export function parseTrapStatus(status?: string): TrapStatus | "all" | undefined {
+  if (!status) return undefined;
+  if (status === "all") return "all";
+  if ((TRAP_STATUSES as readonly string[]).includes(status)) return status as TrapStatus;
+  throw new Error(`Invalid trap status: ${status}. Expected one of: ${TRAP_STATUSES.join(", ")}, all`);
 }
 
 export function pickTrapUpdate(args: Record<string, any>): TrapUpdate {

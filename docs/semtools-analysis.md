@@ -45,6 +45,56 @@ model2vec 用速度换质量。MTEB 基准上，256 维静态嵌入的质量大�
 
 不是直接上 model2vec，而是参考 semtools 的思想——**把嵌入模型从远程 API 迁移到本地执行**。具体方案见本文第四节。
 
+#### 2026-05-15 本地模型选型更新
+
+经过进一步对比，codetrap 的本地 embedding 方案不应该把 `model2vec` 等同于默认模型。SemTools 证明了静态嵌入模型的本地优先价值，但 codetrap 的默认模型还要同时考虑中文/英文混合检索质量、TypeScript/Bun 集成成本、开源 license、模型体积、下载体验和后续分发。
+
+当前建议：
+
+```text
+默认本地 provider 候选：
+  onnx-community/gte-multilingual-base
+
+极速可选 provider：
+  minishlab/potion-multilingual-128M
+
+高质量可选 provider：
+  BAAI/bge-m3
+  Qwen/Qwen3-Embedding-0.6B
+
+继续保留：
+  Jina API provider
+```
+
+模型对比：
+
+| 模型 | 类型 | 参数/体积 | 维度 | License | JS/Bun 集成 | 对 codetrap 的判断 |
+|---|---|---:|---:|---|---|---|
+| `onnx-community/gte-multilingual-base` | Transformer encoder ONNX | 基于 305M 参数模型 | 768 | Apache-2.0 | 好，Transformers.js 可直接跑 | **默认本地候选**：质量、体积、集成成本最平衡 |
+| `minishlab/potion-multilingual-128M` | Model2Vec 静态 embedding | 约 128M / 小体积 | 256 | MIT | 一般，主要是 Python/Rust 生态 | **极速候选**：非常快，但质量低于 transformer embedding |
+| `BAAI/bge-m3` | 多功能 embedding | 569M / 2.27GB | 1024 | MIT | 中等，主流是 Python/TEI | **高质量候选**：强但偏重，dense/sparse/ColBERT 对当前 codetrap 过剩 |
+| `Qwen/Qwen3-Embedding-0.6B` | LLM-based embedding | 0.6B | up to 1024 | Apache-2.0 | 中等，更适合作为本地服务 | **服务型候选**：适合 TEI/Ollama/llama.cpp provider |
+| `jina-embeddings-v5-text-small` 本地权重 | LLM-based embedding | 677M | 1024 | CC-BY-NC-4.0 | 中等 | **不建议默认**：质量强，但非商业 license 不适合开源工具默认分发 |
+
+`gte-multilingual-base` 与 `potion-multilingual-128M` 的核心取舍：
+
+| 维度 | `gte-multilingual-base` | `potion-multilingual-128M` |
+|---|---|---|
+| 质量 | 更好，尤其适合语义检索默认模型 | 中等偏好，主要胜在速度 |
+| 速度 | 慢于静态 embedding，但对几百到几千条 trap 可接受 | 极快，适合无感 pre-flight check |
+| 体积 | 中等 | 小 |
+| 维度 | 768 | 256 |
+| 集成 | ONNX + Transformers.js 路线更顺 | 需要 Python/Rust sidecar、WASM 或额外二进制 |
+| 推荐角色 | 默认本地 provider | fast mode / optional provider |
+
+因此，本地化路线应从“直接用 model2vec 替代 Jina”调整为：
+
+1. 先抽象 `EmbeddingProvider` 的本地 provider 接口和模型缓存目录。
+2. 第一版默认候选用 `onnx-community/gte-multilingual-base`，因为它更容易在 TypeScript/Bun 里落地，且质量更稳。
+3. 同时保留 `potion-multilingual-128M` 作为极速实验 provider，用现有 search eval 比较 Recall@5。
+4. 把 `BAAI/bge-m3` 和 `Qwen3-Embedding-0.6B` 放到高质量 provider 候选，不作为默认随工具下载。
+5. 最终默认模型必须由 codetrap 自己的评估集决定，而不是由 MTEB 排名或模型卡描述决定。
+
 ---
 
 ### 2. Unix 管道可组合性
@@ -117,11 +167,11 @@ Qdrant 中存两份数据：文档元数据（用于变更检测）和行嵌入�
 - Include a ## References section at the end
 ```
 
-**codetrap 的现状**：MCP tools 有 description，但 Skills 文件（`codetrap-check.md`）中的指导比较笼统。没有"何时用 search_traps vs get_trap vs list_traps"的决策树。
+**codetrap 的现状**：MCP tools 有 description，但 Skill 文件（`skills/codetrap-check/SKILL.md`）中的指导比较笼统。没有"何时用 search_traps vs get_trap vs list_traps"的决策树。
 
 **可落地的**：
 
-在 `codetrap-check.md` 中加入工具选择决策树：
+在 `skills/codetrap-check/SKILL.md` 中加入工具选择决策树：
 
 ```
 - search_traps: 概念性查询。比如"这个项目对 HTTP 请求有什么约定？"
@@ -221,7 +271,8 @@ ask = ["dep:async-openai", "dep:model2vec-rs", ...]
 
 | 优先级 | 做什么 | 改动量 | 收益 |
 |--------|--------|--------|------|
-| **P0** | 本地嵌入模型替代 Jina API | 中（新增 provider，改 schema） | 消除外部 API 依赖，降低延迟 |
+| **P0** | 新增本地 embedding provider 接口，默认候选先评估 `gte-multilingual-base` | 中（新增 provider、模型缓存、配置入口） | 消除外部 API 依赖，保持较好默认检索质量 |
+| **P0** | 用 `potion-multilingual-128M` 做 fast mode 对照实验 | 中（可能需要 Rust/Python sidecar 或 WASM） | 验证静态 embedding 是否足够支撑无感 pre-flight check |
 | **P1** | 搜索输出 `--json` + stdin 支持 | 小（30 行） | 管道可组合性 |
 | **P1** | Skills 工具选择决策树 | 极小（改 markdown） | Agent 使用体验 |
 | **P2** | 嵌入状态机重构 (`EmbeddingState`) | 小（纯重构） | 代码清晰度 |
@@ -242,4 +293,14 @@ SemTools 给 codetrap 最大的启发不是某一个具体技术，而是**"本�
 
 对于 codetrap 而言，从 semtools 学到的最重要一课是：**语义搜索不一定要靠远程 API**。一个 130MB 的本地静态模型可以在 1-5ms 内完成嵌入，质量虽然不如全量 Transformer，但对陷阱搜索场景大概率够用。
 
-建议的下一步：先用评估集测量 model2vec 在 codetrap 陷阱数据上的实际检索质量（Recall@5），如果质量可接受，就往本地嵌入的方向走；如果质量不够，再考虑 transformers.js + 小型 Transformer 模型（如 multilingual-e5-small）。无论哪种，目标都是把语义搜索从"依赖外部 API"变成"纯本地能力"。
+2026-05-15 的进一步判断是：**默认本地模型不必绑定 SemTools 的 model2vec 选择**。对 codetrap 来说，更稳的路线是先用 `onnx-community/gte-multilingual-base` 作为默认本地 provider 候选，再用 `minishlab/potion-multilingual-128M` 做极速 provider 对照实验。
+
+建议的下一步：
+
+1. 扩展 `EmbeddingProvider`，支持本地 provider 名称、模型维度、模型缓存目录和 passage version。
+2. 实现 `gte-multilingual-base` ONNX provider，优先跑通 `semantic` / `hybrid`。
+3. 在 `src/tests/fixtures/search-eval.json` 中增加更多真实 codetrap 查询，覆盖中文、中英混合、代码术语、隐含错误模式。
+4. 对比 Jina、`gte-multilingual-base`、`potion-multilingual-128M` 的 Recall@5、延迟和安装体积。
+5. 如果 `potion` 的 Recall@5 接近 `gte`，再考虑把它设为 fast mode；如果质量明显不足，就保留为可选极速模式。
+
+无论最终选哪个模型，目标都不变：把语义搜索从"依赖外部 API"变成"纯本地能力"，但默认体验必须先保证查得准。

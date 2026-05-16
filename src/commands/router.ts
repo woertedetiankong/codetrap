@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { TrapStore } from "../lib/store";
-import { formatTrapShort, formatTrapDetail } from "../lib/format";
-import { pickTrapUpdate, type TrapSearchResult } from "../domain/trap";
+import { formatTrapShort, formatTrapDetails, formatTrapActionCard } from "../lib/format";
+import type { Trap } from "../domain/trap";
 import { SEARCH_MODES, type SearchMode } from "../lib/constants";
+import { TrapOperations } from "../lib/trap-operations";
 
 type ParsedArgs = {
   opts: Record<string, string>;
@@ -12,34 +13,44 @@ type ParsedArgs = {
 export async function run(strip: string[], store: TrapStore): Promise<void> {
   const sub = strip[0];
   const args = strip.slice(1);
+  const operations = new TrapOperations(store);
 
   switch (sub) {
     case "add":
-      return cmdAdd(args, store);
+      return cmdAdd(args, operations);
     case "search":
-      return cmdSearch(args, store);
+      return cmdSearch(args, operations);
     case "list":
-      return cmdList(args, store);
+      return cmdList(args, operations);
     case "show":
-      return cmdShow(args, store);
+      return cmdShow(args, operations);
     case "edit":
-      return cmdEdit(args, store);
+      return cmdEdit(args, operations);
     case "delete":
     case "rm":
-      return cmdDelete(args, store);
+      return cmdDelete(args, operations);
+    case "add_trap_evidence":
+    case "add-evidence":
+      return cmdAddTrapEvidence(args, operations);
+    case "archive_trap":
+    case "archive":
+      return cmdArchiveTrap(args, operations);
+    case "supersede_trap":
+    case "supersede":
+      return cmdSupersedeTrap(args, operations);
     case "init":
       return cmdInit(args, store);
     case "export":
-      return cmdExport(args, store);
+      return cmdExport(args, operations);
     case "import":
-      return cmdImport(args, store);
+      return cmdImport(args, operations);
     case "stats":
-      return cmdStats(args, store);
+      return cmdStats(args, operations);
     case "embed":
       return cmdEmbed(args, store);
     default:
       console.log(`Unknown command: ${sub}`);
-      console.log("Commands: init, add, search, list, show, edit, delete, export, import, stats, embed");
+      console.log("Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, embed");
       process.exit(1);
   }
 }
@@ -70,7 +81,7 @@ function cmdInit(_args: string[], store: TrapStore): void {
   console.log("Project initialized.");
 }
 
-function cmdAdd(args: string[], store: TrapStore): void {
+function cmdAdd(args: string[], operations: TrapOperations): void {
   const { opts, positionals } = parseArgs(args);
   // --json mode for AI/script usage
   if (opts.json !== undefined) {
@@ -80,7 +91,7 @@ function cmdAdd(args: string[], store: TrapStore): void {
     }
     try {
       const input = JSON.parse(opts.json);
-      const result = store.add(input);
+      const result = operations.addTrap(input);
       console.log(`Trap #${result.id} added to ${result.scope} scope.`);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
@@ -101,20 +112,22 @@ function cmdAdd(args: string[], store: TrapStore): void {
   console.log('Example: codetrap add --json \'{"title":"...","category":"convention","scope":"project","context":"...","mistake":"...","fix":"..."}\'');
 }
 
-async function cmdSearch(args: string[], store: TrapStore): Promise<void> {
+async function cmdSearch(args: string[], operations: TrapOperations): Promise<void> {
   const { opts, positionals } = parseArgs(args);
   if (positionals.length === 0) {
-    console.error("Usage: codetrap search <query> [--category X] [--limit N] [--mode fts|semantic|hybrid]");
+    console.error("Usage: codetrap search <query> [--category X] [--limit N] [--mode fts|semantic|hybrid] [--status active|superseded|archived|all]");
     process.exit(1);
   }
-  let results: { results: TrapSearchResult[]; scope: string }[];
+  let cards: Awaited<ReturnType<TrapOperations["searchTrapCards"]>>;
   try {
     const mode = opts.mode ? parseSearchMode(opts.mode) : undefined;
-    results = await store.search(positionals.join(" "), {
+    cards = await operations.searchTrapCards({
+      query: positionals.join(" "),
       category: opts.category,
       scope: opts.scope,
       limit: opts.limit ? parseInt(opts.limit) : 20,
       mode,
+      status: opts.status,
     });
   } catch (e: any) {
     console.error(`Error: ${e.message}`);
@@ -122,23 +135,29 @@ async function cmdSearch(args: string[], store: TrapStore): Promise<void> {
   }
 
   let count = 0;
-  for (const group of results) {
-    for (const r of group.results) {
-      console.log(formatTrapShort(r.trap, group.scope));
-      count++;
-    }
+  for (const card of cards) {
+    console.log(formatTrapActionCard(card));
+    console.log("");
+    count++;
   }
   if (count === 0) console.log("No traps found.");
 }
 
-function cmdList(args: string[], store: TrapStore): void {
+function cmdList(args: string[], operations: TrapOperations): void {
   const { opts } = parseArgs(args);
 
-  const groups = store.list({
-    category: opts.category,
-    scope: opts.scope,
-    limit: opts.limit ? parseInt(opts.limit) : 50,
-  });
+  let groups: { traps: Trap[]; scope: string }[];
+  try {
+    groups = operations.listTraps({
+      category: opts.category,
+      scope: opts.scope,
+      status: opts.status,
+      limit: opts.limit ? parseInt(opts.limit) : 50,
+    });
+  } catch (e: any) {
+    console.error(`Error: ${e.message}`);
+    process.exit(1);
+  }
 
   let count = 0;
   for (const group of groups) {
@@ -150,7 +169,7 @@ function cmdList(args: string[], store: TrapStore): void {
   if (count === 0) console.log("No traps found.");
 }
 
-function cmdShow(args: string[], store: TrapStore): void {
+function cmdShow(args: string[], operations: TrapOperations): void {
   const { opts, positionals } = parseArgs(args);
   if (positionals.length === 0) {
     console.error("Usage: codetrap show <id> [--scope project|global]");
@@ -163,17 +182,17 @@ function cmdShow(args: string[], store: TrapStore): void {
     process.exit(1);
   }
 
-  const result = store.get(id, opts.scope);
+  const result = operations.getTrapDetails(id, opts.scope);
   if (!result) {
     console.error(`Trap #${id} not found.`);
     process.exit(1);
   }
 
-  store.hit(id, result.scope);
-  console.log(formatTrapDetail(result.trap, result.scope));
+  operations.hitTrap(id, result.scope);
+  console.log(formatTrapDetails(result));
 }
 
-function cmdEdit(args: string[], store: TrapStore): void {
+function cmdEdit(args: string[], operations: TrapOperations): void {
   const { opts, positionals } = parseArgs(args);
   if (positionals.length === 0) {
     console.error("Usage: codetrap edit <id> --json '{\"title\":\"new title\"}' [--scope project|global]");
@@ -194,8 +213,7 @@ function cmdEdit(args: string[], store: TrapStore): void {
 
   try {
     const parsed = JSON.parse(opts.json);
-    const update = pickTrapUpdate(parsed);
-    const result = store.update(id, update, opts.scope);
+    const result = operations.updateTrap(id, parsed, opts.scope);
     if (result.success) {
       console.log(`Trap #${id} updated in ${result.scope} scope.`);
     } else {
@@ -208,7 +226,7 @@ function cmdEdit(args: string[], store: TrapStore): void {
   }
 }
 
-function cmdDelete(args: string[], store: TrapStore): void {
+function cmdDelete(args: string[], operations: TrapOperations): void {
   const { opts, positionals } = parseArgs(args);
   if (positionals.length === 0) {
     console.error("Usage: codetrap delete <id> [--scope project|global]");
@@ -221,7 +239,7 @@ function cmdDelete(args: string[], store: TrapStore): void {
     process.exit(1);
   }
 
-  const result = store.delete(id, opts.scope);
+  const result = operations.deleteTrap(id, opts.scope);
   if (result.success) {
     console.log(`Trap #${id} deleted from ${result.scope} scope.`);
   } else {
@@ -230,13 +248,91 @@ function cmdDelete(args: string[], store: TrapStore): void {
   }
 }
 
-function cmdExport(args: string[], store: TrapStore): void {
+function cmdAddTrapEvidence(args: string[], operations: TrapOperations): void {
+  const { opts, positionals } = parseArgs(args);
+  if (positionals.length === 0) {
+    console.error("Usage: codetrap add_trap_evidence <id> --source_type manual|conversation|commit|issue|test_failure [--scope project|global] [--source_ref X] [--related_files a,b] [--note X]");
+    process.exit(1);
+  }
+
+  const id = parseInt(positionals[0]);
+  if (isNaN(id)) {
+    console.error("Error: id must be a number");
+    process.exit(1);
+  }
+
+  try {
+    const input = opts.json ? JSON.parse(opts.json) : {
+      source_type: opts.source_type ?? opts["source-type"],
+      source_ref: opts.source_ref ?? opts["source-ref"],
+      observed_at: opts.observed_at ?? opts["observed-at"],
+      related_files: parseCsv(opts.related_files ?? opts["related-files"]),
+      note: opts.note,
+    };
+    const result = operations.addTrapEvidence(id, input, opts.scope);
+    if (!result.success) {
+      console.error(`Trap #${id} not found.`);
+      process.exit(1);
+    }
+    console.log(`Evidence #${result.evidence_id} added to trap #${id} in ${result.scope} scope.`);
+  } catch (e: any) {
+    console.error(`Error: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+function cmdArchiveTrap(args: string[], operations: TrapOperations): void {
+  const { opts, positionals } = parseArgs(args);
+  if (positionals.length === 0) {
+    console.error("Usage: codetrap archive_trap <id> [--scope project|global]");
+    process.exit(1);
+  }
+
+  const id = parseInt(positionals[0]);
+  if (isNaN(id)) {
+    console.error("Error: id must be a number");
+    process.exit(1);
+  }
+
+  const result = operations.archiveTrap(id, opts.scope);
+  if (result.success) {
+    console.log(`Trap #${id} archived in ${result.scope} scope.`);
+  } else {
+    console.error(`Trap #${id} not found.`);
+    process.exit(1);
+  }
+}
+
+function cmdSupersedeTrap(args: string[], operations: TrapOperations): void {
+  const { opts, positionals } = parseArgs(args);
+  if (positionals.length < 2) {
+    console.error("Usage: codetrap supersede_trap <old_id> <new_id> [--scope project|global] [--state_key key]");
+    process.exit(1);
+  }
+
+  const id = parseInt(positionals[0]);
+  const supersededById = parseInt(positionals[1]);
+  if (isNaN(id) || isNaN(supersededById)) {
+    console.error("Error: ids must be numbers");
+    process.exit(1);
+  }
+
+  const result = operations.supersedeTrap(id, supersededById, opts.scope, opts.state_key ?? opts["state-key"]);
+  if (result.success) {
+    console.log(`Trap #${id} superseded by #${supersededById} in ${result.scope} scope.`);
+  } else {
+    console.error(`Trap #${id} or #${supersededById} not found in the same scope.`);
+    process.exit(1);
+  }
+}
+
+function cmdExport(args: string[], operations: TrapOperations): void {
   const { opts } = parseArgs(args);
-  const traps = store.exportAll({ scope: opts.scope });
+  const traps = operations.exportTraps(opts.scope);
   console.log(JSON.stringify(traps, null, 2));
 }
 
-function cmdImport(args: string[], store: TrapStore): void {
+function cmdImport(args: string[], operations: TrapOperations): void {
   const { positionals } = parseArgs(args);
   if (positionals.length === 0) {
     console.error("Usage: codetrap import <file.json>");
@@ -250,12 +346,12 @@ function cmdImport(args: string[], store: TrapStore): void {
     process.exit(1);
   }
 
-  const count = store.importAll(traps);
+  const count = operations.importTraps(traps);
   console.log(`Imported ${count} traps.`);
 }
 
-function cmdStats(_args: string[], store: TrapStore): void {
-  const stats = store.stats();
+function cmdStats(_args: string[], operations: TrapOperations): void {
+  const stats = operations.getStats();
 
   if (stats.project) {
     console.log("── Project ──");
@@ -300,4 +396,12 @@ function printStats(s: { total: number; byCategory: Record<string, number>; bySe
 function parseSearchMode(mode: string): SearchMode {
   if ((SEARCH_MODES as readonly string[]).includes(mode)) return mode as SearchMode;
   throw new Error(`Invalid search mode: ${mode}. Expected one of: ${SEARCH_MODES.join(", ")}`);
+}
+
+function parseCsv(value?: string): string[] | undefined {
+  if (!value) return undefined;
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

@@ -1,11 +1,30 @@
 import { openGlobal, openProject } from "../db/connection";
 import { TrapRepository, type TrapStats } from "../db/repository";
-import type { Trap, TrapInput, TrapSearchResult, TrapUpdate } from "../domain/trap";
-import type { SearchMode } from "./constants";
+import {
+  type Trap,
+  type TrapDetails,
+  type TrapEvidenceInput,
+  type TrapExportRecord,
+  type TrapImportRecord,
+  type TrapInput,
+  type TrapSearchResult,
+  type TrapUpdate,
+} from "../domain/trap";
+import type { SearchMode, TrapStatus } from "./constants";
 import { createDefaultEmbeddingProvider, type EmbeddingProvider } from "./embedder";
 import { findProjectRoot } from "./scope";
+import { importTrapArchive } from "./trap-archive";
 
-export { type TrapInput, type TrapSearchResult, type Trap, type TrapUpdate, type TrapStats };
+export {
+  type TrapInput,
+  type TrapSearchResult,
+  type Trap,
+  type TrapDetails,
+  type TrapExportRecord,
+  type TrapImportRecord,
+  type TrapUpdate,
+  type TrapStats,
+};
 
 type Scope = "project" | "global";
 
@@ -36,7 +55,7 @@ export class TrapStore {
 
   async search(
     query: string,
-    opts: { category?: string; scope?: string; limit?: number; mode?: SearchMode } = {}
+    opts: { category?: string; scope?: string; limit?: number; mode?: SearchMode; status?: TrapStatus | "all" } = {}
   ): Promise<{ results: TrapSearchResult[]; scope: string }[]> {
     const out: { results: TrapSearchResult[]; scope: string }[] = [];
     const limit = opts.limit ?? 20;
@@ -47,6 +66,7 @@ export class TrapStore {
         scope: scoped.scope,
         limit,
         mode: opts.mode ?? "hybrid",
+        status: opts.status,
       });
       if (results.length > 0) out.push({ results, scope: scoped.scope });
     }
@@ -62,7 +82,15 @@ export class TrapStore {
     return null;
   }
 
-  list(opts: { category?: string; scope?: string; limit?: number; offset?: number } = {}): { traps: Trap[]; scope: string }[] {
+  getDetails(id: number, scope?: string): TrapDetails | null {
+    for (const scoped of this.repositoriesForRead(scope)) {
+      const details = scoped.repository.getDetails(id, scoped.scope);
+      if (details) return details;
+    }
+    return null;
+  }
+
+  list(opts: { category?: string; scope?: string; limit?: number; offset?: number; status?: TrapStatus | "all" } = {}): { traps: Trap[]; scope: string }[] {
     const out: { traps: Trap[]; scope: string }[] = [];
 
     for (const scoped of this.repositoriesForRead(opts.scope)) {
@@ -89,6 +117,35 @@ export class TrapStore {
     return { scope: "global", success: false };
   }
 
+  addEvidence(id: number, input: TrapEvidenceInput, scope?: string): { scope: string; evidence_id: number | null; success: boolean } {
+    for (const scoped of this.repositoriesForWrite(scope)) {
+      const evidenceId = scoped.repository.addEvidence(id, input);
+      if (evidenceId || scope) return { scope: scoped.scope, evidence_id: evidenceId, success: evidenceId !== null };
+    }
+    return { scope: "global", evidence_id: null, success: false };
+  }
+
+  archive(id: number, scope?: string): { scope: string; success: boolean } {
+    for (const scoped of this.repositoriesForWrite(scope)) {
+      const success = scoped.repository.archive(id);
+      if (success || scope) return { scope: scoped.scope, success };
+    }
+    return { scope: "global", success: false };
+  }
+
+  supersede(
+    id: number,
+    supersededById: number,
+    scope?: string,
+    stateKey?: string
+  ): { scope: string; success: boolean } {
+    for (const scoped of this.repositoriesForWrite(scope)) {
+      const success = scoped.repository.supersede(id, supersededById, stateKey);
+      if (success || scope) return { scope: scoped.scope, success };
+    }
+    return { scope: "global", success: false };
+  }
+
   hit(id: number, scope?: string): void {
     for (const scoped of this.repositoriesForRead(scope)) {
       if (scope || scoped.repository.get(id)) {
@@ -108,25 +165,19 @@ export class TrapStore {
     return { project, global: this.globalRepo().stats() };
   }
 
-  exportAll(opts: { scope?: string } = {}): Trap[] {
-    const traps: Trap[] = [];
+  exportAll(opts: { scope?: string } = {}): TrapExportRecord[] {
+    const traps: TrapExportRecord[] = [];
     for (const scoped of this.repositoriesForRead(opts.scope)) {
       traps.push(...scoped.repository.exportAll());
     }
     return traps;
   }
 
-  importAll(traps: TrapInput[]): number {
-    let count = 0;
-    for (const t of traps) {
-      try {
-        this.add(t);
-        count++;
-      } catch {
-        // skip duplicates or invalid
-      }
-    }
-    return count;
+  importAll(traps: TrapImportRecord[]): number {
+    return importTrapArchive(traps, {
+      add: (input) => this.add(input),
+      addEvidence: (id, input, scope) => this.addEvidence(id, input, scope),
+    });
   }
 
   hasProject(): boolean {

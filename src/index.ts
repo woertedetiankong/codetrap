@@ -35,6 +35,9 @@ function showHelp(): void {
   console.log("  show <id>             Show trap details");
   console.log("  edit <id> --json '{}' Edit a trap");
   console.log("  delete <id>           Delete a trap");
+  console.log("  add_trap_evidence     Attach evidence to a trap");
+  console.log("  archive_trap          Archive a trap");
+  console.log("  supersede_trap        Mark one trap as superseded by another");
   console.log("  embed                 Generate embeddings for semantic search");
   console.log("  export                Export traps as JSON");
   console.log("  import <file.json>    Import traps from JSON");
@@ -45,6 +48,7 @@ function showHelp(): void {
   console.log("  --scope project|global  Filter by scope");
   console.log("  --category <name>       Filter by category");
   console.log("  --mode fts|semantic|hybrid  Search mode");
+  console.log("  --status active|superseded|archived|all  Lifecycle filter");
   console.log("  --batch-size <n>        Embedding generation batch size");
   console.log("  --json '{}'             JSON input for add/edit");
 }

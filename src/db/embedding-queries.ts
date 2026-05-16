@@ -1,5 +1,6 @@
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type { Trap } from "../domain/trap";
+import { DEFAULT_TRAP_STATUS, type TrapStatus } from "../lib/constants";
 import {
   decodeEmbedding,
   encodeEmbedding,
@@ -60,7 +61,7 @@ export function deleteEmbedding(db: Database, trapId: number): void {
 export function getAllFreshEmbeddings(
   db: Database,
   config: EmbeddingConfig,
-  opts: { category?: string; scope?: string } = {}
+  opts: { category?: string; scope?: string; status?: TrapStatus | "all" } = {}
 ): FreshEmbedding[] {
   const conditions = [
     "e.provider = ?",
@@ -82,6 +83,10 @@ export function getAllFreshEmbeddings(
   if (opts.scope) {
     conditions.push("t.scope = ?");
     params.push(opts.scope);
+  }
+  if (opts.status !== "all") {
+    conditions.push("t.status = ?");
+    params.push(opts.status ?? DEFAULT_TRAP_STATUS);
   }
 
   const rows = db
@@ -108,11 +113,12 @@ export function getAllFreshEmbeddings(
 export function getTrapsNeedingEmbeddings(
   db: Database,
   config: EmbeddingConfig,
-  opts: { scope?: string; category?: string; force?: boolean; limit?: number } = {}
+  opts: { scope?: string; category?: string; status?: TrapStatus | "all"; force?: boolean; limit?: number } = {}
 ): Trap[] {
   const traps = listTraps(db, {
     scope: opts.scope,
     category: opts.category,
+    status: opts.status,
     limit: 100000,
   });
   const needed: Trap[] = [];
@@ -129,7 +135,7 @@ export function getTrapsNeedingEmbeddings(
 
 export function countEmbeddableTraps(
   db: Database,
-  opts: { scope?: string; category?: string } = {}
+  opts: { scope?: string; category?: string; status?: TrapStatus | "all" } = {}
 ): number {
   return countTraps(db, opts);
 }

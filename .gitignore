@@ -33,3 +33,6 @@ tmp/
 Thumbs.db
 .vscode/
 .idea/
+
+.opensource-explorer
+AGENTS.md

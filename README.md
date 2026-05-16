@@ -46,7 +46,7 @@ bun run src/index.ts show 1
 - **Dual scope** — project-scoped (`.codetrap/traps.db`) and global (`~/.codetrap/traps.db`)
 - **Three search modes** — FTS (SQLite FTS5), semantic (Jina embeddings), hybrid (RRF fusion)
 - **Chinese + mixed-language search** — CJK bigram tokenizer, synonym map for Chinese-English terms
-- **MCP server** — 7 tools + 4 resources for AI agent integration
+- **MCP server** — 10 tools + 4 resources for AI agent integration
 - **Embedding cache** with freshness tracking — embeddings are rebuildable, stale ones auto-invalidated
 - **Schema migrations** — in-code migration system from v0 through current v3
 - **Single-binary builds** — `bun build --compile` produces standalone `.exe` binaries
@@ -130,12 +130,15 @@ Add to your MCP client config (e.g., Claude Code):
 
 | Tool | Description |
 |---|---|
-| `search_traps` | Full-text / semantic / hybrid search |
+| `search_traps` | Compact action-card search across active traps |
 | `add_trap` | Record a new trap |
-| `get_trap` | Get a trap by ID |
+| `get_trap` | Drill down into full trap details and evidence |
 | `list_traps` | List traps with filters |
 | `update_trap` | Edit an existing trap |
 | `delete_trap` | Delete a trap |
+| `add_trap_evidence` | Attach source/evidence metadata |
+| `archive_trap` | Archive a trap so default search skips it |
+| `supersede_trap` | Mark a trap as replaced by another |
 | `get_stats` | Database statistics |
 
 ### Resources

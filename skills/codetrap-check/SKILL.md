@@ -1,6 +1,6 @@
 ---
 name: codetrap-check
-description: Before writing code, check the pitfall database for relevant lessons and proactively avoid known mistakes
+description: Check the codetrap pitfall database before code changes and apply relevant lessons. Use before non-trivial coding work, when touching risky areas, or when the user runs /codetrap-check.
 ---
 
 Before generating any non-trivial code, pause and check the codetrap database for relevant pitfalls. This is a "pre-flight check" that prevents you from repeating known mistakes.
@@ -28,9 +28,10 @@ Call the MCP tool `search_traps` with the extracted keywords. Search both projec
 ## Step 3: Apply the lessons
 
 For each relevant trap found:
-1. Read the `mistake` and `fix` fields
-2. Adjust your code generation to follow the correct approach
-3. If a trap matches exactly what you were about to do, explicitly tell the user: "I was about to [mistake], but the codetrap database says [fix]. I'll do it the right way."
+1. Read the action card's `avoid` and `do_instead`
+2. If the card is highly relevant and you are about to edit code, call `get_trap` with `next_action.details_args.id` and `next_action.details_args.scope`
+3. Adjust your code generation to follow the correct approach
+4. If a trap matches exactly what you were about to do, explicitly tell the user: "I was about to [avoid], but the codetrap database says [do_instead]. I'll do it the right way."
 
 ## Step 4: Report
 
