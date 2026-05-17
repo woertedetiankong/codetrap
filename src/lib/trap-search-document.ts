@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Trap, TrapInput, TrapUpdate } from "../domain/trap";
 import type { EmbeddingConfig, StoredEmbedding } from "./embedder";
 import { buildSearchText, SEARCH_TEXT_FIELD_NAMES, type SearchTextFields } from "./search-normalizer";
-import { parseTrapTags } from "./trap-json-fields";
+import { parseTrapPathGlobs, parseTrapTags } from "./trap-json-fields";
 
 export const PASSAGE_VERSION = 1;
 
@@ -16,6 +16,9 @@ export const PASSAGE_FIELD_NAMES = [
   "before_code",
   "after_code",
   "severity",
+  "path_globs",
+  "module",
+  "owner",
 ] as const;
 
 export type TrapSearchDocumentFields = SearchTextFields & {
@@ -30,11 +33,15 @@ export function buildTrapSearchText(fields: SearchTextFields): string {
 
 export function buildTrapPassage(trap: TrapSearchDocumentFields): string {
   const tags = parseTrapTags(trap.tags).join(", ");
+  const pathGlobs = parseTrapPathGlobs(trap.path_globs).join(", ");
   return [
     trap.title ? `Title: ${trap.title}` : "",
     trap.category ? `Category: ${trap.category}` : "",
     trap.severity ? `Severity: ${trap.severity}` : "",
     tags ? `Tags: ${tags}` : "",
+    pathGlobs ? `Path globs: ${pathGlobs}` : "",
+    trap.module ? `Module: ${trap.module}` : "",
+    trap.owner ? `Owner: ${trap.owner}` : "",
     trap.context ? `Context: ${trap.context}` : "",
     trap.mistake ? `Mistake: ${trap.mistake}` : "",
     trap.fix ? `Fix: ${trap.fix}` : "",

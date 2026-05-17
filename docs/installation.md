@@ -1,6 +1,6 @@
 # Installation
 
-codetrap supports three installation paths. Use source installation while developing the tool, binary installation for users who do not want a Bun toolchain, and package-manager installation after publishing the package.
+codetrap supports three installation paths. Use source installation while developing the tool, binary installation for users who do not want a Bun toolchain, and package-manager installation for the published `codetrap` package.
 
 ## Method 1: Source Install
 
@@ -72,11 +72,11 @@ Release binaries are built by `.github/workflows/release.yml` when a version tag
 3. Create and push a matching tag:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
-The release tag must match `package.json` exactly. For example, package version `0.1.1` must use tag `v0.1.1`.
+The release tag must match `package.json` exactly. For example, package version `0.1.2` must use tag `v0.1.2`.
 
 The workflow runs:
 
@@ -158,7 +158,7 @@ Then add `%USERPROFILE%\bin` to your user `Path`.
 
 ## Method 3: Package-Manager Install
 
-Best for long-term use after codetrap is published as a package.
+Best for long-term use with the published `codetrap` package.
 
 ### For maintainers
 
@@ -202,7 +202,7 @@ npm pack --dry-run
 
 ### For users
 
-Bun users can install it globally after publishing:
+Bun users can install it globally:
 
 ```bash
 bun add -g codetrap
@@ -216,7 +216,7 @@ npm install -g codetrap
 codetrap --help
 ```
 
-Until the package is published, use the source install method:
+For local development or unpublished branch testing, use the source install method:
 
 ```bash
 git clone <repo-url>
@@ -304,7 +304,11 @@ Review the top 3 action cards before deciding no trap applies. If a critical/err
 
 codetrap show <id> --scope <project|global> --json
 
+When editing a known area, pass applicability hints:
+
+codetrap search "<keywords>" --path src/db/repository.ts --module db --json
+
 To add a lesson:
 
-codetrap add --json '{...}'
+codetrap add --json '{...}' --output-json
 ```

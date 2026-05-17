@@ -59,7 +59,7 @@ codetrap show 1
 - **MCP server** — optional tools + resources for AI agent integration
 - **Embedding cache** with freshness tracking — embeddings are rebuildable, stale ones auto-invalidated
 - **Doctor diagnostics** — scope, database, and embedding health in text or JSON
-- **Schema migrations** — in-code migration system from v0 through current v4
+- **Schema migrations** — in-code migration system from v0 through current v5
 - **Single-binary builds** — `bun build --compile` produces standalone binaries in `dist/`
 
 ## Directory Structure
@@ -69,7 +69,8 @@ codetrap/
 ├── src/
 │   ├── index.ts              CLI entry point
 │   ├── mcp-server.ts         MCP server entry point
-│   ├── commands/router.ts    CLI command dispatch
+│   ├── commands/router.ts    Thin CLI adapter + renderer
+│   ├── commands/workflow.ts  CLI command behavior
 │   ├── commands/command-result.ts  CLI command results + rendering
 │   ├── mcp/
 │   │   ├── server.ts         MCP stdio transport + handlers
@@ -80,16 +81,20 @@ codetrap/
 │   │   ├── store.ts          Project/global scope orchestration
 │   │   ├── trap-operations.ts Shared CLI/MCP operation semantics
 │   │   ├── output-json.ts    Shared CLI/MCP JSON presenters
-│   │   ├── scope-context.ts  Scope/database diagnostic facts
+│   │   ├── scope-context.ts  cwd/project/global DB context + repo selection
 │   │   ├── scope-migration.ts Safe project trap scope repair/migration
 │   │   ├── doctor.ts         Scope and embedding health diagnostics
 │   │   ├── embedding-health.ts  Fresh/stale/missing embedding summaries
-│   │   ├── search-service.ts FTS/semantic/hybrid search, RRF fusion
+│   │   ├── search-service.ts FTS/semantic/hybrid candidate retrieval
+│   │   ├── search-policy.ts  Applicability filtering, rerank, fusion signals
 │   │   ├── search-result-card.ts Compact agent-facing result cards
 │   │   ├── search-normalizer.ts  CJK bigram, synonyms, search_text
 │   │   ├── fts-query.ts      Safe FTS5 literal query compiler
 │   │   ├── trap-search-document.ts Derived search text + embedding passage
-│   │   ├── trap-json-fields.ts Tags/evidence JSON array codec
+│   │   ├── trap-json-fields.ts Tags/path/evidence JSON array codec
+│   │   ├── trap-codec.ts     Storage/JSON/archive/import shape conversion
+│   │   ├── trap-mutation-result.ts Mutation result + scope fallback semantics
+│   │   ├── trap-scope-match.ts Path/module/owner applicability matching
 │   │   ├── trap-archive.ts   Import/export compatibility
 │   │   ├── trap-transfer.ts  DB-to-DB transfer for scope migration
 │   │   ├── embedder.ts       Jina Embeddings adapter
@@ -112,6 +117,8 @@ codetrap/
 │       ├── import-export-cli.test.ts
 │       └── fixtures/search-eval.json
 ├── skills/                   Agent skill definitions
+├── plugins/codetrap-agent/   Sample Codex plugin bundle
+├── scripts/                  Release asset and preflight scripts
 ├── docs/                     Architecture + reference docs
 ├── package.json
 ├── tsconfig.json
@@ -124,16 +131,16 @@ codetrap/
 |---|---|
 | `init` | Initialize `.codetrap/` in current project |
 | `add` | Record a new trap (`--json` structured input; interactive mode is not implemented) |
-| `search <query>` | Search traps (--mode fts\|semantic\|hybrid, --category, --scope, --status, --limit, --json; query can come from stdin) |
-| `list` | List traps (--category, --scope, --status, --limit, --json) |
+| `search <query>` | Search traps (--mode fts\|semantic\|hybrid, --category, --scope, --status, --limit, --path, --module, --owner, --no-rerank, --ranking-signals, --json; query can come from stdin) |
+| `list` | List traps (--category, --scope, --status, --path, --module, --owner, --limit, --json) |
 | `show <id>` | Show full trap details (--json) |
-| `edit <id>` | Edit a trap |
-| `delete <id>` | Delete a trap |
-| `add_trap_evidence <id>` | Attach source/evidence metadata |
-| `archive_trap <id>` | Archive a trap so default search skips it |
-| `supersede_trap <old_id> <new_id>` | Mark one trap as replaced by another |
+| `edit <id>` | Edit a trap (`--json` input, `--output-json` output) |
+| `delete <id>` | Delete a trap (--json) |
+| `add_trap_evidence <id>` | Attach source/evidence metadata (--output-json) |
+| `archive_trap <id>` | Archive a trap so default search skips it (--json) |
+| `supersede_trap <old_id> <new_id>` | Mark one trap as replaced by another (--json) |
 | `export` | Export traps to JSON |
-| `import` | Import traps from JSON |
+| `import` | Import traps from JSON (--json) |
 | `stats` | Show database statistics (--json includes embedding health) |
 | `doctor` | Diagnose cwd, scope, database paths, trap counts, and embedding health (--json) |
 | `repair-scope` | Move legacy mis-scoped project traps into the current project (dry-run by default, `--apply` to mutate, `--json`) |
@@ -209,8 +216,9 @@ Recommended behavior:
 - Read the top 3 returned action cards, or all returned cards if fewer than 3, before deciding there is no relevant trap.
 - Run the returned `next_action.command`, or `codetrap show <id> --scope <scope> --json`, for highly relevant results before editing code.
 - Treat `critical` or `error` traps as worth drilling into when they are plausibly related, even if they are not ranked first.
+- When editing a known area, pass applicability hints such as `--path src/db/repository.ts --module db`.
 - Apply the recorded `avoid` and `do_instead` guidance while making changes.
-- Ask before recording a new trap unless the user explicitly requested it.
+- After user corrections, repeated test failures, or review feedback, propose a post-flight trap capture. Ask before recording a new trap unless the user explicitly requested it.
 
 ### Codex Skills
 
@@ -221,6 +229,8 @@ Codex users can optionally install the bundled skills from `skills/`:
 - `codetrap-add` — record a new pitfall.
 
 Skills are a convenience layer for Codex users. They do not replace MCP or `AGENTS.md`; they make manual triggers like "run codetrap-check" easier.
+
+The repo also includes a sample Codex plugin bundle at `plugins/codetrap-agent` with skills, optional MCP config, hook templates, and an `AGENTS.md` snippet.
 
 ### MCP Tools
 
@@ -245,13 +255,50 @@ Skills are a convenience layer for Codex users. They do not replace MCP or `AGEN
 - `codetrap://global/top` — Most-hit global traps
 - `codetrap://{scope}/trap/{id}` — Individual trap by ID
 
+Resources can accept an optional encoded `cwd` query parameter when the client knows the target workspace:
+
+```text
+codetrap://project/recent?cwd=%2Fpath%2Fto%2Fproject
+```
+
 ## Configuration
 
 | Env Variable | Required | Description |
 |---|---|---|
 | `JINA_API_KEY` | No | Jina AI API key for semantic/hybrid search. Without it, hybrid falls back to FTS. Get one at [jina.ai](https://jina.ai/api-dashboard/) |
+| `CODETRAP_SEARCH_MODE` | No | Default search mode: `fts`, `semantic`, or `hybrid` |
+| `CODETRAP_SEARCH_LIMIT` | No | Default search result limit |
+| `CODETRAP_SEARCH_SCOPE` | No | Default search scope: `project` or `global` |
+| `CODETRAP_RERANK` | No | Enable query-aware reranking (`true`/`false`) |
 
-All other behavior is configured via sensible defaults — see `src/lib/constants.ts`.
+Behavior preferences can also live in `~/.codetrap/config.json`; CLI args override config, config overrides env vars, and env vars override built-in defaults.
+
+```json
+{
+  "search": {
+    "mode": "hybrid",
+    "limit": 20,
+    "scope": "project",
+    "rerank": true
+  }
+}
+```
+
+API keys still belong in environment variables, not config files.
+
+### Scoped Traps
+
+Trap JSON supports optional applicability fields:
+
+```json
+{
+  "path_globs": ["src/db/**"],
+  "module": "db",
+  "owner": "platform"
+}
+```
+
+Empty applicability fields mean the trap applies everywhere. `search` and `list` can filter with `--path`, `--module`, and `--owner`; matching scoped traps receive a small rerank boost.
 
 ### Jina Embeddings Setup
 
@@ -315,6 +362,8 @@ If `JINA_API_KEY` is not set:
 bun run build          # Build CLI + MCP server binaries → dist/
 bun run build:cli      # dist/codetrap
 bun run build:serve    # dist/codetrap-serve
+bunx tsc --noEmit      # Type-check without emitting files
+bun run release:preflight  # tests, builds, release assets, smoke test, npm dry-runs
 ```
 
 ## Test
@@ -332,7 +381,7 @@ bun test src/tests/search-eval.test.ts # Recall@5 evaluation
 | Database | SQLite (bun:sqlite) + FTS5 |
 | Embeddings | Jina AI (`jina-embeddings-v5-text-small`) |
 | MCP | `@modelcontextprotocol/sdk` |
-| Search | FTS5 + cosine similarity + RRF fusion |
+| Search | FTS5 + cosine similarity + RRF fusion + generic rerank |
 
 ## License
 

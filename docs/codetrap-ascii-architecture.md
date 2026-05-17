@@ -4,7 +4,7 @@
 
 本文用纯 ASCII 流程图整理 codetrap 当前代码里的架构、数据流，以及已经落到代码中的思想架构。
 
-范围说明：本文只写当前代码已经体现出来的架构。compact action card、CLI JSON、MCP thin adapter、`codetrap doctor`、embedding health、evidence/source metadata、lifecycle、archive/supersede 等能力已经落到代码中；team sharing、multimodal evidence、cross-encoder reranking 仍属于未来方向。
+范围说明：本文只写当前代码已经体现出来的架构。compact action card、CLI JSON、MCP thin adapter、`codetrap doctor`、embedding health、evidence/source metadata、lifecycle、archive/supersede、schema v5 path/module/owner scope、config defaults、generic rerank、Codex plugin scaffold 和 release preflight 等能力已经落到代码中；team sharing、multimodal evidence、cross-encoder reranking、本地 embedding provider 仍属于未来方向。
 
 ## 1. 一句话理解 codetrap
 
@@ -42,6 +42,7 @@ codetrap/
 |   |
 |   +-- commands/                CLI 命令适配层
 |   |   +-- router.ts
+|   |   +-- workflow.ts
 |   |   +-- command-result.ts
 |   |
 |   +-- mcp/                     MCP 适配层
@@ -57,13 +58,17 @@ codetrap/
 |   |   +-- scope.ts
 |   |   +-- scope-context.ts
 |   |   +-- trap-operations.ts
+|   |   +-- trap-mutation-result.ts
 |   |   +-- output-json.ts
 |   |   +-- search-result-card.ts
 |   |   +-- search-service.ts
+|   |   +-- search-policy.ts
 |   |   +-- search-normalizer.ts
 |   |   +-- fts-query.ts
 |   |   +-- trap-search-document.ts
 |   |   +-- trap-json-fields.ts
+|   |   +-- trap-codec.ts
+|   |   +-- trap-scope-match.ts
 |   |   +-- trap-archive.ts
 |   |   +-- trap-transfer.ts
 |   |   +-- embedder.ts
@@ -84,6 +89,10 @@ codetrap/
 |
 +-- skills/                      给 agent 使用的操作 playbook
 |
++-- plugins/codetrap-agent/      Codex plugin/bundle 示例
+|
++-- scripts/                     build-release / release-preflight
+|
 +-- docs/                        架构、计划、参考分析文档
 |
 +-- .codetrap/                   当前项目的本地 trap 数据库目录
@@ -95,7 +104,7 @@ codetrap/
 
 ## 3. 运行时分层架构
 
-核心原则：入口层保持薄，scope 策略集中在 `TrapStore`，单数据库操作集中在 `TrapRepository`，检索复杂度集中在 `SearchService`。
+核心原则：入口层保持薄，scope 策略集中在 `TrapStore`，cwd/repository 解析集中在 `ScopeContext`，单数据库操作集中在 `TrapRepository`，检索候选在 `SearchService`，排序和 applicability 策略集中在 `SearchPolicy`。
 
 ```text
 +---------------------+        +----------------------+
@@ -112,7 +121,7 @@ codetrap/
 +---------------------+        +----------------------+
 | CLI adapter         |        | MCP adapter          |
 | commands/router.ts  |        | mcp/server.ts        |
-| parse flags         |        | tools/resources      |
+| workflow.ts         |        | tools/resources      |
 | CommandResult       |        | return JSON text     |
 +----------+----------+        +----------+-----------+
            |                              |
@@ -124,6 +133,13 @@ codetrap/
               | src/lib/store.ts     |
               | project/global       |
               | scope policy         |
+              +----------+-----------+
+                         |
+                         v
+              +----------------------+
+              | ScopeContext         |
+              | src/lib/scope-context|
+              | cwd -> repositories  |
               +----------+-----------+
                          |
           +--------------+--------------+
@@ -141,6 +157,7 @@ codetrap/
               +----------------------+
               | Single-DB services   |
               | SearchService        |
+              | SearchPolicy         |
               | SQL queries          |
               | Embedding job        |
               | Schema migrations    |
@@ -161,13 +178,15 @@ codetrap/
 +------------------------------+-----------------------------------------+
 | src/domain/trap.ts           | Trap 类型、输入 schema、字段筛选        |
 | src/lib/store.ts             | project/global scope 策略               |
+| src/lib/scope-context.ts     | cwd/project/global DB 解析与 repository 选择 |
 | src/lib/trap-operations.ts   | CLI/MCP 共享命令语义                    |
+| src/lib/trap-mutation-result.ts | mutation 结果与 scope fallback 语义  |
 | src/lib/output-json.ts       | CLI/MCP 共享 JSON presenter             |
 | src/lib/doctor.ts            | doctor 诊断报告                         |
-| src/lib/scope-context.ts     | cwd/project/global DB 诊断事实          |
 | src/lib/embedding-health.ts  | fresh/stale/missing 统计与 fallback 原因 |
 | src/db/repository.ts         | 单个 SQLite 数据库的门面                |
-| src/lib/search-service.ts    | FTS / semantic / hybrid 检索协调        |
+| src/lib/search-service.ts    | FTS / semantic / hybrid 候选检索协调    |
+| src/lib/search-policy.ts     | applicability、rerank、RRF、diagnostics |
 | src/lib/search-result-card.ts | agent-facing action card 构建          |
 | src/db/queries.ts            | traps 表 SQL                            |
 | src/db/embedding-queries.ts  | trap_embeddings 表 SQL                  |
@@ -176,11 +195,14 @@ codetrap/
 | src/lib/search-normalizer.ts | CJK bigram、同义词、search_text 构建    |
 | src/lib/fts-query.ts         | 安全 FTS literal query 编译             |
 | src/lib/trap-search-document.ts | search_text / passage / hash 派生数据 |
-| src/lib/trap-json-fields.ts  | tags / related_files JSON 数组编解码    |
+| src/lib/trap-json-fields.ts  | tags / path_globs / related_files 编解码 |
+| src/lib/trap-codec.ts        | storage / JSON / archive / import 形状转换 |
+| src/lib/trap-scope-match.ts  | path/module/owner 适用范围匹配          |
 | src/lib/trap-archive.ts      | import/export 兼容与 evidence remap     |
 | src/lib/embedder.ts          | EmbeddingProvider 和 JinaEmbedder       |
 | src/lib/embedding-job.ts     | 批量生成 embedding                      |
-| src/commands/router.ts       | CLI 命令解析和输出                      |
+| src/commands/router.ts       | CLI 薄适配和输出渲染                    |
+| src/commands/workflow.ts     | CLI 命令行为                            |
 | src/mcp/server.ts            | MCP tools / resources                   |
 +------------------------------+-----------------------------------------+
 ```
@@ -248,6 +270,9 @@ supersedes_id
 valid_from
 valid_until
 project_path
+path_globs
+module
+owner
 hit_count
 created_at
 updated_at
@@ -258,6 +283,7 @@ updated_at
 - `traps` 是原始事实表。
 - `status` 支持 `active`、`superseded`、`archived` 三种 lifecycle 状态。
 - `trap_evidence` 保存来源、相关文件、观察时间和备注，用于下钻解释 trap 来历。
+- `path_globs`、`module`、`owner` 是 schema v5 的可选适用范围字段；为空表示 trap 对所有路径/模块/owner 生效。
 - `traps_fts` 是由 `traps` 派生出来的 FTS5 索引表。
 - `search_text` 是由 Trap 字段派生出来的检索文本，用于中文 bigram 和同义词扩展。
 - `trap_embeddings` 是可重建缓存，不是事实来源。
@@ -279,6 +305,12 @@ Terminal command
            v
 +----------------------+
 | commands/router.ts   |
+| thin adapter          |
++----------+-----------+
+           |
+           v
++----------------------+
+| commands/workflow.ts |
 | parseArgs()          |
 | cmdSearch()          |
 +----------+-----------+
@@ -361,6 +393,12 @@ AI agent / MCP client
              |
              v
 +--------------------------+
+| ScopeContext             |
+| resolve cwd if provided  |
++------------+-------------+
+             |
+             v
++--------------------------+
 | Repositories + services  |
 | same core path as CLI    |
 +------------+-------------+
@@ -404,7 +442,7 @@ CLI `add --json` 和 MCP `add_trap` 最后都会进入同一条核心路径。
 
 ```text
 Trap input
-  title/category/scope/context/mistake/fix/tags/...
+  title/category/scope/context/mistake/fix/tags/path_globs/module/owner/...
         |
         v
 +--------------------------+
@@ -428,6 +466,12 @@ Trap input
 +--------------------------+
 | insertTrap()             |
 | db/queries.ts            |
++------------+-------------+
+             |
+             v
++--------------------------+
+| trap-codec.ts            |
+| encode tags/path_globs   |
 +------------+-------------+
              |
              v
@@ -469,6 +513,12 @@ Update request
              |
              v
 +--------------------------+
+| trap-mutation-result.ts  |
+| scope fallback result    |
++------------+-------------+
+             |
+             v
++--------------------------+
 | TrapRepository.update()  |
 +------------+-------------+
              |
@@ -502,7 +552,7 @@ Update request
 
 ## 10. Search 数据流
 
-`TrapStore` 决定查哪些 scope；`SearchService` 决定在一个数据库里如何检索。
+`TrapStore` 决定查哪些 scope；`SearchService` 决定在一个数据库里如何取候选；`SearchPolicy` 决定 applicability、rerank、fusion 和 diagnostics。
 
 ```text
 Caller asks search(query, mode, scope?, category?, limit?)
@@ -544,6 +594,14 @@ Caller asks search(query, mode, scope?, category?, limit?)
             |                      |                      |
             v                      v                      v
      Trap results           Trap results            RRF fused results
+                                   |
+                                   v
+                      +--------------------------+
+                      | SearchPolicy             |
+                      | path/module/owner filter |
+                      | exact boosts + severity  |
+                      | ranking_signals optional |
+                      +--------------------------+
 ```
 
 ### 10.1 FTS 搜索细节
@@ -575,6 +633,12 @@ Raw query
 +--------------------------+
 | JOIN traps               |
 | ORDER BY rank            |
++------------+-------------+
+             |
+             v
++--------------------------+
+| SearchPolicy             |
+| applicability + rerank   |
 +------------+-------------+
              |
              v
@@ -622,6 +686,8 @@ Raw query
 +--------------------------+
 ```
 
+之后同样经过 `SearchPolicy` 做 applicability 过滤、query-aware rerank 和可选 ranking signals。
+
 ### 10.3 Hybrid 搜索细节
 
 在 `TrapStore` 层，默认搜索模式是 `hybrid`。
@@ -650,6 +716,12 @@ and has candidates                    failed, or no candidates
 | RRF fusion               |      | Return FTS results       |
 | FTS rank + semantic rank |      | with diagnostics         |
 +------------+-------------+      +--------------------------+
+             |
+             v
++--------------------------+
+| SearchPolicy             |
+| generic rerank signals   |
++------------+-------------+
              |
              v
 +--------------------------+
@@ -689,7 +761,7 @@ codetrap embed --scope project
         v
 +------------------------------+
 | cmdEmbed()                   |
-| commands/router.ts           |
+| commands/workflow.ts         |
 +--------------+---------------+
                |
                v
@@ -700,7 +772,7 @@ codetrap embed --scope project
                |
                v
 +------------------------------+
-| TrapRepository.ensureEmbeddings()
+| TrapRepository.ensureEmbeddings() |
 +--------------+---------------+
                |
                v
@@ -874,9 +946,12 @@ MCP:
   JSON text payloads for agents
 
 Shared:
+  CLI workflow
   TrapStore
+  ScopeContext
   TrapRepository
   SearchService
+  SearchPolicy
   SQLite schema
 ```
 
@@ -900,6 +975,9 @@ optional semantic embeddings
         |
         v
 hybrid RRF ranking
+        |
+        v
+generic exact-match rerank
         |
         v
 evaluation tests
@@ -953,6 +1031,26 @@ active trap
    +--> supersede_trap -> newer trap
 ```
 
+### 13.10 Scoped applicability and generic rerank
+
+schema v5 让一条 trap 可以声明它适用的路径、模块或 owner。搜索和列表可以用 `--path`、`--module`、`--owner` 过滤，匹配的 scoped trap 会得到轻量 rerank boost。
+
+```text
++--------------------------+
+| Trap                    |
+| path_globs/module/owner |
++------------+-------------+
+             |
+             v
++--------------------------+
+| SearchPolicy             |
+| applicability filter     |
+| ranking_signals          |
++--------------------------+
+```
+
+排序信号保持通用：title/tag/code identifier exact match、severity、path/module/owner match。代码没有内置 ESP32、StickS3 或其他项目专用词库。
+
 ## 14. 当前没有实现的内容
 
 下面这些不是当前 runtime 架构的一部分：
@@ -962,10 +1060,10 @@ team sharing
 multimodal evidence
 cross-encoder reranking
 local embedding provider
-path/module scoped traps
+local model cache / ONNX provider
 ```
 
-其中一些想法出现在计划或参考文档中，但目前还没有形成完整代码功能。action cards、CLI JSON、doctor、repair-scope/migrate-project、embedding health、evidence/source metadata、lifecycle、supersede/archive commands 已经是当前 runtime 功能。
+其中一些想法出现在计划或参考文档中，但目前还没有形成完整代码功能。action cards、CLI JSON、doctor、repair-scope/migrate-project、embedding health、evidence/source metadata、lifecycle、supersede/archive commands、path/module/owner scoped traps、config defaults、plugin scaffold 和 release preflight 已经是当前 runtime/packaging 功能。
 
 ## 15. 最简心智模型
 
@@ -974,8 +1072,10 @@ codetrap is a local mistake-pattern index.
 
 CLI/MCP are doors.
 TrapStore decides which notebook to open.
+ScopeContext resolves the right notebook for a cwd.
 TrapRepository manages one notebook.
-SearchService ranks possible matches.
+SearchService retrieves possible matches.
+SearchPolicy filters and ranks them.
 SQLite stores the notebooks.
 Embeddings are optional index cards for semantic lookup.
 ```
@@ -995,6 +1095,12 @@ Embeddings are optional index cards for semantic lookup.
           | scope rules |
           +------+------+
                  |
+                 v
+          +-------------+
+          | ScopeContext|
+          | cwd -> DBs  |
+          +------+------+
+                 |
        +---------+----------+
        |                    |
        v                    v
@@ -1008,8 +1114,8 @@ Embeddings are optional index cards for semantic lookup.
                  v
           +-------------+
           | Search      |
-          | FTS/semantic|
-          | hybrid      |
+          | retrieval + |
+          | policy      |
           +------+------+
                  |
                  v

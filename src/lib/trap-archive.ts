@@ -1,17 +1,17 @@
 import {
-  buildTrapEvidenceInput,
-  type TrapEvidence,
   type TrapEvidenceInput,
-  type TrapExportEvidence,
   type TrapImportEvidence,
   type TrapImportRecord,
   type TrapInput,
 } from "../domain/trap";
 import {
-  parseEvidenceRelatedFiles,
-  parseOptionalEvidenceRelatedFiles,
-  parseOptionalTrapTags,
-} from "./trap-json-fields";
+  importEvidenceToTrapInput,
+  importRecordToTrapInput,
+  normalizeEvidenceForExport,
+  normalizeTrapForExport,
+} from "./trap-codec";
+
+export { normalizeEvidenceForExport, normalizeTrapForExport };
 
 export interface TrapArchiveImportAdapter {
   add(input: TrapInput): { id: number; scope: string };
@@ -22,13 +22,6 @@ export interface TrapArchiveImportAdapter {
   ): { scope: string; evidence_id: number | null; success: boolean };
 }
 
-export function normalizeEvidenceForExport(evidence: TrapEvidence): TrapExportEvidence {
-  return {
-    ...evidence,
-    related_files: parseEvidenceRelatedFiles(evidence.related_files),
-  };
-}
-
 export function importTrapArchive(
   records: TrapImportRecord[],
   adapter: TrapArchiveImportAdapter
@@ -36,7 +29,7 @@ export function importTrapArchive(
   let count = 0;
   for (const record of records) {
     try {
-      const result = adapter.add(toTrapInput(record));
+      const result = adapter.add(importRecordToTrapInput(record));
       importEvidenceRecords(record.evidence ?? [], result, adapter);
       count++;
     } catch {
@@ -55,37 +48,11 @@ function importEvidenceRecords(
     try {
       adapter.addEvidence(
         trap.id,
-        buildTrapEvidenceInput(toEvidenceInput(evidence)),
+        importEvidenceToTrapInput(evidence),
         trap.scope
       );
     } catch {
       // Preserve valid trap imports even if one evidence record is malformed.
     }
   }
-}
-
-function toTrapInput(record: TrapImportRecord): TrapInput {
-  return {
-    title: record.title,
-    category: record.category,
-    tags: parseOptionalTrapTags(record.tags),
-    scope: record.scope,
-    context: record.context,
-    mistake: record.mistake,
-    fix: record.fix,
-    before_code: record.before_code ?? undefined,
-    after_code: record.after_code ?? undefined,
-    severity: record.severity ?? undefined,
-    project_path: record.project_path ?? undefined,
-  };
-}
-
-function toEvidenceInput(evidence: TrapImportEvidence): Record<string, unknown> {
-  return {
-    source_type: evidence.source_type,
-    source_ref: evidence.source_ref ?? undefined,
-    observed_at: evidence.observed_at ?? undefined,
-    related_files: parseOptionalEvidenceRelatedFiles(evidence.related_files),
-    note: evidence.note ?? undefined,
-  };
 }

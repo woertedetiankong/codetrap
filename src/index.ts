@@ -56,6 +56,11 @@ function showHelp(): void {
   console.log("  --category <name>       Filter by category");
   console.log("  --mode fts|semantic|hybrid  Search mode");
   console.log("  --status active|superseded|archived|all  Lifecycle filter");
+  console.log("  --path <file>           Filter/boost traps scoped to a file path");
+  console.log("  --module <name>         Filter/boost traps scoped to a module");
+  console.log("  --owner <name>          Filter/boost traps scoped to an owner/team");
+  console.log("  --no-rerank             Disable query-aware search reranking");
+  console.log("  --ranking-signals       Include search ranking diagnostics in JSON cards");
   console.log("  --batch-size <n>        Embedding generation batch size");
   console.log("  --json                  JSON output for search/show/list/stats/doctor; JSON input for add/edit");
   console.log("  --output-json           JSON output for add/edit when --json is used as input");

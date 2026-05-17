@@ -21,6 +21,12 @@ Run from the current project cwd:
 codetrap search "<keywords>" --mode hybrid --json
 ```
 
+For scoped work, pass known file/module/owner context:
+
+```bash
+codetrap search "<keywords>" --path src/db/repository.ts --module db --owner platform --json
+```
+
 Or pipe the query through stdin:
 
 ```bash
@@ -33,7 +39,7 @@ CLI JSON returns compact action cards. Each card includes `avoid`, `do_instead`,
 
 Call the `search_traps` MCP tool when available:
 ```
-search_traps(query="<keywords>", scope=<optional>, category=<optional>, cwd=<optional>)
+search_traps(query="<keywords>", scope=<optional>, category=<optional>, path=<optional>, module=<optional>, owner=<optional>, cwd=<optional>)
 ```
 
 `search_traps` returns compact action cards. Each card includes `avoid`, `do_instead`, and `next_action.details_args` with both `id` and `scope`. Preserve that scope when calling `get_trap`.

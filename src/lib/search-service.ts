@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import * as embeddingQueries from "../db/embedding-queries";
 import * as queries from "../db/queries";
-import type { Trap, TrapSearchResult } from "../domain/trap";
+import type { TrapSearchResult } from "../domain/trap";
 import type { SearchMode, TrapStatus } from "./constants";
 import {
   cosineSimilarity,
@@ -9,6 +9,11 @@ import {
   embeddingConfig,
   type EmbeddingProvider,
 } from "./embedder";
+import {
+  DEFAULT_RANKING_CONFIG,
+  TrapSearchPolicy,
+  type RankingConfig,
+} from "./search-policy";
 
 export interface SearchOptions {
   category?: string;
@@ -16,28 +21,25 @@ export interface SearchOptions {
   limit?: number;
   mode?: SearchMode;
   status?: TrapStatus | "all";
+  path?: string;
+  module?: string;
+  owner?: string;
+  rerank?: boolean;
+  includeRankingSignals?: boolean;
 }
-
-export interface RankingConfig {
-  rrfK: number;
-  semanticMinScore: number;
-  lengthNormAnchor: number;
-}
-
-export const DEFAULT_RANKING_CONFIG: RankingConfig = {
-  rrfK: 60,
-  semanticMinScore: 0.3,
-  lengthNormAnchor: 500,
-};
 
 const DEFAULT_LIMIT = 20;
 
 export class SearchService {
+  private readonly policy: TrapSearchPolicy;
+
   constructor(
     private readonly db: Database,
     private readonly embedder?: EmbeddingProvider,
-    private readonly ranking: RankingConfig = DEFAULT_RANKING_CONFIG
-  ) {}
+    ranking: RankingConfig = DEFAULT_RANKING_CONFIG
+  ) {
+    this.policy = new TrapSearchPolicy(ranking);
+  }
 
   async search(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
     if (!query.trim()) return [];
@@ -56,11 +58,17 @@ export class SearchService {
   }
 
   ftsSearch(query: string, opts: SearchOptions = {}): TrapSearchResult[] {
-    return queries.searchTraps(this.db, query, opts).map((result) => ({
-      ...result,
-      sources: ["fts"],
-      score: ftsScore(result.rank),
-    }));
+    const limit = opts.limit ?? DEFAULT_LIMIT;
+    const searchLimit = this.policy.candidateLimit(opts, limit);
+    const candidates = queries
+      .searchTraps(this.db, query, { ...opts, limit: searchLimit })
+      .filter((result) => this.policy.matchesTrap(result.trap, opts))
+      .map((result) => ({
+        ...result,
+        sources: ["fts"] as ("fts")[],
+        score: ftsScore(result.rank),
+      }));
+    return this.policy.rankResults(candidates, query, opts, limit);
   }
 
   async semanticSearch(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
@@ -78,7 +86,7 @@ export class SearchService {
       status: opts.status,
     });
 
-    return candidates
+    const results = candidates
       .map(({ trap, embedding }) => {
         const score = cosineSimilarity(queryEmbedding, embedding);
         return {
@@ -88,9 +96,11 @@ export class SearchService {
           score,
         };
       })
-      .filter((result) => (result.score ?? 0) >= this.ranking.semanticMinScore)
+      .filter((result) => this.policy.matchesTrap(result.trap, opts))
+      .filter((result) => (result.score ?? 0) >= this.policy.semanticMinScore())
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-      .slice(0, opts.limit ?? DEFAULT_LIMIT);
+      .map((result) => result as TrapSearchResult);
+    return this.policy.rankResults(results, query, opts, opts.limit ?? DEFAULT_LIMIT);
   }
 
   async hybridSearch(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
@@ -100,90 +110,18 @@ export class SearchService {
     try {
       const semanticResults = await this.semanticSearch(query, { ...opts, limit });
       if (semanticResults.length === 0) {
-        return withDiagnostics(ftsResults, {
+        return this.policy.withDiagnostics(ftsResults, {
           code: "semantic_no_candidates",
           message: "Hybrid search used FTS results because no fresh semantic candidates passed the score threshold.",
         });
       }
-      return rrfFuse(ftsResults, semanticResults, limit, this.ranking);
+      return this.policy.fuse(ftsResults, semanticResults, query, opts, limit);
     } catch (error) {
-      return withDiagnostics(ftsResults, semanticDiagnostic(error));
+      return this.policy.withDiagnostics(ftsResults, this.policy.semanticDiagnostic(error));
     }
   }
-}
-
-export function rrfFuse(
-  ftsResults: TrapSearchResult[],
-  semanticResults: TrapSearchResult[],
-  limit = DEFAULT_LIMIT,
-  ranking: RankingConfig = DEFAULT_RANKING_CONFIG
-): TrapSearchResult[] {
-  const byId = new Map<number, TrapSearchResult & { score: number; sources: ("fts" | "semantic")[] }>();
-
-  addRankedResults(byId, ftsResults, "fts", ranking);
-  addRankedResults(byId, semanticResults, "semantic", ranking);
-
-  return [...byId.values()]
-    .map((result) => ({
-      ...result,
-      score: applyLengthNormalization(result.score, result.trap, ranking),
-      rank: applyLengthNormalization(result.score, result.trap, ranking),
-    }))
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-    .slice(0, limit);
-}
-
-function addRankedResults(
-  byId: Map<number, TrapSearchResult & { score: number; sources: ("fts" | "semantic")[] }>,
-  results: TrapSearchResult[],
-  source: "fts" | "semantic",
-  ranking: RankingConfig
-): void {
-  results.forEach((result, index) => {
-    const score = 1 / (ranking.rrfK + index + 1);
-    const existing = byId.get(result.trap.id);
-    if (existing) {
-      existing.score += score;
-      if (!existing.sources.includes(source)) existing.sources.push(source);
-      return;
-    }
-    byId.set(result.trap.id, {
-      ...result,
-      score,
-      sources: [source],
-    });
-  });
-}
-
-function applyLengthNormalization(score: number, trap: Trap, ranking: RankingConfig): number {
-  const length = `${trap.context}\n${trap.mistake}\n${trap.fix}`.length;
-  if (length <= ranking.lengthNormAnchor) return score;
-  return score * Math.sqrt(ranking.lengthNormAnchor / length);
 }
 
 function ftsScore(rank: number): number {
   return Number.isFinite(rank) ? -rank : 0;
-}
-
-function withDiagnostics(
-  results: TrapSearchResult[],
-  diagnostic: { code: string; message: string }
-): TrapSearchResult[] {
-  return results.map((result) => ({
-    ...result,
-    diagnostics: [...(result.diagnostics ?? []), diagnostic],
-  }));
-}
-
-function semanticDiagnostic(error: unknown): { code: string; message: string } {
-  if (error instanceof EmbeddingProviderUnavailableError) {
-    return {
-      code: "semantic_unavailable",
-      message: error.message,
-    };
-  }
-  return {
-    code: "semantic_failed",
-    message: error instanceof Error ? error.message : "Semantic search failed; hybrid search returned FTS results.",
-  };
 }

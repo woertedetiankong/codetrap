@@ -5,7 +5,9 @@
 - 路径：`/Users/superstorm/Documents/Code/windsurf/codetrap`
 - 本次主题：TencentDB-inspired agent memory 架构，以及后续抽出的共享操作层、归档层和 JSON 字段 codec
 
-本笔记用一个小型学习小组的方式复盘刚才写的代码。目标不是记住每一行，而是理解背后的架构思想：为什么要把搜索结果变短、为什么要保留证据、为什么 lifecycle 不应该只是几个随便能改的字段，以及为什么 CLI/MCP 入口要共享同一层操作语义。
+> 2026-05-17 校准：这份笔记记录的是 2026-05-15 的 progressive disclosure / evidence / lifecycle 改造。当前代码已经继续前进到 schema v5：新增 `path_globs`、`module`、`owner`，并抽出 Search Policy、Trap Shape Codec、Scope Context、Trap Mutation Result 和 CLI Command Workflow。读当前架构时请同时看 `CONTEXT.md` 和 `docs/codetrap-ascii-architecture.md`。
+
+本笔记用一个小型学习小组的方式复盘 2026-05-15 写入的代码。目标不是记住每一行，而是理解背后的架构思想：为什么要把搜索结果变短、为什么要保留证据、为什么 lifecycle 不应该只是几个随便能改的字段，以及为什么 CLI/MCP 入口要共享同一层操作语义。
 
 ---
 
@@ -17,7 +19,7 @@
 |---|---|---|
 | `src/domain/trap.ts` | 定义 `TrapActionCard`、`TrapDetails`、`TrapEvidence`、`TrapStatus`，以及 MCP tool schema builders | 先看类型，理解系统有哪些“名词” |
 | `src/lib/constants.ts` | 增加 `TRAP_STATUSES`、`EVIDENCE_SOURCE_TYPES`、`DEFAULT_TRAP_STATUS`，并把 schema version 升到 4 | 看枚举和默认值从哪里来 |
-| `src/db/schema.ts` | v4 migration：给 `traps` 增加 lifecycle 字段，新增 `trap_evidence` 表 | 看数据库结构如何支持 evidence 和 lifecycle |
+| `src/db/schema.ts` | 2026-05-15 的 v4 migration：给 `traps` 增加 lifecycle 字段，新增 `trap_evidence` 表 | 看数据库结构如何支持 evidence 和 lifecycle |
 | `src/db/queries.ts` | 原始 SQL：active 默认过滤、`addTrapEvidence`、`archiveTrap`、`supersedeTrap` transaction | 看最终落库行为和状态不变量 |
 | `src/db/repository.ts` | 单数据库门面：`getDetails`、`addEvidence`、`archive`、`supersede` | 看 raw SQL 如何被包成单库操作 |
 | `src/lib/store.ts` | project/global scope policy：跨 scope 查找、写入、下钻、lifecycle 操作 | 看为什么 `id + scope` 很重要，也看它如何把归档语义委托出去 |
@@ -33,7 +35,7 @@
 | `src/commands/router.ts` | CLI 命令：search/show/add evidence/archive/supersede | 看人类入口如何委托给 `TrapOperations` 再渲染终端输出 |
 | `src/tests/search-result-card.test.ts` | 验证 card 字段、`id + scope`，以及 project/global 同 id 场景 | 看 action card 的架构承诺 |
 | `src/tests/mcp-tools.test.ts` | 验证 MCP `search_traps` 返回 compact card，`get_trap` 返回 details + evidence | 看 agent-facing payload 是否正确 |
-| `src/tests/trap-lifecycle-evidence.test.ts` | 验证 schema v4、active 默认过滤、`status=all`、supersede、evidence 下钻 | 看 lifecycle/evidence 的行为保护 |
+| `src/tests/trap-lifecycle-evidence.test.ts` | 验证 2026-05-15 的 schema v4、active 默认过滤、`status=all`、supersede、evidence 下钻 | 看 lifecycle/evidence 的行为保护 |
 | `src/tests/import-export-cli.test.ts` | 验证 export/import 不丢 evidence，坏 JSON 不冒 stack trace | 看归档层和 CLI 错误处理的保护 |
 | `src/tests/trap-json-fields.test.ts` | 验证 `tags` / `related_files` 的 JSON field codec | 看字段兼容规则如何被锁住 |
 
@@ -63,13 +65,13 @@
 ║  Today's Topic: Progressive Trap Memory               ║
 ╚═══════════════════════════════════════════════════════╝
 
-Teacher Zhang：今天我们学刚刚写进去的这层新架构。简单说，codetrap 现在更像一个“有目录卡片、有档案原件、有版本历史的错题本”。
+Teacher Zhang：本次我们学 2026-05-15 写进去的这层新架构。简单说，codetrap 在这个阶段更像一个“有目录卡片、有档案原件、有版本历史的错题本”。
 
 Xiao Ming：等等，所以它不是只多加几个字段？
 
 Sister Lin：我猜是把“AI 要看的短提醒”和“人要追溯的完整证据”分开？
 
-Teacher Zhang：对，这就是今天最核心的思想。
+Teacher Zhang：对，这就是本次最核心的思想。
 
 ---
 
@@ -83,7 +85,7 @@ Teacher Zhang：不是。它记录的是结构化的 `Trap`：什么时候容易
 
 Sister Lin：像厨房里的“不要把盐当糖”的提醒卡，但背后还可以翻到事故记录？
 
-Teacher Zhang：漂亮。刚才这次改造，就是把“提醒卡”和“事故记录”明确分层。
+Teacher Zhang：漂亮。2026-05-15 这次改造，就是把“提醒卡”和“事故记录”明确分层。
 
 ┌─ New Word ────────────────────────────────────────────┐
 │ Trap：一条结构化的坑。它不是随手备注，而是包含 context、 │
@@ -522,7 +524,7 @@ Teacher Zhang：对。学架构的时候，能把代码和比喻对应起来，�
 
 ---
 
-## 6. 数据库变化：schema v4
+## 6. 数据库变化：2026-05-15 schema v4
 
 新增字段和表在 `src/db/schema.ts`。
 
@@ -607,7 +609,7 @@ Evidence 默认不进入 FTS/embedding passage。也就是说，本次改造没�
   - 验证 `get_trap` 返回 details 和 evidence
 
 - `src/tests/trap-lifecycle-evidence.test.ts`
-  - 验证 schema v4 默认字段
+  - 验证 2026-05-15 schema v4 默认字段
   - 验证 archived/superseded 默认不出现在 search
   - 验证 `status=all` 能查历史
   - 验证 supersede 一次更新两条 trap
@@ -716,7 +718,7 @@ Teacher Zhang：测试像健身房，不只是证明“代码能跑”，更是�
 - `src/lib/trap-search-document.ts`
   - 看为什么 evidence 暂时不进入 embedding passage。
 
-Teacher Zhang：今天你已经抓住了这次改造最重要的架构骨架。别急着背字段，先记住这句话：搜索给行动卡片，下钻给完整证据，共享操作层让入口变薄，归档和 JSON 字段规则各自集中。
+Teacher Zhang：你已经抓住了 2026-05-15 这次改造最重要的架构骨架。别急着背字段，先记住这句话：搜索给行动卡片，下钻给完整证据，共享操作层让入口变薄，归档和 JSON 字段规则各自集中。
 
 ---
 
@@ -1007,7 +1009,7 @@ JSON Field Codec 测试
 
 ## 本次学习总结
 
-Teacher Zhang：今天我们把刚写的代码从“能运行”变成了“能理解”。你现在应该能说清楚：
+Teacher Zhang：2026-05-15 这份笔记把当时刚写的代码从“能运行”变成了“能理解”。你现在应该能说清楚：
 
 - 为什么 `search_traps` 要返回短卡片
 - 为什么 `get_trap` 才展开完整详情和 evidence

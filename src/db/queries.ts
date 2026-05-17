@@ -12,33 +12,37 @@ import {
 } from "../domain/trap";
 import { prepareFTSQuery } from "../lib/fts-query";
 import { normalizeQuery } from "../lib/search-normalizer";
-import { normalizeEvidenceForExport } from "../lib/trap-archive";
-import { encodeEvidenceRelatedFiles, encodeTrapTags } from "../lib/trap-json-fields";
+import {
+  encodeTrapInsertFields,
+  mergeTrapUpdateForSearchText,
+  normalizeEvidenceForExport,
+  normalizeTrapForExport,
+} from "../lib/trap-codec";
+import { encodeEvidenceRelatedFiles, encodeTrapPathGlobs, encodeTrapTags } from "../lib/trap-json-fields";
 import { buildTrapSearchText, passageFieldsChanged, searchTextFieldsChanged } from "../lib/trap-search-document";
 
 export type TrapStatusFilter = TrapStatus | "all";
 export type TrapRecordInsert = Omit<Trap, "id">;
 
 export function insertTrap(db: Database, input: TrapInput): number {
-  const tags = encodeTrapTags(input.tags);
-  const searchText = buildTrapSearchText({ ...input, tags });
+  const fields = encodeTrapInsertFields(input);
   const stmt = db.prepare(`
     INSERT INTO traps (
       title, category, tags, scope, context, mistake, fix, search_text,
       before_code, after_code, severity, state_key, status, supersedes_id,
-      valid_from, valid_until, project_path
+      valid_from, valid_until, project_path, path_globs, module, owner
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     input.title,
     input.category,
-    tags,
+    fields.tags,
     input.scope,
     input.context,
     input.mistake,
     input.fix,
-    searchText,
+    fields.search_text,
     input.before_code ?? null,
     input.after_code ?? null,
     input.severity ?? DEFAULT_SEVERITY,
@@ -46,7 +50,10 @@ export function insertTrap(db: Database, input: TrapInput): number {
     DEFAULT_TRAP_STATUS,
     null,
     null,
-    input.project_path ?? null
+    input.project_path ?? null,
+    fields.path_globs,
+    input.module ?? null,
+    input.owner ?? null
   );
   return Number(result.lastInsertRowid);
 }
@@ -54,7 +61,7 @@ export function insertTrap(db: Database, input: TrapInput): number {
 export function searchTraps(
   db: Database,
   query: string,
-  opts: { category?: string; scope?: string; limit?: number; status?: TrapStatusFilter } = {}
+  opts: { category?: string; scope?: string; limit?: number; status?: TrapStatusFilter; module?: string; owner?: string } = {}
 ): TrapSearchResult[] {
   const prepared = prepareFTSQuery(normalizeQuery(query));
   if (!prepared) return [];
@@ -87,7 +94,7 @@ export function getTrap(db: Database, id: number): Trap | null {
 
 export function listTraps(
   db: Database,
-  opts: { category?: string; scope?: string; limit?: number; offset?: number; status?: TrapStatusFilter } = {}
+  opts: { category?: string; scope?: string; limit?: number; offset?: number; status?: TrapStatusFilter; module?: string; owner?: string } = {}
 ): Trap[] {
   const conditions: string[] = [];
   const params: SQLQueryBindings[] = [];
@@ -109,7 +116,7 @@ export function updateTrap(db: Database, id: number, input: TrapUpdate): boolean
   const current = searchTextFieldsChanged(input) || passageFieldsChanged(input) ? getTrap(db, id) : null;
 
   for (const key of TRAP_UPDATE_FIELDS) {
-    if (key === "tags") continue;
+    if (key === "tags" || key === "path_globs") continue;
     const value = input[key];
     if (value !== undefined) {
       updates.push(`${key} = ?`);
@@ -120,13 +127,13 @@ export function updateTrap(db: Database, id: number, input: TrapUpdate): boolean
     updates.push("tags = ?");
     params.push(encodeTrapTags(input.tags));
   }
+  if (input.path_globs !== undefined) {
+    updates.push("path_globs = ?");
+    params.push(encodeTrapPathGlobs(input.path_globs));
+  }
 
   if (current && searchTextFieldsChanged(input)) {
-    const merged = {
-      ...current,
-      ...input,
-      tags: input.tags !== undefined ? encodeTrapTags(input.tags) : current.tags,
-    };
+    const merged = mergeTrapUpdateForSearchText(current, input);
     updates.push("search_text = ?");
     params.push(buildTrapSearchText(merged));
   }
@@ -261,7 +268,7 @@ export function getStats(db: Database): {
 export function exportTraps(db: Database): TrapExportRecord[] {
   const traps = db.query("SELECT * FROM traps").all() as Trap[];
   return traps.map((trap) => ({
-    ...trap,
+    ...normalizeTrapForExport(trap),
     evidence: listTrapEvidence(db, trap.id).map(normalizeEvidenceForExport),
   }));
 }
@@ -271,7 +278,7 @@ export function exportProjectTrapsByPath(db: Database, projectPath: string): Tra
     .query("SELECT * FROM traps WHERE scope = 'project' AND project_path = ? ORDER BY id")
     .all(projectPath) as Trap[];
   return traps.map((trap) => ({
-    ...trap,
+    ...normalizeTrapForExport(trap),
     evidence: listTrapEvidence(db, trap.id).map(normalizeEvidenceForExport),
   }));
 }
@@ -281,9 +288,10 @@ export function insertTrapRecord(db: Database, record: TrapRecordInsert): number
     INSERT INTO traps (
       title, category, tags, scope, context, mistake, fix, search_text,
       before_code, after_code, severity, state_key, status, supersedes_id,
-      valid_from, valid_until, project_path, hit_count, created_at, updated_at
+      valid_from, valid_until, project_path, path_globs, module, owner,
+      hit_count, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     record.title,
@@ -303,6 +311,9 @@ export function insertTrapRecord(db: Database, record: TrapRecordInsert): number
     record.valid_from,
     record.valid_until,
     record.project_path,
+    record.path_globs,
+    record.module,
+    record.owner,
     record.hit_count,
     record.created_at,
     record.updated_at
@@ -349,7 +360,7 @@ export function countProjectTrapsByPath(db: Database, projectPath: string): numb
 function addTrapFilters(
   conditions: string[],
   params: SQLQueryBindings[],
-  opts: { category?: string; scope?: string; status?: TrapStatusFilter },
+  opts: { category?: string; scope?: string; status?: TrapStatusFilter; module?: string; owner?: string },
   alias?: string
 ): void {
   const prefix = alias ? `${alias}.` : "";
@@ -364,5 +375,13 @@ function addTrapFilters(
   if (opts.status !== "all") {
     conditions.push(`${prefix}status = ?`);
     params.push(opts.status ?? DEFAULT_TRAP_STATUS);
+  }
+  if (opts.module) {
+    conditions.push(`(${prefix}module IS NULL OR ${prefix}module = ?)`);
+    params.push(opts.module);
+  }
+  if (opts.owner) {
+    conditions.push(`(${prefix}owner IS NULL OR ${prefix}owner = ?)`);
+    params.push(opts.owner);
   }
 }

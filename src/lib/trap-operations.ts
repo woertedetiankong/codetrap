@@ -12,15 +12,11 @@ import {
 import type { TrapStore, TrapStats } from "./store";
 import type { SearchMode } from "./constants";
 import { toTrapActionCards } from "./search-result-card";
+import type { AddTrapEvidenceResult, TrapMutationResult } from "./trap-mutation-result";
 
 export type TrapListGroup = { traps: Trap[]; scope: string };
 export type TrapSearchGroup = { results: TrapSearchResult[]; scope: string };
-export type TrapMutationResult = { scope: string; success: boolean };
-export type AddTrapEvidenceResult = {
-  scope: string;
-  evidence_id: number | null;
-  success: boolean;
-};
+export type { AddTrapEvidenceResult, TrapMutationResult };
 
 export type TrapStatsResult = { project: TrapStats | null; global: TrapStats };
 export type EmbeddingStatsResult = ReturnType<TrapStore["embeddingStats"]>;
@@ -32,6 +28,11 @@ export interface SearchTrapsArgs {
   limit?: number;
   mode?: SearchMode;
   status?: string;
+  path?: string;
+  module?: string;
+  owner?: string;
+  rerank?: boolean;
+  includeRankingSignals?: boolean;
 }
 
 export interface ListTrapsArgs {
@@ -40,6 +41,9 @@ export interface ListTrapsArgs {
   limit?: number;
   offset?: number;
   status?: string;
+  path?: string;
+  module?: string;
+  owner?: string;
 }
 
 export class TrapOperations {
@@ -56,6 +60,11 @@ export class TrapOperations {
       limit: args.limit ?? 20,
       mode: args.mode,
       status: parseTrapStatus(args.status),
+      path: args.path,
+      module: args.module,
+      owner: args.owner,
+      rerank: args.rerank,
+      includeRankingSignals: args.includeRankingSignals,
     });
   }
 
@@ -78,6 +87,9 @@ export class TrapOperations {
       status: parseTrapStatus(args.status),
       limit: args.limit ?? 50,
       offset: args.offset,
+      path: args.path,
+      module: args.module,
+      owner: args.owner,
     });
   }
 

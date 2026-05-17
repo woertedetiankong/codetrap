@@ -2,6 +2,7 @@ import type { TrapRecordInsert, TrapRepository } from "../db/repository";
 import type { TrapExportEvidence, TrapExportRecord } from "../domain/trap";
 import { DEFAULT_SEVERITY, DEFAULT_TRAP_STATUS } from "./constants";
 import { buildTrapSearchText } from "./trap-search-document";
+import { encodeTrapPathGlobs } from "./trap-json-fields";
 
 export type TrapTransferMapping = {
   source_id: number;
@@ -67,6 +68,9 @@ function toProjectTransferRecord(record: TrapExportRecord, projectPath: string):
     valid_from: record.valid_from,
     valid_until: record.valid_until,
     project_path: projectPath,
+    path_globs: encodeTrapPathGlobs(record.path_globs),
+    module: record.module,
+    owner: record.owner,
     hit_count: record.hit_count ?? 0,
     created_at: record.created_at,
     updated_at: record.updated_at,

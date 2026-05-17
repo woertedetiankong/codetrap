@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,6 +20,9 @@ describe("CLI JSON contract", () => {
         fix: "Use fetchWrapper and follow the HTTP request convention.",
         tags: ["http", "fetch"],
         severity: "error",
+        path_globs: ["src/api/**"],
+        module: "api",
+        owner: "platform",
       }),
       "--output-json",
     ], cwd, home);
@@ -62,12 +65,16 @@ describe("CLI JSON contract", () => {
     const details = JSON.parse(show.stdout);
     expect(details.scope).toBe("project");
     expect(details.trap.tags).toEqual(["http", "fetch"]);
+    expect(details.trap.path_globs).toEqual(["src/api/**"]);
+    expect(details.trap.module).toBe("api");
+    expect(details.trap.owner).toBe("platform");
     expect(details.evidence[0].related_files).toEqual(["src/api.ts", "src/http.ts"]);
 
     const list = runCli(["list", "--scope", "project", "--json"], cwd, home);
     expect(list.exitCode).toBe(0);
     const traps = JSON.parse(list.stdout);
     expect(traps[0].tags).toEqual(["http", "fetch"]);
+    expect(traps[0].path_globs).toEqual(["src/api/**"]);
 
     const stats = runCli(["stats", "--json"], cwd, home);
     expect(stats.exitCode).toBe(0);
@@ -129,6 +136,144 @@ describe("CLI JSON contract", () => {
       fallback_reason: "semantic_unavailable",
     });
   });
+
+  test("mutation commands expose machine-readable JSON results", () => {
+    const cwd = tempProjectDir("codetrap-cli-mutation-json-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const add = runCli([
+      "add",
+      "--json",
+      JSON.stringify({
+        title: "Archive stale API convention",
+        category: "api",
+        scope: "project",
+        context: "When an API convention is replaced.",
+        mistake: "Deleting the old trap loses history.",
+        fix: "Archive or supersede it instead.",
+        severity: "warning",
+      }),
+      "--output-json",
+    ], cwd, home);
+    const first = JSON.parse(add.stdout);
+
+    const edit = runCli([
+      "edit",
+      String(first.id),
+      "--scope",
+      "project",
+      "--json",
+      JSON.stringify({
+        path_globs: ["src/lifecycle/**"],
+        module: "lifecycle",
+        owner: "docs",
+      }),
+      "--output-json",
+    ], cwd, home);
+    expect(JSON.parse(edit.stdout)).toMatchObject({
+      id: first.id,
+      scope: "project",
+      success: true,
+    });
+
+    const evidence = runCli([
+      "add_trap_evidence",
+      String(first.id),
+      "--scope",
+      "project",
+      "--source_type",
+      "manual",
+      "--output-json",
+    ], cwd, home);
+    expect(JSON.parse(evidence.stdout)).toMatchObject({
+      id: first.id,
+      scope: "project",
+      success: true,
+    });
+
+    const archive = runCli(["archive", String(first.id), "--scope", "project", "--json"], cwd, home);
+    expect(JSON.parse(archive.stdout)).toMatchObject({
+      id: first.id,
+      scope: "project",
+      success: true,
+      status: "archived",
+    });
+
+    const missing = runCli(["delete", "404", "--scope", "project", "--json"], cwd, home);
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stderr).toBe("");
+    expect(JSON.parse(missing.stdout)).toMatchObject({
+      id: 404,
+      scope: "project",
+      success: false,
+      error: "Trap #404 not found.",
+    });
+  });
+
+  test("config defaults and applicability filters shape search results", () => {
+    const cwd = tempProjectDir("codetrap-cli-config-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    mkdirSync(join(home, ".codetrap"), { recursive: true });
+    writeFileSync(join(home, ".codetrap", "config.json"), JSON.stringify({
+      search: {
+        mode: "fts",
+        limit: 1,
+        scope: "project",
+        rerank: true,
+      },
+    }));
+
+    runCli([
+      "add",
+      "--json",
+      JSON.stringify({
+        title: "Use db transaction helper",
+        category: "database",
+        scope: "project",
+        context: "When editing repository writes.",
+        mistake: "Writing multiple rows without the transaction helper.",
+        fix: "Use the db transaction helper.",
+        tags: ["db"],
+        path_globs: ["src/db/**"],
+        module: "db",
+        owner: "platform",
+        severity: "error",
+      }),
+    ], cwd, home);
+    runCli([
+      "add",
+      "--json",
+      JSON.stringify({
+        title: "Use API envelope helper",
+        category: "api",
+        scope: "project",
+        context: "When editing API responses.",
+        mistake: "Returning raw data.",
+        fix: "Use the API envelope helper.",
+        tags: ["api"],
+        path_globs: ["src/api/**"],
+        module: "api",
+        severity: "warning",
+      }),
+    ], cwd, home);
+
+    const search = runCli([
+      "search",
+      "helper",
+      "--path",
+      "src/db/repository.ts",
+      "--module",
+      "db",
+      "--owner",
+      "platform",
+      "--ranking-signals",
+      "--json",
+    ], cwd, home);
+    expect(search.exitCode).toBe(0);
+    const cards = JSON.parse(search.stdout);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].title).toBe("Use db transaction helper");
+    expect(cards[0].ranking_signals.map((signal: { code: string }) => signal.code)).toContain("path_scope_match");
+  });
 });
 
 function tempProjectDir(prefix: string): string {
@@ -145,6 +290,10 @@ function runCli(args: string[], cwd: string, home: string, stdin?: string) {
       ...process.env,
       HOME: home,
       JINA_API_KEY: "",
+      CODETRAP_SEARCH_MODE: "",
+      CODETRAP_SEARCH_LIMIT: "",
+      CODETRAP_SEARCH_SCOPE: "",
+      CODETRAP_RERANK: "",
     },
     stdin: stdin === undefined ? "ignore" : new TextEncoder().encode(stdin),
     stdout: "pipe",

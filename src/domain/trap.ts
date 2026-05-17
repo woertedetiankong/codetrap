@@ -30,6 +30,9 @@ export interface Trap {
   valid_from: string;
   valid_until: string | null;
   project_path: string | null;
+  path_globs: string;
+  module: string | null;
+  owner: string | null;
   hit_count: number;
   created_at: string;
   updated_at: string;
@@ -47,6 +50,9 @@ export interface TrapInput {
   after_code?: string;
   severity?: string;
   project_path?: string | null;
+  path_globs?: string[];
+  module?: string | null;
+  owner?: string | null;
 }
 
 export interface TrapSearchResult {
@@ -55,6 +61,13 @@ export interface TrapSearchResult {
   sources?: ("fts" | "semantic")[];
   score?: number;
   diagnostics?: { code: string; message: string }[];
+  ranking_signals?: RankingSignal[];
+}
+
+export interface RankingSignal {
+  code: string;
+  weight: number;
+  detail?: string;
 }
 
 export interface TrapActionCard {
@@ -67,6 +80,7 @@ export interface TrapActionCard {
   severity: string;
   score: number | null;
   sources: ("fts" | "semantic")[];
+  ranking_signals?: RankingSignal[];
   next_action: {
     details_tool: "get_trap";
     details_args: {
@@ -101,7 +115,8 @@ export interface TrapExportEvidence extends Omit<TrapEvidence, "related_files"> 
   related_files: string[];
 }
 
-export interface TrapExportRecord extends Trap {
+export interface TrapExportRecord extends Omit<Trap, "path_globs"> {
+  path_globs: string[];
   evidence: TrapExportEvidence[];
 }
 
@@ -110,11 +125,12 @@ export type TrapImportEvidence = Partial<Omit<TrapEvidence, "related_files">> & 
   related_files?: string[] | string | null;
 };
 
-export type TrapImportRecord = Omit<TrapInput, "tags" | "before_code" | "after_code" | "project_path"> & {
+export type TrapImportRecord = Omit<TrapInput, "tags" | "before_code" | "after_code" | "project_path" | "path_globs"> & {
   tags?: string[] | string | null;
   before_code?: string | null;
   after_code?: string | null;
   project_path?: string | null;
+  path_globs?: string[] | string | null;
   evidence?: TrapImportEvidence[];
 };
 
@@ -168,6 +184,9 @@ export const TRAP_UPDATE_FIELDS = [
   "before_code",
   "after_code",
   "severity",
+  "path_globs",
+  "module",
+  "owner",
 ] as const;
 
 export const TRAP_INPUT_SCHEMA_PROPERTIES = {
@@ -185,6 +204,13 @@ export const TRAP_INPUT_SCHEMA_PROPERTIES = {
   before_code: { type: "string", description: "Example of wrong code (optional)" },
   after_code: { type: "string", description: "Example of correct code (optional)" },
   severity: { type: "string", enum: [...SEVERITIES] as string[], description: "How severe is this pitfall?" },
+  path_globs: {
+    type: "array",
+    items: { type: "string" },
+    description: "Optional file globs where this trap applies, for example src/db/**",
+  },
+  module: { type: "string", description: "Optional module or subsystem where this trap applies" },
+  owner: { type: "string", description: "Optional team or owner for this trap" },
 } satisfies Record<keyof Omit<TrapInput, "project_path">, JsonSchemaProperty>;
 
 export function trapInputSchema() {
@@ -270,6 +296,9 @@ export function buildTrapInput(args: Record<string, any>): TrapInput {
     before_code: args.before_code,
     after_code: args.after_code,
     severity: args.severity ?? DEFAULT_SEVERITY,
+    path_globs: Array.isArray(args.path_globs) ? args.path_globs.map(String) : args.path_globs,
+    module: args.module,
+    owner: args.owner,
   };
 }
 

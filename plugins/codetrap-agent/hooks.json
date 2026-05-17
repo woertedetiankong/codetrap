@@ -1,0 +1,11 @@
+{
+  "description": "Example codetrap hook bundle. Treat these commands as templates for clients with hook support.",
+  "pre_edit": {
+    "description": "Before non-trivial edits, search local pitfalls from the target project cwd.",
+    "command": "codetrap search \"$CODETRAP_QUERY\" --mode hybrid --json"
+  },
+  "post_task": {
+    "description": "After repeated failures or user corrections, propose a structured trap; write only after user confirmation.",
+    "command": "codetrap add --json '{...}' --output-json"
+  }
+}

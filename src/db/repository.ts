@@ -19,6 +19,7 @@ import { runEmbeddingJob } from "../lib/embedding-job";
 import { passageFieldsChanged } from "../lib/trap-search-document";
 import * as queries from "./queries";
 import type { TrapStatus } from "../lib/constants";
+import { TrapSearchPolicy } from "../lib/search-policy";
 
 export type TrapStats = ReturnType<typeof queries.getStats>;
 export type EmbeddingStateCounts = ReturnType<typeof embeddingQueries.getEmbeddingStateCounts>;
@@ -26,6 +27,7 @@ export type TrapRecordInsert = queries.TrapRecordInsert;
 
 export class TrapRepository {
   private readonly searchService: SearchService;
+  private readonly searchPolicy = new TrapSearchPolicy();
 
   constructor(
     private readonly db: Database,
@@ -56,8 +58,13 @@ export class TrapRepository {
     };
   }
 
-  list(opts: { category?: string; scope?: string; limit?: number; offset?: number; status?: TrapStatus | "all" } = {}): Trap[] {
-    return queries.listTraps(this.db, opts);
+  list(opts: { category?: string; scope?: string; limit?: number; offset?: number; status?: TrapStatus | "all"; path?: string; module?: string; owner?: string } = {}): Trap[] {
+    const limit = opts.limit ?? 50;
+    const queryLimit = opts.path ? Math.max(limit * 5, 250) : limit;
+    return queries
+      .listTraps(this.db, { ...opts, limit: queryLimit })
+      .filter((trap) => this.searchPolicy.matchesTrap(trap, opts))
+      .slice(0, limit);
   }
 
   update(id: number, input: TrapUpdate): boolean {

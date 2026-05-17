@@ -20,6 +20,9 @@ describe("MCP tool payloads", () => {
       fix: "Use fetchWrapper and follow the HTTP request convention.",
       tags: ["http"],
       severity: "error",
+      path_globs: ["src/api/**"],
+      module: "api",
+      owner: "platform",
     });
     store.addEvidence(added.id, {
       source_type: "commit",
@@ -32,6 +35,10 @@ describe("MCP tool payloads", () => {
       query: "fetchWrapper",
       scope: "project",
       mode: "fts",
+      path: "src/api/client.ts",
+      module: "api",
+      owner: "platform",
+      ranking_signals: true,
     });
     const cards = JSON.parse(searchResponse.content[0].text);
 
@@ -47,6 +54,7 @@ describe("MCP tool payloads", () => {
         details_args: { id: added.id, scope: "project" },
       },
     });
+    expect(cards[0].ranking_signals.map((signal: { code: string }) => signal.code)).toContain("path_scope_match");
     expect(cards[0].context).toBeUndefined();
     expect(cards[0].mistake).toBeUndefined();
     expect(cards[0].fix).toBeUndefined();
@@ -66,6 +74,9 @@ describe("MCP tool payloads", () => {
       fix: "Use fetchWrapper and follow the HTTP request convention.",
     });
     expect(details.trap.tags).toEqual(["http"]);
+    expect(details.trap.path_globs).toEqual(["src/api/**"]);
+    expect(details.trap.module).toBe("api");
+    expect(details.trap.owner).toBe("platform");
     expect(details.evidence).toHaveLength(1);
     expect(details.evidence[0]).toMatchObject({
       trap_id: added.id,
@@ -139,5 +150,29 @@ describe("MCP tool payloads", () => {
     const details = JSON.parse(detail.contents[0].text);
     expect(details.trap.tags).toEqual(["json", "mcp"]);
     expect(details.evidence[0].related_files).toEqual(["src/mcp/server.ts"]);
+  });
+
+  test("resources can resolve project scope from a cwd query parameter", () => {
+    const serverCwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-resource-server-"));
+    const projectCwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-resource-project-"));
+    mkdirSync(join(projectCwd, ".codetrap"));
+
+    const serverStore = new TrapStore(serverCwd, undefined);
+    const projectStore = new TrapStore(projectCwd, undefined);
+    const added = projectStore.add({
+      title: "Resolve resources from cwd",
+      category: "convention",
+      scope: "project",
+      context: "When reading MCP resources across projects.",
+      mistake: "Using the server startup cwd can show the wrong project.",
+      fix: "Pass cwd as a resource query parameter when the client can provide it.",
+      tags: ["mcp", "cwd"],
+      severity: "error",
+    });
+
+    const uri = `codetrap://project/trap/${added.id}?cwd=${encodeURIComponent(projectCwd)}`;
+    const detail = handleResourceRead(serverStore, uri);
+    const details = JSON.parse(detail.contents[0].text);
+    expect(details.trap.title).toBe("Resolve resources from cwd");
   });
 });

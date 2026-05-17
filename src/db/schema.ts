@@ -140,6 +140,41 @@ function applyMigrations(db: Database, from: number): void {
 
     db.prepare("UPDATE schema_version SET version = ?").run(4);
   }
+
+  if (from < 5) {
+    if (!columnExists(db, "traps", "path_globs")) {
+      db.exec("ALTER TABLE traps ADD COLUMN path_globs TEXT NOT NULL DEFAULT '[]'");
+    }
+    if (!columnExists(db, "traps", "module")) {
+      db.exec("ALTER TABLE traps ADD COLUMN module TEXT");
+    }
+    if (!columnExists(db, "traps", "owner")) {
+      db.exec("ALTER TABLE traps ADD COLUMN owner TEXT");
+    }
+
+    const rows = db
+      .query("SELECT id, title, context, mistake, fix, tags, before_code, after_code, path_globs, module, owner FROM traps")
+      .all() as {
+      id: number;
+      title: string;
+      context: string;
+      mistake: string;
+      fix: string;
+      tags: string;
+      before_code: string | null;
+      after_code: string | null;
+      path_globs: string;
+      module: string | null;
+      owner: string | null;
+    }[];
+
+    const update = db.prepare("UPDATE traps SET search_text = ? WHERE id = ?");
+    for (const row of rows) {
+      update.run(buildTrapSearchText(row), row.id);
+    }
+
+    db.prepare("UPDATE schema_version SET version = ?").run(5);
+  }
 }
 
 function columnExists(db: Database, table: string, column: string): boolean {

@@ -43,6 +43,12 @@ Trap operations are the shared execution layer for CLI and MCP trap commands. Th
 
 CLI and MCP adapters should call `TrapOperations` instead of duplicating Trap operation semantics. The adapters still own argument parsing, terminal rendering, MCP JSON text payloads, and process exit behavior.
 
+### Trap Mutation Result
+
+Trap mutation result is the transport-neutral result shape for write workflows such as update, delete, evidence, archive, and supersede. It records whether a mutation succeeded and which scope was attempted or matched.
+
+`src/lib/trap-mutation-result.ts` owns scoped mutation fallback semantics and machine-readable mutation payload normalization. CLI and MCP adapters render this result, but they should not duplicate project-first fallback or not-found result rules.
+
 ### Trap Archive
 
 Trap archive is the import/export format and compatibility layer. It preserves traps and trap evidence, handles JSON-string fields such as `tags` and `related_files`, and remaps imported evidence onto the new trap IDs created during import.
@@ -59,7 +65,13 @@ Trap transfer lives in `src/lib/trap-transfer.ts`. It is separate from Trap Arch
 
 Trap JSON field codec owns the conversion rules for Trap fields that are stored as JSON strings in SQLite but exposed as string arrays at module interfaces.
 
-`tags` and trap evidence `related_files` must be encoded/parsed through `src/lib/trap-json-fields.ts`. This keeps canonical JSON arrays, legacy raw strings, and empty values consistent across storage, search documents, archive import/export, and CLI formatting.
+`tags`, `path_globs`, and trap evidence `related_files` must be encoded/parsed through `src/lib/trap-json-fields.ts`. This keeps canonical JSON arrays, legacy raw strings, and empty values consistent across storage, search documents, archive import/export, and CLI formatting.
+
+### Trap Shape Codec
+
+Trap shape codec owns whole-record conversion between storage shape, public JSON shape, archive shape, and import shape.
+
+`src/lib/trap-codec.ts` is the deepened Module for these conversions. Callers should use it instead of individually parsing `tags`, `path_globs`, or `related_files` when converting an entire trap or evidence record.
 
 ### Scope
 
@@ -71,6 +83,12 @@ codetrap stores traps in two scopes:
 Project scope is resolved from the current working directory by walking upward until `.codetrap/` is found. If no project root exists, project-scoped writes fail and callers should either run `codetrap init` or use `global`.
 
 The global home store `~/.codetrap/` must not be treated as a project root.
+
+### Scope Context
+
+Scope context resolves cwd, project root, project/global database paths, and lazily selected repositories for a given execution cwd.
+
+`src/lib/scope-context.ts` owns cwd-specific repository selection for `TrapStore`, MCP tool calls, and MCP resource reads. This keeps project/global lookup rules in one Module while `TrapStore` remains the scope policy Interface used by operations.
 
 ### Storage
 
@@ -89,6 +107,12 @@ By default, search checks project scope first when a project exists, then global
 
 Chinese and mixed-language search are implemented through derived `search_text`, CJK bigram expansion, and a Chinese-English synonym map before FTS query compilation.
 
+### Search Policy
+
+Search policy owns applicability filtering, overfetch decisions, generic reranking, ranking signals, RRF fusion, and hybrid fallback diagnostics.
+
+`src/lib/search-policy.ts` sits behind `SearchService`. Retrieval Modules can fetch FTS or semantic candidates, while the policy Module decides path/module/owner applicability, exact title/tag/code identifier boosts, severity boosts, and whether ranking signals are exposed.
+
 Implemented retrieval and agent-memory reference notes live in `docs/agent-memory-reference-analysis.md`. The next CLI-first product direction lives in `docs/codetrap-optimization-roadmap.zh-CN.md`.
 
 ## Adapter Rules
@@ -101,9 +125,10 @@ The CLI is optimized for direct terminal use.
 - `search` renders action cards; `show` renders full `TrapDetails`.
 - `search/show/list/stats/doctor --json` are the stable machine-readable agent surface.
 - `search --json` can read the query from stdin when there is no positional query.
-- `add` and `edit` accept structured `--json` input; use `--output-json` for machine-readable mutation output.
+- `add` and `edit` accept structured `--json` input; use `--output-json` for their machine-readable mutation output. `delete/archive/supersede/import --json` and `add_trap_evidence --output-json` also return machine-readable mutation results.
 - `add_trap_evidence`, `archive_trap`, and `supersede_trap` expose evidence and lifecycle operations.
 - `repair-scope` and `migrate-project` safely move project-scoped traps between DB files. They default to dry-run, require `--apply` to mutate, back up DBs first, and never move true global traps.
+- `src/commands/router.ts` is the thin CLI Adapter. Command behavior lives in `src/commands/workflow.ts`, which returns `CommandResult` values before terminal rendering.
 
 ### MCP Server
 
@@ -151,12 +176,15 @@ src/
     scope-migration.ts  -- repair-scope / migrate-project planning and apply logic
     store.ts            -- TrapStore: project/global scope policy
     trap-operations.ts  -- shared CLI/MCP Trap operation execution
+    trap-mutation-result.ts -- shared mutation result and scoped fallback semantics
     output-json.ts      -- shared CLI/MCP JSON presenters
     doctor.ts           -- doctor diagnostic report
     embedding-health.ts -- embedding freshness and fallback summaries
     trap-archive.ts     -- Trap archive import/export compatibility
+    trap-codec.ts       -- whole Trap shape conversion for JSON/archive/storage inputs
     trap-transfer.ts    -- DB-to-DB Trap transfer for scope repair/migration
-    trap-json-fields.ts -- JSON string-array codec for tags/related_files
+    trap-json-fields.ts -- JSON string-array codec for tags/path_globs/related_files
+    search-policy.ts    -- applicability filtering, rerank, fusion, ranking diagnostics
     search-result-card.ts -- compact action-card builder
     format.ts           -- CLI formatting helpers
   db/
@@ -165,7 +193,8 @@ src/
     queries.ts          -- raw SQL operations
     repository.ts       -- TrapRepository class wrapping queries
   commands/
-    router.ts           -- CLI command dispatch
+    router.ts           -- thin CLI adapter and result renderer
+    workflow.ts         -- CLI command workflow behavior
   mcp/
     server.ts           -- MCP server (stdio transport)
     tools.ts            -- MCP tool schemas
@@ -205,8 +234,13 @@ Based on `docs/codetrap-optimization-roadmap.zh-CN.md`.
 - Scope repair/migration via `repair-scope` and `migrate-project`.
 - Embedding health summaries in `stats --json` and `doctor --json`.
 - StickS3 search eval fixture with Recall@3/Recall@5 gates.
+- Mutation JSON for delete/archive/supersede/evidence/import.
+- Schema v5 path/module/owner scoped traps.
+- Generic reranking with MRR observation and ranking signals.
+- `~/.codetrap/config.json` search defaults with env fallback.
+- MCP resource `?cwd=` project resolution.
+- Codex plugin/onboarding scaffold and release preflight script.
+- Architecture deepening for Search Policy, Trap Shape Codec, Scope Context, Trap Mutation Result, and CLI Command Workflow.
 
 **Next priorities:**
-- Tune ranking with exact token/tag/severity boosts and MRR observation.
 - Add local embedding provider after CLI JSON, evals, and doctor remain stable.
-- Explore post-flight trap capture and path/module scoped traps later.

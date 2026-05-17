@@ -1,5 +1,4 @@
-import { openGlobal, openProject } from "../db/connection";
-import { TrapRepository, type TrapStats } from "../db/repository";
+import type { TrapStats } from "../db/repository";
 import {
   type Trap,
   type TrapDetails,
@@ -13,8 +12,13 @@ import {
 import type { SearchMode, TrapStatus } from "./constants";
 import { createDefaultEmbeddingProvider, embeddingConfig, type EmbeddingConfig, type EmbeddingProvider } from "./embedder";
 import { summarizeEmbeddingState, type EmbeddingStateSummary, type EmbeddingStatsResult } from "./embedding-health";
-import { findProjectRoot } from "./scope";
+import { normalizeScope, ScopedRepositoryContext, type ScopedRepository } from "./scope-context";
 import { importTrapArchive } from "./trap-archive";
+import {
+  resolveScopedMutation,
+  type AddTrapEvidenceResult,
+  type TrapMutationResult,
+} from "./trap-mutation-result";
 
 export {
   type TrapInput,
@@ -27,50 +31,51 @@ export {
   type TrapStats,
 };
 
-type Scope = "project" | "global";
-
 export type { EmbeddingStateSummary };
 export type TrapEmbeddingStats = EmbeddingStatsResult;
 
 export class TrapStore {
-  private projectRoot: string | null;
-  private globalRepository?: TrapRepository;
-  private projectRepository?: TrapRepository;
+  private readonly scopes: ScopedRepositoryContext;
   private readonly embedder?: EmbeddingProvider;
 
   constructor(cwd: string, embedder: EmbeddingProvider | undefined = createDefaultEmbeddingProvider()) {
-    this.projectRoot = findProjectRoot(cwd);
     this.embedder = embedder;
+    this.scopes = new ScopedRepositoryContext(cwd, embedder);
   }
 
   add(input: TrapInput): { id: number; scope: string } {
     const scope = normalizeScope(input.scope);
-    if (scope === "project" && !this.projectRoot) {
+    if (scope === "project" && !this.scopes.hasProject()) {
       throw new Error("Not in a project. Run 'codetrap init' first, or use --scope global.");
     }
 
-    const id = this.repositoryFor(scope).add({
+    const id = this.scopes.repositoryFor(scope).add({
       ...input,
       scope,
-      project_path: scope === "project" ? this.projectRoot : null,
+      project_path: scope === "project" ? this.scopes.projectRoot() : null,
     });
     return { id, scope };
   }
 
   async search(
     query: string,
-    opts: { category?: string; scope?: string; limit?: number; mode?: SearchMode; status?: TrapStatus | "all" } = {}
+    opts: { category?: string; scope?: string; limit?: number; mode?: SearchMode; status?: TrapStatus | "all"; path?: string; module?: string; owner?: string; rerank?: boolean; includeRankingSignals?: boolean } = {}
   ): Promise<{ results: TrapSearchResult[]; scope: string }[]> {
     const out: { results: TrapSearchResult[]; scope: string }[] = [];
     const limit = opts.limit ?? 20;
 
-    for (const scoped of this.repositoriesForRead(opts.scope)) {
+    for (const scoped of this.scopes.repositoriesForRead(opts.scope)) {
       const results = await scoped.repository.search(query, {
         category: opts.category,
         scope: scoped.scope,
         limit,
         mode: opts.mode ?? "hybrid",
         status: opts.status,
+        path: opts.path,
+        module: opts.module,
+        owner: opts.owner,
+        rerank: opts.rerank,
+        includeRankingSignals: opts.includeRankingSignals,
       });
       if (results.length > 0) out.push({ results, scope: scoped.scope });
     }
@@ -79,7 +84,7 @@ export class TrapStore {
   }
 
   get(id: number, scope?: string): { trap: Trap; scope: string } | null {
-    for (const scoped of this.repositoriesForRead(scope)) {
+    for (const scoped of this.scopes.repositoriesForRead(scope)) {
       const trap = scoped.repository.get(id);
       if (trap) return { trap, scope: scoped.scope };
     }
@@ -87,17 +92,17 @@ export class TrapStore {
   }
 
   getDetails(id: number, scope?: string): TrapDetails | null {
-    for (const scoped of this.repositoriesForRead(scope)) {
+    for (const scoped of this.scopes.repositoriesForRead(scope)) {
       const details = scoped.repository.getDetails(id, scoped.scope);
       if (details) return details;
     }
     return null;
   }
 
-  list(opts: { category?: string; scope?: string; limit?: number; offset?: number; status?: TrapStatus | "all" } = {}): { traps: Trap[]; scope: string }[] {
+  list(opts: { category?: string; scope?: string; limit?: number; offset?: number; status?: TrapStatus | "all"; path?: string; module?: string; owner?: string } = {}): { traps: Trap[]; scope: string }[] {
     const out: { traps: Trap[]; scope: string }[] = [];
 
-    for (const scoped of this.repositoriesForRead(opts.scope)) {
+    for (const scoped of this.scopes.repositoriesForRead(opts.scope)) {
       const traps = scoped.repository.list({ ...opts, scope: scoped.scope });
       if (traps.length > 0) out.push({ traps, scope: scoped.scope });
     }
@@ -105,36 +110,36 @@ export class TrapStore {
     return out;
   }
 
-  update(id: number, input: TrapUpdate, scope?: string): { scope: string; success: boolean } {
-    for (const scoped of this.repositoriesForWrite(scope)) {
-      const success = scoped.repository.update(id, input);
-      if (success || scope) return { scope: scoped.scope, success };
-    }
-    return { scope: "global", success: false };
+  update(id: number, input: TrapUpdate, scope?: string): TrapMutationResult {
+    return this.resolveMutation(scope, (scoped) => ({
+      success: scoped.repository.update(id, input),
+    }));
   }
 
-  delete(id: number, scope?: string): { scope: string; success: boolean } {
-    for (const scoped of this.repositoriesForWrite(scope)) {
-      const success = scoped.repository.delete(id);
-      if (success || scope) return { scope: scoped.scope, success };
-    }
-    return { scope: "global", success: false };
+  delete(id: number, scope?: string): TrapMutationResult {
+    return this.resolveMutation(scope, (scoped) => ({
+      success: scoped.repository.delete(id),
+    }));
   }
 
-  addEvidence(id: number, input: TrapEvidenceInput, scope?: string): { scope: string; evidence_id: number | null; success: boolean } {
-    for (const scoped of this.repositoriesForWrite(scope)) {
+  addEvidence(id: number, input: TrapEvidenceInput, scope?: string): AddTrapEvidenceResult {
+    return this.resolveMutation(
+      scope,
+      (scoped) => {
       const evidenceId = scoped.repository.addEvidence(id, input);
-      if (evidenceId || scope) return { scope: scoped.scope, evidence_id: evidenceId, success: evidenceId !== null };
-    }
-    return { scope: "global", evidence_id: null, success: false };
+        return {
+          evidence_id: evidenceId,
+          success: evidenceId !== null,
+        };
+      },
+      () => ({ evidence_id: null, success: false })
+    );
   }
 
-  archive(id: number, scope?: string): { scope: string; success: boolean } {
-    for (const scoped of this.repositoriesForWrite(scope)) {
-      const success = scoped.repository.archive(id);
-      if (success || scope) return { scope: scoped.scope, success };
-    }
-    return { scope: "global", success: false };
+  archive(id: number, scope?: string): TrapMutationResult {
+    return this.resolveMutation(scope, (scoped) => ({
+      success: scoped.repository.archive(id),
+    }));
   }
 
   supersede(
@@ -142,16 +147,14 @@ export class TrapStore {
     supersededById: number,
     scope?: string,
     stateKey?: string
-  ): { scope: string; success: boolean } {
-    for (const scoped of this.repositoriesForWrite(scope)) {
-      const success = scoped.repository.supersede(id, supersededById, stateKey);
-      if (success || scope) return { scope: scoped.scope, success };
-    }
-    return { scope: "global", success: false };
+  ): TrapMutationResult {
+    return this.resolveMutation(scope, (scoped) => ({
+      success: scoped.repository.supersede(id, supersededById, stateKey),
+    }));
   }
 
   hit(id: number, scope?: string): void {
-    for (const scoped of this.repositoriesForRead(scope)) {
+    for (const scoped of this.scopes.repositoriesForRead(scope)) {
       if (scope || scoped.repository.get(id)) {
         scoped.repository.hit(id);
         return;
@@ -161,28 +164,28 @@ export class TrapStore {
 
   topTraps(scope: string, limit = 20): Trap[] {
     const resolvedScope = normalizeScope(scope);
-    return this.repositoryFor(resolvedScope).top(resolvedScope, limit);
+    return this.scopes.repositoryFor(resolvedScope).top(resolvedScope, limit);
   }
 
   stats(): { project: TrapStats | null; global: TrapStats } {
-    const project = this.projectRoot ? this.projectRepo().stats() : null;
-    return { project, global: this.globalRepo().stats() };
+    const project = this.scopes.repositoryEntry("project")?.repository.stats() ?? null;
+    return { project, global: this.scopes.repositoryFor("global").stats() };
   }
 
   embeddingStats(): TrapEmbeddingStats {
     const config = this.embeddingConfig();
-    const project = this.projectRoot
-      ? summarizeEmbeddingState(this.projectRepo().embeddingStats(config), config)
+    const project = this.scopes.repositoryEntry("project")
+      ? summarizeEmbeddingState(this.scopes.repositoryFor("project").embeddingStats(config), config)
       : null;
     return {
       project,
-      global: summarizeEmbeddingState(this.globalRepo().embeddingStats(config), config),
+      global: summarizeEmbeddingState(this.scopes.repositoryFor("global").embeddingStats(config), config),
     };
   }
 
   exportAll(opts: { scope?: string } = {}): TrapExportRecord[] {
     const traps: TrapExportRecord[] = [];
-    for (const scoped of this.repositoriesForRead(opts.scope)) {
+    for (const scoped of this.scopes.repositoriesForRead(opts.scope)) {
       traps.push(...scoped.repository.exportAll());
     }
     return traps;
@@ -196,11 +199,11 @@ export class TrapStore {
   }
 
   hasProject(): boolean {
-    return this.projectRoot !== null;
+    return this.scopes.hasProject();
   }
 
   getProjectRoot(): string | null {
-    return this.projectRoot;
+    return this.scopes.projectRoot();
   }
 
   hasEmbeddingProvider(): boolean {
@@ -226,7 +229,7 @@ export class TrapStore {
     let skipped = 0;
     let batches = 0;
 
-    for (const scoped of this.repositoriesForRead(opts.scope)) {
+    for (const scoped of this.scopes.repositoriesForRead(opts.scope)) {
       const result = await scoped.repository.ensureEmbeddings({
         scope: scoped.scope,
         category: opts.category,
@@ -243,57 +246,16 @@ export class TrapStore {
     return { generated, skipped, batches, scopes };
   }
 
-  private repositoriesForRead(scope?: string): { scope: Scope; repository: TrapRepository }[] {
-    const resolvedScope = optionalScope(scope);
-    if (resolvedScope) return this.repositoryEntry(resolvedScope) ? [this.repositoryEntry(resolvedScope)!] : [];
-
-    const repositories: { scope: Scope; repository: TrapRepository }[] = [];
-    const project = this.repositoryEntry("project");
-    if (project) repositories.push(project);
-    repositories.push({ scope: "global", repository: this.globalRepo() });
-    return repositories;
+  private resolveMutation<TExtra extends object = {}>(
+    scope: string | undefined,
+    mutate: (scoped: ScopedRepository) => { success: boolean } & TExtra,
+    fallback: () => { success: false } & TExtra = () => ({ success: false } as { success: false } & TExtra)
+  ): { scope: "project" | "global"; success: boolean } & TExtra {
+    return resolveScopedMutation(
+      this.scopes.repositoriesForWrite(scope),
+      { explicitScope: scope !== undefined },
+      mutate,
+      fallback
+    );
   }
-
-  private repositoriesForWrite(scope?: string): { scope: Scope; repository: TrapRepository }[] {
-    return this.repositoriesForRead(scope);
-  }
-
-  private repositoryEntry(scope: Scope): { scope: Scope; repository: TrapRepository } | null {
-    if (scope === "project") {
-      return this.projectRoot ? { scope, repository: this.projectRepo() } : null;
-    }
-    return { scope, repository: this.globalRepo() };
-  }
-
-  private repositoryFor(scope: Scope): TrapRepository {
-    if (scope === "project") return this.projectRepo();
-    return this.globalRepo();
-  }
-
-  private projectRepo(): TrapRepository {
-    if (!this.projectRoot) {
-      throw new Error("Not in a project. Run 'codetrap init' first, or use --scope global.");
-    }
-    if (!this.projectRepository) {
-      this.projectRepository = new TrapRepository(openProject(this.projectRoot), this.embedder);
-    }
-    return this.projectRepository;
-  }
-
-  private globalRepo(): TrapRepository {
-    if (!this.globalRepository) {
-      this.globalRepository = new TrapRepository(openGlobal(), this.embedder);
-    }
-    return this.globalRepository;
-  }
-}
-
-function normalizeScope(scope: string): Scope {
-  if (scope === "project" || scope === "global") return scope;
-  throw new Error(`Invalid scope: ${scope}`);
-}
-
-function optionalScope(scope?: string): Scope | null {
-  if (!scope) return null;
-  return normalizeScope(scope);
 }

@@ -19,7 +19,7 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 
 ## 2026-05-17 状态快照
 
-截至 2026-05-17，roadmap 里的 v0.2 主线已经完成，并顺手做完一部分原本排到 v0.3 / v0.4 的架构硬化。
+截至 2026-05-17，roadmap 里的 v0.2 主线已经完成，并顺手做完除本地 embedding provider 之外的大部分 v0.3 / v0.4 架构硬化。
 
 已完成：
 
@@ -29,14 +29,17 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 - Phase 4：home/global `.codetrap` 不再被误判为 project root；新增 `codetrap doctor` 与 `doctor --json`；scope 回归测试覆盖 home/global、nested project、home 外项目；`repair-scope` / `migrate-project` 已支持 dry-run、`--apply`、backup 与 JSON 输出；迁移实现已收敛到 `scope-migration` + `trap-transfer` 两个深模块。
 - Phase 5 部分：StickS3 8 条真实 traps/queries 已加入 `src/tests/fixtures/search-eval.json`，并在测试里锁住 Recall@3 / Recall@5。
 - Phase 6 部分：embedding freshness 已产品化为 fresh/stale/missing 计数，并出现在 `stats --json` 和 `doctor --json`。
+- Mutation JSON：`delete/archive/supersede/import --json` 与 `add_trap_evidence --output-json` 已提供机器可读结果。
+- Ranking/MRR：测试已计算 MRR，并加入通用 title/tag/code-identifier/severity/path/module/owner rerank signals；未内置 ESP32/StickS3 专用词库。
+- Path/module scoped traps：schema v5 已加入 `path_globs`、`module`、`owner`，CLI/MCP search/list 可用 `--path`、`--module`、`--owner` 过滤与加权。
+- 配置文件：`~/.codetrap/config.json` 已支持 search mode/limit/scope/rerank，优先级为 CLI args > config file > env vars > built-in defaults。
+- Agent harness：post-flight capture 规则已写入文档/skills，`plugins/codetrap-agent` 提供 Codex plugin/bundle 示例，`release:preflight` 串联发布前 dry-run 检查。
+- MCP resources：resource URI 已支持 `?cwd=`，静态 URI 仍兼容 server 启动 cwd。
 
 仍未完成：
 
-- `delete --json` 或统一 mutation JSON 输出尚未做；当前只完成 `add/edit --output-json`。
-- ranking 调优、MRR 指标、通用 exact token/tag/severity/code-identifier boost 尚未做；不应内置 ESP32 或其他特定领域词库。
 - 本地 embedding provider 尚未做；当前仍是 Jina 可选 provider + 无 key 时 hybrid fallback 到 FTS。
-- post-flight trap capture workflow、path/module scoped traps、配置文件、plugin/onboarding 打包尚未做。
-- MCP resources 仍然绑定 server 启动 cwd；只有 MCP tools 支持每次调用传 `cwd`。
+- 本地模型缓存、ONNX/local model path、离线默认 embedding provider 尚未做。
 
 ## 0. 参考来源与定位修正
 
@@ -206,8 +209,9 @@ codetrap 不应该变成普通笔记库。只存：
 - 已实现 `show --json`，输出完整 `TrapDetails`，并把 `tags`、`related_files` 规范化为数组。
 - 已实现 `list --json`、`stats --json`；`stats --json` 包含 embedding health。
 - 已实现 `add/edit --output-json`，保留 `add/edit --json` 作为输入语义。
+- 已实现 `delete/archive/supersede/import --json`，以及 `add_trap_evidence --output-json`。
 - 已抽出 `src/commands/command-result.ts`，CLI 命令先返回 `CommandResult`，再统一渲染 stdout/stderr/exit code。
-- 未实现：`delete --json`；后续 mutation 命令是否统一 JSON 输出仍需单独设计。
+- 已抽出 `src/commands/workflow.ts`，`src/commands/router.ts` 只保留薄 CLI adapter 和渲染入口。
 
 设计标准：
 
@@ -546,7 +550,7 @@ codetrap repair-scope --apply
 
 - StickS3 8 条真实 traps 和 8 个真实 query 已加入 `src/tests/fixtures/search-eval.json`。
 - `src/tests/search-eval.test.ts` 对这些 query 锁住 `Recall@3 = 100%` 和 `Recall@5 = 100%`。
-- 仍未完成：ranking 调优、MRR 观测、通用 exact token/tag/severity/code-identifier boost。
+- MRR 已在 eval 测试中计算；通用 title/tag/code-identifier/severity/path/module/owner rerank signals 已落地。
 
 #### 5.1 固化 StickS3 评估集
 
@@ -714,14 +718,14 @@ codetrap 不只应该在动手前阻止错误，也应该在任务结束时沉�
 
 #### 8.1 Path/module scoped traps
 
-当前 scope 只有：
+当前 coarse scope 仍然只有：
 
 ```text
 project
 global
 ```
 
-后续可以增加更细的适用范围：
+schema v5 已增加更细的适用范围：
 
 ```text
 path_globs: ["src/db/**", "src/mcp/**"]
@@ -729,7 +733,7 @@ module: "db" | "mcp" | "cli" | "search"
 owner: "platform" | "infra" | "frontend"
 ```
 
-这样 agent 在改 `src/db/**` 时优先看到数据库相关 trap，而不是被全项目所有 trap 干扰。
+这样 agent 在改 `src/db/**` 时可以用 `--path src/db/repository.ts --module db` 优先看到数据库相关 trap，而不是被全项目所有 trap 干扰。
 
 #### 8.2 Hooks、plugin/bundle 与 onboarding
 
@@ -749,16 +753,14 @@ codetrap CLI
 - npm 全局安装：`npm i -g codetrap`
 - GitHub Releases 提供多平台二进制。
 - Codex / Claude Code / Cursor / OpenCode 示例配置。
-- plugin/bundle 把 MCP、skills、hooks 和文档片段统一打包。
+- plugin/bundle 把 MCP、skills、hooks 和文档片段统一打包；当前示例位于 `plugins/codetrap-agent`。
 
 #### 8.3 配置文件
 
-短期不急着做配置系统。但当这些选项变多时，可以引入 `~/.codetrap/config.json`：
+已引入 `~/.codetrap/config.json`，当前支持：
 
 - 默认 search mode。
 - 默认 result limit。
-- 默认 embedding provider。
-- local model path。
 - rerank 开关。
 - project/global 默认 scope 策略。
 
@@ -782,17 +784,17 @@ API key 仍应放 env var，行为偏好可以放 config file。
 5. [done] StickS3 搜索评估集
 6. [done] stdin query 支持
 7. [done] codetrap doctor
-8. [done for tools] MCP 每次调用支持 cwd；resources 仍使用 server 启动 cwd
+8. [done] MCP tools 支持 `cwd`；resources 支持 `?cwd=`
 9. [done] repair-scope / migrate-project + Trap Transfer 架构收敛
 10. [done] embedding 健康度显式化
-11. [todo] ranking/MRR + 通用 identifier boost
+11. [done] ranking/MRR + 通用 identifier boost
 12. [todo] 本地 embedding provider
-13. [todo] post-flight capture workflow
-14. [todo] path/module scoped traps
-15. [todo] npm/plugin/onboarding
+13. [done] post-flight capture workflow
+14. [done] path/module scoped traps
+15. [done] npm/plugin/onboarding
 ```
 
-其中前 10 项已经完成或基本完成。下一步最值得做的是 ranking 调优，然后进入本地 embedding provider。
+除本地 embedding provider 外，上述收尾项已完成。下一步如果继续推进，应聚焦本地/离线 embedding provider。
 
 ## 5. 最小可交付版本
 
@@ -819,10 +821,7 @@ codetrap v0.2: CLI-first agent integration
 
 - 删除 MCP
 - 本地 embedding
-- 大规模 schema 改造
-- 复杂配置系统
-- path/module scoped traps
-- npm/plugin 打包
+- 独立向量库或通用代码库 RAG
 
 这样既能让 agent 稳定使用，也不会引入过多工程风险。
 

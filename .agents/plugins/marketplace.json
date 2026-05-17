@@ -1,0 +1,20 @@
+{
+  "name": "codetrap-local",
+  "interface": {
+    "displayName": "codetrap Local"
+  },
+  "plugins": [
+    {
+      "name": "codetrap-agent",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codetrap-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

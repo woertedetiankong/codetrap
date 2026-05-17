@@ -23,15 +23,17 @@ npm view codetrap version bin dist-tags
 期望看到类似：
 
 ```text
-version = '0.1.1'
+version = '0.1.2'
 bin = { codetrap: 'bin/codetrap' }
-dist-tags = { latest: '0.1.1' }
+dist-tags = { latest: '0.1.2' }
 ```
+
+如果之后已经发布更高版本，实际查询结果应是最新版本。
 
 当前 GitHub Release：
 
 ```bash
-gh release view v0.1.1 --repo woertedetiankong/codetrap
+gh release view v0.1.2 --repo woertedetiankong/codetrap
 ```
 
 ## 普通用户安装命令
@@ -157,7 +159,7 @@ codetrap show <id> --scope <project|global> --json
 When a new recurring mistake or project convention is discovered, ask whether to record it:
 
 ```bash
-codetrap add --json '{...}'
+codetrap add --json '{...}' --output-json
 ```
 ````
 
@@ -228,14 +230,11 @@ git status --short
 
 ```bash
 bun install --frozen-lockfile
-bun test src/tests
-bun run build
 bun run check:release-version v0.1.2
-npm pack --dry-run
-npm publish --dry-run --access public
+bun run release:preflight v0.1.2
 ```
 
-检查 `npm publish --dry-run` 输出：
+`release:preflight` 会串联测试、普通 build、多平台 release asset build、当前平台二进制 smoke test、`npm pack --dry-run`，并在当前 `package.json` 版本尚未发布时运行 `npm publish --dry-run --access public`。检查 npm dry-run 输出：
 
 - 包名和版本正确。
 - `bin/codetrap` 在 Tarball Contents 里。

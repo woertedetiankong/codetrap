@@ -195,18 +195,16 @@ CLI args > config file (~/.semtools_config.json) > env vars > built-in defaults
 
 配置文件和 env vars 各司其职——API key 走 env var（安全性），行为参数走 config file（可版本化、可分享）。
 
-**codetrap 的现状**：主要靠 env var（`JINA_API_KEY`）和 CLI args。没有配置文件支持。
+**codetrap 的当前状态（2026-05-17）**：行为配置已支持 `~/.codetrap/config.json`，优先级为 CLI args > config file > env vars > built-in defaults。API key 仍只走 env var。
 
-**可落地的**：
+**已落地的配置项**：
 
-目前 codetrap 配置项很少（基本只有一个 `JINA_API_KEY`），配置文件的边际收益不大。但当以下功能上线后值得做：
+- 默认搜索模式（fts / semantic / hybrid）。
+- 默认 result limit。
+- 默认 scope（project / global）。
+- query-aware rerank 开关。
 
-- 默认搜索模式（fts / semantic / hybrid）
-- 默认 scope（project / global）
-- 嵌入 provider 选择（jina / local / ollama）
-- 结果数量默认值
-
-格式参考 semtools 的 JSON 方案（`~/.codetrap/config.json`），比 TOML/YAML 更适合 JS 生态。
+配置文件没有引入 provider/model path；本地 embedding provider 和模型缓存仍未实现。
 
 ---
 
@@ -244,14 +242,15 @@ ask = ["dep:async-openai", "dep:model2vec-rs", ...]
 - `npm i -g @llamaindex/semtools`（JS/Node 生态用户）
 - npm 包通过 `scripts/install.js` 下载预编译二进制，自动检测平台和架构
 
-**codetrap 的现状**：目前只有源码构建（`bun build --compile`）。没有发布到任何 registry。
+**codetrap 的当前状态（2026-05-17）**：已经有 npm/Bun package、GitHub Release 二进制、本地 release asset build 和 `release:preflight`。npm 包仍是源码版入口，用户电脑需要 Bun；GitHub Release 二进制不需要 Bun。
 
-**可落地的**：
+**已落地**：
 
-当 codetrap 准备对外发布时，可以参考 semtools 的分发策略：
-- npm 包发布 `codetrap`，`postinstall` 脚本下载对应平台的预编译二进制
-- 或者直接用 Bun 的 `bun build --compile --target` 交叉编译多平台二进制，发布 GitHub Releases
-- 考虑到 codetrap 的目标用户是 AI 开发者（通常有 Node/Bun 环境），npm 分发是阻力最小的路径
+- `bun add -g codetrap` / `npm install -g codetrap`。
+- `bun run build:release` 生成多平台二进制。
+- `bun run release:preflight` 串联测试、build、release asset build、当前平台 smoke test、`npm pack --dry-run` 和可用时的 `npm publish --dry-run`。
+
+仍可后续考虑：npm 包安装时自动下载对应平台预编译二进制，让 npm 用户也不需要本地 Bun runtime。
 
 ---
 
@@ -275,12 +274,12 @@ SemTools 相关行动项已经收敛到 `docs/codetrap-optimization-roadmap.zh-C
 
 | SemTools 启发 | 主 roadmap 归属 |
 |---|---|
-| `--json` + stdin + stdout 机器输出 | Phase 1: CLI JSON 成为稳定契约 |
-| AGENTS/skill 工具选择协议 | Phase 2: CLI-first Agent 使用协议 |
-| embedding fresh/stale/missing 状态 | Phase 6: Embedding 健康度显式化 |
-| 本地 embedding provider 候选 | Phase 6: 本地 embedding 与离线体验 |
-| 配置优先级链 | Phase 8: 配置文件 |
-| npm / 预编译二进制 / onboarding | Phase 8: Hooks、plugin/bundle 与 onboarding |
+| `--json` + stdin + stdout 机器输出 | Phase 1: CLI JSON 成为稳定契约（已落地） |
+| AGENTS/skill 工具选择协议 | Phase 2: CLI-first Agent 使用协议（已落地） |
+| embedding fresh/stale/missing 状态 | Phase 6: Embedding 健康度显式化（已落地） |
+| 本地 embedding provider 候选 | Phase 6: 本地 embedding 与离线体验（未落地） |
+| 配置优先级链 | Phase 8: 配置文件（已落地） |
+| npm / 预编译二进制 / onboarding | Phase 8: Hooks、plugin/bundle 与 onboarding（已落地） |
 
 本文件只保留 SemTools 的来源分析、模型取舍和“不该照搬”的判断，避免和主 roadmap 形成两套排期。
 

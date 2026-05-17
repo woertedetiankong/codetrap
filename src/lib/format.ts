@@ -1,6 +1,6 @@
 import { CATEGORY_LABELS, SEVERITY_ICONS, type Category, type Severity } from "./constants";
 import type { Trap, TrapActionCard, TrapDetails, TrapEvidence } from "../domain/trap";
-import { parseEvidenceRelatedFiles, parseTrapTags } from "./trap-json-fields";
+import { parseEvidenceRelatedFiles, parseTrapPathGlobs, parseTrapTags } from "./trap-json-fields";
 export type { Trap } from "../domain/trap";
 
 export function formatTrapShort(t: Trap, scopeLabel: string): string {
@@ -25,6 +25,7 @@ export function formatTrapDetail(t: Trap, scopeLabel: string): string {
   const sev = SEVERITY_ICONS[t.severity as Severity] ?? t.severity;
   const cat = CATEGORY_LABELS[t.category as Category] ?? t.category;
   const tags = parseTrapTags(t.tags);
+  const pathGlobs = parseTrapPathGlobs(t.path_globs);
   let out = `\
 ══════════════════════════════════════════
 #${t.id}  ${t.title}
@@ -33,6 +34,9 @@ Scope:     ${scopeLabel} (${t.scope})
 Severity:  ${sev}
 Category:  ${cat}
 Tags:      ${tags.join(", ") || "-"}
+Paths:     ${pathGlobs.join(", ") || "-"}
+Module:    ${t.module ?? "-"}
+Owner:     ${t.owner ?? "-"}
 Hit count: ${t.hit_count}
 Created:   ${t.created_at}
 Updated:   ${t.updated_at}

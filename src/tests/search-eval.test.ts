@@ -40,6 +40,7 @@ describe("search evaluation fixture", () => {
     }
     await repo.ensureEmbeddings();
 
+    const reciprocalRanks: number[] = [];
     for (const item of fixture.queries) {
       const results = await repo.search(item.query, { mode: item.mode, limit: 5 });
       const resultIdsAt5 = new Set(results.map((result) => result.trap.id));
@@ -53,7 +54,57 @@ describe("search evaluation fixture", () => {
         const recallAt3 = hitsAt3 / item.goldTrapIds.length;
         expect(recallAt3, `${item.phaseGate}: ${item.query}`).toBeGreaterThanOrEqual(item.minRecallAt3);
       }
+
+      const rank = results.findIndex((result) => item.goldTrapIds.includes(result.trap.id));
+      reciprocalRanks.push(rank >= 0 ? 1 / (rank + 1) : 0);
     }
+
+    const mrr = reciprocalRanks.reduce((sum, value) => sum + value, 0) / reciprocalRanks.length;
+    expect(mrr).toBeGreaterThanOrEqual(0.8);
+  });
+
+  test("reranking exposes generic exact-match signals", async () => {
+    const repo = new TrapRepository(openDatabase(":memory:"), undefined);
+    repo.add({
+      title: "Use generic helper for writes",
+      category: "convention",
+      tags: ["helper"],
+      scope: "global",
+      context: "When changing repository writes, use the helper.",
+      mistake: "Writing directly duplicates behavior.",
+      fix: "Use the shared helper.",
+      severity: "warning",
+    });
+    const targetId = repo.add({
+      title: "TrapStore writes must use transaction helper",
+      category: "database",
+      tags: ["TrapStore", "transaction"],
+      scope: "global",
+      context: "When changing TrapStore write behavior, preserve atomic updates.",
+      mistake: "Updating related records outside a transaction can leave partial state.",
+      fix: "Use the transaction helper for TrapStore writes.",
+      severity: "error",
+    });
+
+    const results = await repo.search("TrapStore transaction helper", {
+      mode: "fts",
+      limit: 2,
+      includeRankingSignals: true,
+    });
+
+    expect(results[0]?.trap.id).toBe(targetId);
+    const signals = results[0]?.ranking_signals?.map((signal) => signal.code) ?? [];
+    expect(signals).toContain("title_token_exact");
+    expect(signals).toContain("tag_exact");
+    expect(signals).toContain("code_identifier_exact");
+
+    const withoutRerank = await repo.search("TrapStore transaction helper", {
+      mode: "fts",
+      limit: 2,
+      rerank: false,
+      includeRankingSignals: true,
+    });
+    expect(withoutRerank[0]?.ranking_signals).toEqual([]);
   });
 });
 

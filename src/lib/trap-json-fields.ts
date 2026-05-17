@@ -12,6 +12,18 @@ export function encodeTrapTags(value: TrapStringArrayInput): string {
   return JSON.stringify(parseTrapTags(value));
 }
 
+export function parseTrapPathGlobs(value: TrapStringArrayInput): string[] {
+  return parseStringArrayField(value);
+}
+
+export function parseOptionalTrapPathGlobs(value: TrapStringArrayInput): string[] | undefined {
+  return emptyToUndefined(parseTrapPathGlobs(value));
+}
+
+export function encodeTrapPathGlobs(value: TrapStringArrayInput): string {
+  return JSON.stringify(parseTrapPathGlobs(value));
+}
+
 export function parseEvidenceRelatedFiles(value: TrapStringArrayInput): string[] {
   return parseStringArrayField(value);
 }

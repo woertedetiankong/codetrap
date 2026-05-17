@@ -60,6 +60,7 @@ OBLIQ-Bench、lerim-cli 和 lancedb-pro 的共同结论是：coding trap 查询�
 - FTS5 + derived `search_text` 支持中文 bigram、英文 token、code identifier 和同义词。
 - Jina embedding provider 支持 semantic search。
 - Hybrid search 使用 RRF 融合 FTS 和 semantic 结果。
+- 通用 rerank 已加入 title/tag/code identifier exact match、severity、path/module/owner scope match signals；测试中持续观察 MRR。
 - Semantic min score 过滤明显无关候选。
 - Length normalization 防止长 trap 霸榜。
 - Search eval fixtures 覆盖 exact、中文、semantic、hybrid 查询。
@@ -94,7 +95,7 @@ codetrap 的边界仍然是：SQLite + FTS5 + optional embeddings + MCP/CLI/skil
 这些不是当前文档里的行动计划，只是未来改 search/ranking 时可回看的参考：
 
 - MMR diversity：如果 top results 开始出现高度重复，可以在 hybrid 后加去重/降权。
-- Reranker：如果 eval set 显示 top-k 召回高但排序差，可以对前 20 个候选接入轻量 reranker。
+- Reranker：当前已有轻量通用 rerank；如果 eval set 显示 top-k 召回高但排序仍差，再考虑 cross-encoder 或 LLM reranker。
 - Duplicate/conflict detection：当 trap 数量上升后，`add` 时可提示相似或冲突 trap。
 - Doctor/index health：scope 诊断、embedding freshness 和 hybrid fallback reason 已落到 `codetrap doctor` / `stats --json`；后续仍可补 FTS 覆盖率、重复项和冲突检测。
 

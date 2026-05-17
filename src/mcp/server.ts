@@ -37,6 +37,11 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
           mode: args.mode,
           limit: args.limit ?? 20,
           status: args.status,
+          path: args.path,
+          module: args.module,
+          owner: args.owner,
+          rerank: args.rerank,
+          includeRankingSignals: args.ranking_signals,
         });
         return toMcpTextJson(toMcpSearchJson(cards));
       }
@@ -60,6 +65,9 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
           category: args.category,
           status: args.status,
           limit: args.limit ?? 50,
+          path: args.path,
+          module: args.module,
+          owner: args.owner,
         });
         return toMcpTextJson(toListJson(groups));
       }
@@ -103,9 +111,11 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
 }
 
 export function handleResourceRead(store: TrapStore, uri: string) {
-  const operations = new TrapOperations(store);
+  const parsed = parseResourceUri(uri);
+  const scopedStore = storeForScopeContext(store, parsed.cwd);
+  const operations = new TrapOperations(scopedStore);
   try {
-    switch (uri) {
+    switch (parsed.baseUri) {
       case "codetrap://project/recent":
         return toMcpResourceJson(uri, toListJson(operations.listTraps({ scope: "project", limit: 10 })));
       case "codetrap://global/recent":
@@ -115,7 +125,7 @@ export function handleResourceRead(store: TrapStore, uri: string) {
       case "codetrap://global/top":
         return toMcpResourceJson(uri, toListJson(operations.topTraps("global", 20)));
       default: {
-        const match = uri.match(/^codetrap:\/\/(project|global)\/trap\/(\d+)$/);
+        const match = parsed.baseUri.match(/^codetrap:\/\/(project|global)\/trap\/(\d+)$/);
         if (match) {
           const details = operations.getTrapDetails(Number.parseInt(match[2], 10), match[1]);
           return toMcpResourceJson(uri, details ? toTrapDetailsJson(details) : { error: "not found" });
@@ -125,6 +135,18 @@ export function handleResourceRead(store: TrapStore, uri: string) {
     }
   } catch (e: any) {
     return toMcpResourceText(uri, e instanceof Error ? e.message : String(e));
+  }
+}
+
+function parseResourceUri(uri: string): { baseUri: string; cwd?: string } {
+  try {
+    const parsed = new URL(uri);
+    return {
+      baseUri: `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`,
+      cwd: parsed.searchParams.get("cwd") ?? undefined,
+    };
+  } catch {
+    return { baseUri: uri };
   }
 }
 

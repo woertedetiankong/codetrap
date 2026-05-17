@@ -50,9 +50,12 @@ codetrap add --json '{
   "fix": "<what should be done instead>",
   "tags": ["<tag1>", "<tag2>"],
   "severity": "<warning|error|critical>",
+  "path_globs": ["src/example/**"],
+  "module": "<optional subsystem>",
+  "owner": "<optional team>",
   "before_code": "<wrong code snippet (optional)>",
   "after_code": "<correct code snippet (optional)>"
-}'
+}' --output-json
 ```
 
 If the CLI is not available, use the MCP tool `add_trap` instead.

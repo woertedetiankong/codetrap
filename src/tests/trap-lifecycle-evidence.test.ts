@@ -4,14 +4,21 @@ import { TrapRepository } from "../db/repository";
 import { trap } from "./helpers";
 
 describe("trap lifecycle and evidence", () => {
-  test("schema v4 initializes lifecycle fields and evidence table", () => {
+  test("schema v5 initializes lifecycle, evidence, and applicability fields", () => {
     const repo = new TrapRepository(openDatabase(":memory:"));
-    const id = repo.add(trap());
+    const id = repo.add(trap({
+      path_globs: ["src/api/**"],
+      module: "api",
+      owner: "platform",
+    }));
     const details = repo.getDetails(id, "global");
 
     expect(details?.trap.status).toBe("active");
     expect(details?.trap.valid_from).toBeTruthy();
     expect(details?.trap.valid_until).toBeNull();
+    expect(JSON.parse(details?.trap.path_globs ?? "[]")).toEqual(["src/api/**"]);
+    expect(details?.trap.module).toBe("api");
+    expect(details?.trap.owner).toBe("platform");
     expect(details?.evidence).toEqual([]);
   });
 

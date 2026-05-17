@@ -8,7 +8,12 @@ import { trap } from "./helpers";
 describe("import/export and CLI evidence handling", () => {
   test("exported traps preserve evidence when imported with remapped trap ids", () => {
     const source = new TrapStore(tempProjectDir("codetrap-export-source-"), undefined);
-    const added = source.add(trap({ scope: "project" }));
+    const added = source.add(trap({
+      scope: "project",
+      path_globs: ["src/api/**"],
+      module: "api",
+      owner: "platform",
+    }));
     source.addEvidence(added.id, {
       source_type: "commit",
       source_ref: "abc123",
@@ -24,6 +29,9 @@ describe("import/export and CLI evidence handling", () => {
       related_files: ["src/api.ts"],
       note: "Captured from review.",
     });
+    expect(exported[0].path_globs).toEqual(["src/api/**"]);
+    expect(exported[0].module).toBe("api");
+    expect(exported[0].owner).toBe("platform");
 
     const destination = new TrapStore(tempProjectDir("codetrap-export-dest-"), undefined);
     destination.add(trap({ scope: "project", title: "Existing destination trap" }));
@@ -38,6 +46,9 @@ describe("import/export and CLI evidence handling", () => {
     expect(imported).toBeTruthy();
     expect(imported?.id).not.toBe(added.id);
     expect(JSON.parse(imported?.tags ?? "[]")).toEqual(["http", "fetch"]);
+    expect(JSON.parse(imported?.path_globs ?? "[]")).toEqual(["src/api/**"]);
+    expect(imported?.module).toBe("api");
+    expect(imported?.owner).toBe("platform");
 
     const details = destination.getDetails(imported!.id, "project");
     expect(details?.evidence).toHaveLength(1);

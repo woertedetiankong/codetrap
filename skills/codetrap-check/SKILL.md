@@ -29,6 +29,12 @@ Default to the CLI from the current project cwd:
 codetrap search "<keywords>" --mode hybrid --json
 ```
 
+When the task targets a known file or subsystem, include applicability hints:
+
+```bash
+codetrap search "<keywords>" --path src/db/repository.ts --module db --json
+```
+
 If the query comes from another tool, stdin is also supported:
 
 ```bash
@@ -58,4 +64,4 @@ If no traps found, say nothing — don't waste tokens.
 
 ## Step 5: Record new pitfalls
 
-If while writing code you discover a NEW pitfall that isn't in the database, suggest: "This seems like a recurring pitfall. Want me to record it with `/codetrap-add`?"
+If while writing code you discover a NEW pitfall that isn't in the database, propose a post-flight trap candidate. Do not write it automatically; ask: "This seems like a recurring pitfall. Want me to record it with `/codetrap-add`?"

@@ -18,6 +18,9 @@ export type SearchTextFields = {
   tags?: string | string[];
   before_code?: string | null;
   after_code?: string | null;
+  path_globs?: string | string[] | null;
+  module?: string | null;
+  owner?: string | null;
 };
 
 export const SEARCH_TEXT_FIELD_NAMES = [
@@ -28,6 +31,9 @@ export const SEARCH_TEXT_FIELD_NAMES = [
   "tags",
   "before_code",
   "after_code",
+  "path_globs",
+  "module",
+  "owner",
 ] as const;
 
 export function bigramCJK(input: string): string[] {
