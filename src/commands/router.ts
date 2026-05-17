@@ -3,7 +3,26 @@ import { TrapStore } from "../lib/store";
 import { formatTrapShort, formatTrapDetails, formatTrapActionCard } from "../lib/format";
 import type { Trap } from "../domain/trap";
 import { SEARCH_MODES, type SearchMode } from "../lib/constants";
+import {
+  formatScopeMigrationText,
+  runScopeMigration,
+  type ScopeMigrationCommand,
+} from "../lib/scope-migration";
 import { TrapOperations } from "../lib/trap-operations";
+import { buildDoctorReport, formatDoctorText } from "../lib/doctor";
+import {
+  toCliSearchJson,
+  toListJson,
+  toStatsJson,
+  toTrapDetailsJson,
+} from "../lib/output-json";
+import {
+  errorResult,
+  jsonResult,
+  renderCommandResult,
+  textResult,
+  type CommandResult,
+} from "./command-result";
 
 type ParsedArgs = {
   opts: Record<string, string>;
@@ -11,6 +30,10 @@ type ParsedArgs = {
 };
 
 export async function run(strip: string[], store: TrapStore): Promise<void> {
+  renderCommandResult(await executeCommand(strip, store));
+}
+
+export async function executeCommand(strip: string[], store: TrapStore): Promise<CommandResult> {
   const sub = strip[0];
   const args = strip.slice(1);
   const operations = new TrapOperations(store);
@@ -46,12 +69,19 @@ export async function run(strip: string[], store: TrapStore): Promise<void> {
       return cmdImport(args, operations);
     case "stats":
       return cmdStats(args, operations);
+    case "doctor":
+      return cmdDoctor(args, store, operations);
+    case "repair-scope":
+      return cmdScopeMigration("repair-scope", args, operations);
+    case "migrate-project":
+      return cmdScopeMigration("migrate-project", args, operations);
     case "embed":
       return cmdEmbed(args, store);
     default:
-      console.log(`Unknown command: ${sub}`);
-      console.log("Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, embed");
-      process.exit(1);
+      return errorResult([
+        `Unknown command: ${sub}`,
+        "Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, repair-scope, migrate-project, embed",
+      ].join("\n"));
   }
 }
 
@@ -70,196 +100,141 @@ export function parseArgs(args: string[]): ParsedArgs {
   return { opts, positionals };
 }
 
-// ---- commands ----
-
-function cmdInit(_args: string[], store: TrapStore): void {
+function cmdInit(_args: string[], store: TrapStore): CommandResult {
   if (store.hasProject()) {
-    console.log(`Already in a project: ${store.getProjectRoot()}`);
-    return;
+    return textResult(`Already in a project: ${store.getProjectRoot()}`);
   }
-  // init is handled by index.ts before creating the store
-  console.log("Project initialized.");
+  return textResult("Project initialized.");
 }
 
-function cmdAdd(args: string[], operations: TrapOperations): void {
+function cmdAdd(args: string[], operations: TrapOperations): CommandResult {
   const { opts, positionals } = parseArgs(args);
-  // --json mode for AI/script usage
   if (opts.json !== undefined) {
     if (!opts.json || opts.json === "true") {
-      console.error("Error: --json requires a JSON string argument");
-      process.exit(1);
+      return errorResult("Error: --json requires a JSON string argument");
     }
     try {
-      const input = JSON.parse(opts.json);
-      const result = operations.addTrap(input);
-      console.log(`Trap #${result.id} added to ${result.scope} scope.`);
-    } catch (e: any) {
-      console.error(`Error: ${e.message}`);
-      process.exit(1);
+      const result = operations.addTrap(JSON.parse(opts.json));
+      return opts["output-json"] !== undefined
+        ? jsonResult(result)
+        : textResult(`Trap #${result.id} added to ${result.scope} scope.`);
+    } catch (error) {
+      return errorFrom(error);
     }
-    return;
   }
 
-  // Quick mode: codetrap add "title"
   if (positionals.length > 0) {
-    console.log(`Use --json mode for structured input.`);
-    console.log(`Quick add: codetrap add --json '{"title":"${positionals.join(" ")}","category":"other","scope":"global","context":"...","mistake":"...","fix":"..."}'`);
-    return;
+    return textResult([
+      "Use --json mode for structured input.",
+      `Quick add: codetrap add --json '{"title":"${positionals.join(" ")}","category":"other","scope":"global","context":"...","mistake":"...","fix":"..."}'`,
+    ].join("\n"));
   }
 
-  // Interactive mode
-  console.log("Interactive mode not yet implemented. Use --json for now.");
-  console.log('Example: codetrap add --json \'{"title":"...","category":"convention","scope":"project","context":"...","mistake":"...","fix":"..."}\'');
+  return textResult([
+    "Interactive mode not yet implemented. Use --json for now.",
+    'Example: codetrap add --json \'{"title":"...","category":"convention","scope":"project","context":"...","mistake":"...","fix":"..."}\'',
+  ].join("\n"));
 }
 
-async function cmdSearch(args: string[], operations: TrapOperations): Promise<void> {
+async function cmdSearch(args: string[], operations: TrapOperations): Promise<CommandResult> {
   const { opts, positionals } = parseArgs(args);
-  if (positionals.length === 0) {
-    console.error("Usage: codetrap search <query> [--category X] [--limit N] [--mode fts|semantic|hybrid] [--status active|superseded|archived|all]");
-    process.exit(1);
+  const query = readQuery(positionals);
+  if (!query) {
+    return errorResult("Usage: codetrap search <query> [--category X] [--limit N] [--mode fts|semantic|hybrid] [--status active|superseded|archived|all] [--json]");
   }
-  let cards: Awaited<ReturnType<TrapOperations["searchTrapCards"]>>;
+
   try {
     const mode = opts.mode ? parseSearchMode(opts.mode) : undefined;
-    cards = await operations.searchTrapCards({
-      query: positionals.join(" "),
+    const cards = await operations.searchTrapCards({
+      query,
       category: opts.category,
       scope: opts.scope,
-      limit: opts.limit ? parseInt(opts.limit) : 20,
+      limit: parseOptionalInt(opts.limit, 20),
       mode,
       status: opts.status,
     });
-  } catch (e: any) {
-    console.error(`Error: ${e.message}`);
-    process.exit(1);
+    if (opts.json !== undefined) return jsonResult(toCliSearchJson(cards));
+    return textResult(cards.length > 0 ? cards.map(formatTrapActionCard).join("\n\n") : "No traps found.");
+  } catch (error) {
+    return errorFrom(error);
   }
-
-  let count = 0;
-  for (const card of cards) {
-    console.log(formatTrapActionCard(card));
-    console.log("");
-    count++;
-  }
-  if (count === 0) console.log("No traps found.");
 }
 
-function cmdList(args: string[], operations: TrapOperations): void {
+function cmdList(args: string[], operations: TrapOperations): CommandResult {
   const { opts } = parseArgs(args);
-
-  let groups: { traps: Trap[]; scope: string }[];
   try {
-    groups = operations.listTraps({
+    const groups = operations.listTraps({
       category: opts.category,
       scope: opts.scope,
       status: opts.status,
-      limit: opts.limit ? parseInt(opts.limit) : 50,
+      limit: parseOptionalInt(opts.limit, 50),
     });
-  } catch (e: any) {
-    console.error(`Error: ${e.message}`);
-    process.exit(1);
-  }
+    if (opts.json !== undefined) return jsonResult(toListJson(groups));
 
-  let count = 0;
-  for (const group of groups) {
-    for (const t of group.traps) {
-      console.log(formatTrapShort(t, group.scope));
-      count++;
-    }
+    const lines = groups.flatMap((group) =>
+      group.traps.map((trap) => formatTrapShort(trap, group.scope))
+    );
+    return textResult(lines.length > 0 ? lines.join("\n") : "No traps found.");
+  } catch (error) {
+    return errorFrom(error);
   }
-  if (count === 0) console.log("No traps found.");
 }
 
-function cmdShow(args: string[], operations: TrapOperations): void {
+function cmdShow(args: string[], operations: TrapOperations): CommandResult {
   const { opts, positionals } = parseArgs(args);
-  if (positionals.length === 0) {
-    console.error("Usage: codetrap show <id> [--scope project|global]");
-    process.exit(1);
-  }
-
-  const id = parseInt(positionals[0]);
-  if (isNaN(id)) {
-    console.error("Error: id must be a number");
-    process.exit(1);
-  }
+  const id = parseId(positionals[0], "Usage: codetrap show <id> [--scope project|global] [--json]");
+  if (typeof id !== "number") return id;
 
   const result = operations.getTrapDetails(id, opts.scope);
-  if (!result) {
-    console.error(`Trap #${id} not found.`);
-    process.exit(1);
-  }
+  if (!result) return errorResult(`Trap #${id} not found.`);
 
   operations.hitTrap(id, result.scope);
-  console.log(formatTrapDetails(result));
+  return opts.json !== undefined
+    ? jsonResult(toTrapDetailsJson(result))
+    : textResult(formatTrapDetails(result));
 }
 
-function cmdEdit(args: string[], operations: TrapOperations): void {
+function cmdEdit(args: string[], operations: TrapOperations): CommandResult {
   const { opts, positionals } = parseArgs(args);
-  if (positionals.length === 0) {
-    console.error("Usage: codetrap edit <id> --json '{\"title\":\"new title\"}' [--scope project|global]");
-    process.exit(1);
-  }
-
-  const id = parseInt(positionals[0]);
-  if (isNaN(id)) {
-    console.error("Error: id must be a number");
-    process.exit(1);
-  }
+  const id = parseId(positionals[0], "Usage: codetrap edit <id> --json '{\"title\":\"new title\"}' [--scope project|global]");
+  if (typeof id !== "number") return id;
 
   if (!opts.json) {
-    console.error("Error: edit requires --json for now.");
-    console.error("Example: codetrap edit 1 --json '{\"title\":\"new title\"}' [--scope project|global]");
-    process.exit(1);
+    return errorResult([
+      "Error: edit requires --json for now.",
+      "Example: codetrap edit 1 --json '{\"title\":\"new title\"}' [--scope project|global]",
+    ].join("\n"));
   }
 
   try {
-    const parsed = JSON.parse(opts.json);
-    const result = operations.updateTrap(id, parsed, opts.scope);
-    if (result.success) {
-      console.log(`Trap #${id} updated in ${result.scope} scope.`);
-    } else {
-      console.error(`Trap #${id} not found or no fields changed.`);
-      process.exit(1);
-    }
-  } catch (e: any) {
-    console.error(`Error: ${e.message}`);
-    process.exit(1);
+    const result = operations.updateTrap(id, JSON.parse(opts.json), opts.scope);
+    if (!result.success) return errorResult(`Trap #${id} not found or no fields changed.`);
+    return opts["output-json"] !== undefined
+      ? jsonResult({ id, ...result })
+      : textResult(`Trap #${id} updated in ${result.scope} scope.`);
+  } catch (error) {
+    return errorFrom(error);
   }
 }
 
-function cmdDelete(args: string[], operations: TrapOperations): void {
+function cmdDelete(args: string[], operations: TrapOperations): CommandResult {
   const { opts, positionals } = parseArgs(args);
-  if (positionals.length === 0) {
-    console.error("Usage: codetrap delete <id> [--scope project|global]");
-    process.exit(1);
-  }
-
-  const id = parseInt(positionals[0]);
-  if (isNaN(id)) {
-    console.error("Error: id must be a number");
-    process.exit(1);
-  }
+  const id = parseId(positionals[0], "Usage: codetrap delete <id> [--scope project|global]");
+  if (typeof id !== "number") return id;
 
   const result = operations.deleteTrap(id, opts.scope);
-  if (result.success) {
-    console.log(`Trap #${id} deleted from ${result.scope} scope.`);
-  } else {
-    console.error(`Trap #${id} not found.`);
-    process.exit(1);
-  }
+  return result.success
+    ? textResult(`Trap #${id} deleted from ${result.scope} scope.`)
+    : errorResult(`Trap #${id} not found.`);
 }
 
-function cmdAddTrapEvidence(args: string[], operations: TrapOperations): void {
+function cmdAddTrapEvidence(args: string[], operations: TrapOperations): CommandResult {
   const { opts, positionals } = parseArgs(args);
-  if (positionals.length === 0) {
-    console.error("Usage: codetrap add_trap_evidence <id> --source_type manual|conversation|commit|issue|test_failure [--scope project|global] [--source_ref X] [--related_files a,b] [--note X]");
-    process.exit(1);
-  }
-
-  const id = parseInt(positionals[0]);
-  if (isNaN(id)) {
-    console.error("Error: id must be a number");
-    process.exit(1);
-  }
+  const id = parseId(
+    positionals[0],
+    "Usage: codetrap add_trap_evidence <id> --source_type manual|conversation|commit|issue|test_failure [--scope project|global] [--source_ref X] [--related_files a,b] [--note X]"
+  );
+  if (typeof id !== "number") return id;
 
   try {
     const input = opts.json ? JSON.parse(opts.json) : {
@@ -270,132 +245,171 @@ function cmdAddTrapEvidence(args: string[], operations: TrapOperations): void {
       note: opts.note,
     };
     const result = operations.addTrapEvidence(id, input, opts.scope);
-    if (!result.success) {
-      console.error(`Trap #${id} not found.`);
-      process.exit(1);
-    }
-    console.log(`Evidence #${result.evidence_id} added to trap #${id} in ${result.scope} scope.`);
-  } catch (e: any) {
-    console.error(`Error: ${e.message}`);
-    process.exit(1);
+    return result.success
+      ? textResult(`Evidence #${result.evidence_id} added to trap #${id} in ${result.scope} scope.`)
+      : errorResult(`Trap #${id} not found.`);
+  } catch (error) {
+    return errorFrom(error);
   }
 }
 
-function cmdArchiveTrap(args: string[], operations: TrapOperations): void {
+function cmdArchiveTrap(args: string[], operations: TrapOperations): CommandResult {
   const { opts, positionals } = parseArgs(args);
-  if (positionals.length === 0) {
-    console.error("Usage: codetrap archive_trap <id> [--scope project|global]");
-    process.exit(1);
-  }
-
-  const id = parseInt(positionals[0]);
-  if (isNaN(id)) {
-    console.error("Error: id must be a number");
-    process.exit(1);
-  }
+  const id = parseId(positionals[0], "Usage: codetrap archive_trap <id> [--scope project|global]");
+  if (typeof id !== "number") return id;
 
   const result = operations.archiveTrap(id, opts.scope);
-  if (result.success) {
-    console.log(`Trap #${id} archived in ${result.scope} scope.`);
-  } else {
-    console.error(`Trap #${id} not found.`);
-    process.exit(1);
-  }
+  return result.success
+    ? textResult(`Trap #${id} archived in ${result.scope} scope.`)
+    : errorResult(`Trap #${id} not found.`);
 }
 
-function cmdSupersedeTrap(args: string[], operations: TrapOperations): void {
+function cmdSupersedeTrap(args: string[], operations: TrapOperations): CommandResult {
   const { opts, positionals } = parseArgs(args);
   if (positionals.length < 2) {
-    console.error("Usage: codetrap supersede_trap <old_id> <new_id> [--scope project|global] [--state_key key]");
-    process.exit(1);
+    return errorResult("Usage: codetrap supersede_trap <old_id> <new_id> [--scope project|global] [--state_key key]");
   }
-
-  const id = parseInt(positionals[0]);
-  const supersededById = parseInt(positionals[1]);
-  if (isNaN(id) || isNaN(supersededById)) {
-    console.error("Error: ids must be numbers");
-    process.exit(1);
+  const id = Number.parseInt(positionals[0], 10);
+  const supersededById = Number.parseInt(positionals[1], 10);
+  if (Number.isNaN(id) || Number.isNaN(supersededById)) {
+    return errorResult("Error: ids must be numbers");
   }
 
   const result = operations.supersedeTrap(id, supersededById, opts.scope, opts.state_key ?? opts["state-key"]);
-  if (result.success) {
-    console.log(`Trap #${id} superseded by #${supersededById} in ${result.scope} scope.`);
-  } else {
-    console.error(`Trap #${id} or #${supersededById} not found in the same scope.`);
-    process.exit(1);
-  }
+  return result.success
+    ? textResult(`Trap #${id} superseded by #${supersededById} in ${result.scope} scope.`)
+    : errorResult(`Trap #${id} or #${supersededById} not found in the same scope.`);
 }
 
-function cmdExport(args: string[], operations: TrapOperations): void {
+function cmdExport(args: string[], operations: TrapOperations): CommandResult {
   const { opts } = parseArgs(args);
-  const traps = operations.exportTraps(opts.scope);
-  console.log(JSON.stringify(traps, null, 2));
+  return jsonResult(operations.exportTraps(opts.scope));
 }
 
-function cmdImport(args: string[], operations: TrapOperations): void {
+function cmdImport(args: string[], operations: TrapOperations): CommandResult {
   const { positionals } = parseArgs(args);
-  if (positionals.length === 0) {
-    console.error("Usage: codetrap import <file.json>");
-    process.exit(1);
-  }
+  if (positionals.length === 0) return errorResult("Usage: codetrap import <file.json>");
 
-  const data = readFileSync(positionals[0], "utf-8");
-  const traps = JSON.parse(data);
-  if (!Array.isArray(traps)) {
-    console.error("Error: JSON file must contain an array of traps");
-    process.exit(1);
+  try {
+    const traps = JSON.parse(readFileSync(positionals[0], "utf-8"));
+    if (!Array.isArray(traps)) return errorResult("Error: JSON file must contain an array of traps");
+    return textResult(`Imported ${operations.importTraps(traps)} traps.`);
+  } catch (error) {
+    return errorFrom(error);
   }
-
-  const count = operations.importTraps(traps);
-  console.log(`Imported ${count} traps.`);
 }
 
-function cmdStats(_args: string[], operations: TrapOperations): void {
+function cmdStats(args: string[], operations: TrapOperations): CommandResult {
+  const { opts } = parseArgs(args);
   const stats = operations.getStats();
-
-  if (stats.project) {
-    console.log("── Project ──");
-    printStats(stats.project);
-  }
-  console.log("── Global ──");
-  printStats(stats.global);
+  const embeddingStats = operations.getEmbeddingStats();
+  return opts.json !== undefined
+    ? jsonResult(toStatsJson(stats, embeddingStats))
+    : textResult(formatStatsText(stats));
 }
 
-async function cmdEmbed(args: string[], store: TrapStore): Promise<void> {
+function cmdDoctor(args: string[], store: TrapStore, operations: TrapOperations): CommandResult {
+  const { opts } = parseArgs(args);
+  const report = buildDoctorReport(store, operations);
+  return opts.json !== undefined
+    ? jsonResult(report)
+    : textResult(formatDoctorText(report));
+}
+
+function cmdScopeMigration(
+  command: ScopeMigrationCommand,
+  args: string[],
+  operations: TrapOperations
+): CommandResult {
+  const { opts } = parseArgs(args);
+  if (opts.apply !== undefined && opts["dry-run"] !== undefined) {
+    return errorResult("Error: choose either --dry-run or --apply, not both.");
+  }
+  if (command === "migrate-project" && (!opts["from-project-path"] || !opts["to-project-path"])) {
+    return errorResult("Usage: codetrap migrate-project --from-project-path <path> --to-project-path <path> [--dry-run|--apply] [--json]");
+  }
+
+  try {
+    const result = runScopeMigration({
+      command,
+      fromProjectPath: opts["from-project-path"],
+      toProjectPath: opts["to-project-path"],
+      apply: opts.apply !== undefined,
+      cwd: process.cwd(),
+    });
+    return opts.json !== undefined
+      ? jsonResult(result)
+      : textResult(formatScopeMigrationText(result));
+  } catch (error) {
+    return errorFrom(error);
+  }
+}
+
+async function cmdEmbed(args: string[], store: TrapStore): Promise<CommandResult> {
   const { opts } = parseArgs(args);
   try {
     const result = await store.ensureEmbeddings({
       scope: opts.scope,
       category: opts.category,
-      limit: opts.limit ? parseInt(opts.limit) : undefined,
+      limit: opts.limit ? parseOptionalInt(opts.limit) : undefined,
       force: opts.force === "true",
-      batchSize: opts["batch-size"] ? parseInt(opts["batch-size"]) : undefined,
+      batchSize: opts["batch-size"] ? parseOptionalInt(opts["batch-size"]) : undefined,
     });
-    for (const scoped of result.scopes) {
-      console.log(`[${scoped.scope}] embeddings generated: ${scoped.generated}, skipped: ${scoped.skipped}, batches: ${scoped.batches}`);
-    }
-    console.log(`Total generated: ${result.generated}, skipped: ${result.skipped}, batches: ${result.batches}`);
-  } catch (e: any) {
-    console.error(`Error: ${e.message}`);
-    process.exit(1);
+    return textResult([
+      ...result.scopes.map((scoped) =>
+        `[${scoped.scope}] embeddings generated: ${scoped.generated}, skipped: ${scoped.skipped}, batches: ${scoped.batches}`
+      ),
+      `Total generated: ${result.generated}, skipped: ${result.skipped}, batches: ${result.batches}`,
+    ].join("\n"));
+  } catch (error) {
+    return errorFrom(error);
   }
 }
 
-function printStats(s: { total: number; byCategory: Record<string, number>; bySeverity: Record<string, number> }): void {
-  console.log(`  Total: ${s.total}`);
-  console.log("  By category:");
-  for (const [cat, count] of Object.entries(s.byCategory)) {
-    console.log(`    ${cat}: ${count}`);
+function formatStatsText(stats: ReturnType<TrapOperations["getStats"]>): string {
+  const sections: string[] = [];
+  if (stats.project) {
+    sections.push("── Project ──", formatStatsBlock(stats.project));
   }
-  console.log("  By severity:");
-  for (const [sev, count] of Object.entries(s.bySeverity)) {
-    console.log(`    ${sev}: ${count}`);
-  }
+  sections.push("── Global ──", formatStatsBlock(stats.global));
+  return sections.join("\n");
+}
+
+function formatStatsBlock(stats: { total: number; byCategory: Record<string, number>; bySeverity: Record<string, number> }): string {
+  return [
+    `  Total: ${stats.total}`,
+    "  By category:",
+    ...Object.entries(stats.byCategory).map(([category, count]) => `    ${category}: ${count}`),
+    "  By severity:",
+    ...Object.entries(stats.bySeverity).map(([severity, count]) => `    ${severity}: ${count}`),
+  ].join("\n");
 }
 
 function parseSearchMode(mode: string): SearchMode {
   if ((SEARCH_MODES as readonly string[]).includes(mode)) return mode as SearchMode;
   throw new Error(`Invalid search mode: ${mode}. Expected one of: ${SEARCH_MODES.join(", ")}`);
+}
+
+function parseId(value: string | undefined, usage: string): number | CommandResult {
+  if (value === undefined) return errorResult(usage);
+  const id = Number.parseInt(value, 10);
+  return Number.isNaN(id) ? errorResult("Error: id must be a number") : id;
+}
+
+function parseOptionalInt(value: string | undefined, fallback?: number): number {
+  if (value === undefined) {
+    if (fallback === undefined) throw new Error("Missing numeric value.");
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) throw new Error(`Invalid number: ${value}`);
+  return parsed;
+}
+
+function readQuery(positionals: string[]): string {
+  if (positionals.length > 0) return positionals.join(" ").trim();
+  if (process.stdin.isTTY) return "";
+  return readFileSync(0, "utf-8").trim();
 }
 
 function parseCsv(value?: string): string[] | undefined {
@@ -404,4 +418,8 @@ function parseCsv(value?: string): string[] | undefined {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function errorFrom(error: unknown): CommandResult {
+  return errorResult(`Error: ${error instanceof Error ? error.message : String(error)}`);
 }

@@ -46,6 +46,9 @@ function showHelp(): void {
   console.log("  export                Export traps as JSON");
   console.log("  import <file.json>    Import traps from JSON");
   console.log("  stats                 Show statistics");
+  console.log("  doctor                Diagnose scope, database, and embedding health");
+  console.log("  repair-scope          Move mis-scoped project traps into the current project");
+  console.log("  migrate-project       Move project traps between initialized projects");
   console.log("  serve                 Start MCP server (for Claude Code)");
   console.log("");
   console.log("Flags:");
@@ -54,5 +57,9 @@ function showHelp(): void {
   console.log("  --mode fts|semantic|hybrid  Search mode");
   console.log("  --status active|superseded|archived|all  Lifecycle filter");
   console.log("  --batch-size <n>        Embedding generation batch size");
-  console.log("  --json '{}'             JSON input for add/edit");
+  console.log("  --json                  JSON output for search/show/list/stats/doctor; JSON input for add/edit");
+  console.log("  --output-json           JSON output for add/edit when --json is used as input");
+  console.log("  --from-project-path <path>  Source project path for scope repair/migration");
+  console.log("  --to-project-path <path>    Destination project path for scope repair/migration");
+  console.log("  --dry-run|--apply       Preview or apply scope repair/migration");
 }

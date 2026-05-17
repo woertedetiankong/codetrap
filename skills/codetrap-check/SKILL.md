@@ -23,13 +23,27 @@ From the user's request, extract search keywords. Focus on:
 
 ## Step 2: Search the database
 
-Call the MCP tool `search_traps` with the extracted keywords. Search both project and global scopes.
+Default to the CLI from the current project cwd:
+
+```bash
+codetrap search "<keywords>" --mode hybrid --json
+```
+
+If the query comes from another tool, stdin is also supported:
+
+```bash
+echo "<keywords>" | codetrap search --mode hybrid --json
+```
+
+MCP `search_traps` is optional. Use it only when it is already available and project-scoped correctly; pass `cwd` when the client supports it.
+
+Review the top 3 returned action cards before deciding that no trap applies. Do not stop after only the first result; relevant traps may rank second or third. If fewer than 3 cards are returned, review all returned cards.
 
 ## Step 3: Apply the lessons
 
-For each relevant trap found:
+For each relevant trap found in the reviewed top cards:
 1. Read the action card's `avoid` and `do_instead`
-2. If the card is highly relevant and you are about to edit code, call `get_trap` with `next_action.details_args.id` and `next_action.details_args.scope`
+2. If the card is highly relevant, or has `critical`/`error` severity and is plausibly related, and you are about to edit code, run `next_action.command` from CLI JSON; with MCP, call `get_trap` with `next_action.details_args.id` and `next_action.details_args.scope`
 3. Adjust your code generation to follow the correct approach
 4. If a trap matches exactly what you were about to do, explicitly tell the user: "I was about to [avoid], but the codetrap database says [do_instead]. I'll do it the right way."
 

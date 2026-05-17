@@ -8,6 +8,7 @@ import {
   type FreshEmbedding,
   type StoredEmbedding,
 } from "../lib/embedder";
+import type { EmbeddingStateCounts } from "../lib/embedding-health";
 import { embeddingIsFresh, passageHashForTrap } from "../lib/trap-search-document";
 import { countTraps, listTraps } from "./queries";
 
@@ -138,6 +139,38 @@ export function countEmbeddableTraps(
   opts: { scope?: string; category?: string; status?: TrapStatus | "all" } = {}
 ): number {
   return countTraps(db, opts);
+}
+
+export function getEmbeddingStateCounts(
+  db: Database,
+  config: EmbeddingConfig | null,
+  opts: { scope?: string; category?: string; status?: TrapStatus | "all" } = {}
+): EmbeddingStateCounts {
+  const traps = listTraps(db, {
+    scope: opts.scope,
+    category: opts.category,
+    status: opts.status,
+    limit: 100000,
+  });
+  const counts: EmbeddingStateCounts = {
+    total: traps.length,
+    fresh: 0,
+    stale: 0,
+    missing: 0,
+  };
+
+  for (const trap of traps) {
+    const embedding = getEmbedding(db, trap.id);
+    if (!embedding) {
+      counts.missing++;
+    } else if (config && embeddingIsFresh(trap, embedding, config)) {
+      counts.fresh++;
+    } else {
+      counts.stale++;
+    }
+  }
+
+  return counts;
 }
 
 function rowToStoredEmbedding(row: TrapEmbeddingRow): StoredEmbedding {

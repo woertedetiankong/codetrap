@@ -10,11 +10,23 @@ import { TrapStore } from "../lib/store";
 import { toolDefinitions } from "./tools";
 import { resourceDefinitions } from "./resources";
 import { TrapOperations } from "../lib/trap-operations";
+import {
+  toListJson,
+  toMcpResourceJson,
+  toMcpResourceText,
+  toMcpSearchJson,
+  toMcpTextError,
+  toMcpTextJson,
+  toStatsJson,
+  toTrapDetailsJson,
+} from "../lib/output-json";
+import { storeForScopeContext } from "../lib/scope-context";
 
 type ToolArgs = Record<string, any>;
 
 export async function handleToolCall(store: TrapStore, name: string, args: ToolArgs) {
-  const operations = new TrapOperations(store);
+  const scopedStore = storeForScopeContext(store, args.cwd);
+  const operations = new TrapOperations(scopedStore);
   try {
     switch (name) {
       case "search_traps": {
@@ -26,20 +38,20 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
           limit: args.limit ?? 20,
           status: args.status,
         });
-        return { content: [{ type: "text", text: JSON.stringify(cards, null, 2) }] };
+        return toMcpTextJson(toMcpSearchJson(cards));
       }
 
       case "add_trap": {
         const result = operations.addTrap(args);
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        return toMcpTextJson(result);
       }
 
       case "get_trap": {
         const result = operations.getTrapDetails(args.id, args.scope);
         if (!result) {
-          return { content: [{ type: "text", text: JSON.stringify({ error: "not found" }) }], isError: true };
+          return toMcpTextError("not found");
         }
-        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        return toMcpTextJson(toTrapDetailsJson(result));
       }
 
       case "list_traps": {
@@ -49,49 +61,70 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
           status: args.status,
           limit: args.limit ?? 50,
         });
-        const flat = groups.flatMap((g) =>
-          g.traps.map((t) => ({ ...t, scope: g.scope }))
-        );
-        return { content: [{ type: "text", text: JSON.stringify(flat, null, 2) }] };
+        return toMcpTextJson(toListJson(groups));
       }
 
       case "update_trap": {
         const result = operations.updateTrap(args.id, args, args.scope);
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        return toMcpTextJson(result, !result.success);
       }
 
       case "delete_trap": {
         const result = operations.deleteTrap(args.id, args.scope);
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        return toMcpTextJson(result, !result.success);
       }
 
       case "add_trap_evidence": {
         const result = operations.addTrapEvidence(args.id, args, args.scope);
-        return { content: [{ type: "text", text: JSON.stringify(result) }], isError: !result.success };
+        return toMcpTextJson(result, !result.success);
       }
 
       case "archive_trap": {
         const result = operations.archiveTrap(args.id, args.scope);
-        return { content: [{ type: "text", text: JSON.stringify(result) }], isError: !result.success };
+        return toMcpTextJson(result, !result.success);
       }
 
       case "supersede_trap": {
         const result = operations.supersedeTrap(args.id, args.superseded_by_id, args.scope, args.state_key);
-        return { content: [{ type: "text", text: JSON.stringify(result) }], isError: !result.success };
+        return toMcpTextJson(result, !result.success);
       }
 
       case "get_stats": {
         const stats = operations.getStats();
-        const out: Record<string, unknown> = { global: stats.global };
-        if (stats.project) out.project = stats.project;
-        return { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] };
+        return toMcpTextJson(toStatsJson(stats, operations.getEmbeddingStats()));
       }
 
       default:
-        return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
+        return toMcpTextError(`Unknown tool: ${name}`);
     }
   } catch (e: any) {
-    return { content: [{ type: "text", text: e.message }], isError: true };
+    return toMcpTextError(e instanceof Error ? e.message : String(e));
+  }
+}
+
+export function handleResourceRead(store: TrapStore, uri: string) {
+  const operations = new TrapOperations(store);
+  try {
+    switch (uri) {
+      case "codetrap://project/recent":
+        return toMcpResourceJson(uri, toListJson(operations.listTraps({ scope: "project", limit: 10 })));
+      case "codetrap://global/recent":
+        return toMcpResourceJson(uri, toListJson(operations.listTraps({ scope: "global", limit: 10 })));
+      case "codetrap://project/top":
+        return toMcpResourceJson(uri, toListJson(operations.topTraps("project", 20)));
+      case "codetrap://global/top":
+        return toMcpResourceJson(uri, toListJson(operations.topTraps("global", 20)));
+      default: {
+        const match = uri.match(/^codetrap:\/\/(project|global)\/trap\/(\d+)$/);
+        if (match) {
+          const details = operations.getTrapDetails(Number.parseInt(match[2], 10), match[1]);
+          return toMcpResourceJson(uri, details ? toTrapDetailsJson(details) : { error: "not found" });
+        }
+        return toMcpResourceText(uri, "Unknown resource");
+      }
+    }
+  } catch (e: any) {
+    return toMcpResourceText(uri, e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -122,44 +155,7 @@ export async function start(): Promise<void> {
 
   // Read resource
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    const uri = request.params.uri;
-    try {
-      switch (uri) {
-        case "codetrap://project/recent": {
-          const groups = store.list({ scope: "project", limit: 10 });
-          const traps = groups.flatMap((g) => g.traps);
-          return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(traps, null, 2) }] };
-        }
-        case "codetrap://global/recent": {
-          const groups = store.list({ scope: "global", limit: 10 });
-          const traps = groups.flatMap((g) => g.traps);
-          return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(traps, null, 2) }] };
-        }
-        case "codetrap://project/top": {
-          const traps = store.topTraps("project", 20);
-          return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(traps, null, 2) }] };
-        }
-        case "codetrap://global/top": {
-          const traps = store.topTraps("global", 20);
-          return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(traps, null, 2) }] };
-        }
-        default: {
-          // Handle codetrap://{scope}/trap/{id}
-          const match = uri.match(/^codetrap:\/\/(project|global)\/trap\/(\d+)$/);
-          if (match) {
-            const result = store.get(parseInt(match[2]), match[1]);
-            if (!result) {
-              return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify({ error: "not found" }) }] };
-            }
-            const details = store.getDetails(parseInt(match[2]), match[1]);
-            return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(details ?? result.trap, null, 2) }] };
-          }
-          return { contents: [{ uri, mimeType: "text/plain", text: "Unknown resource" }] };
-        }
-      }
-    } catch (e: any) {
-      return { contents: [{ uri, mimeType: "text/plain", text: e.message }] };
-    }
+    return handleResourceRead(store, request.params.uri);
   });
 
   const transport = new StdioServerTransport();

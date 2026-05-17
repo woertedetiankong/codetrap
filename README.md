@@ -2,7 +2,7 @@
 
 > A local-first coding pitfall memory bank — record mistakes once, never repeat them twice.
 
-**codetrap** records structured coding pitfalls ("traps") and provides search across them before you write code. It serves both human developers via CLI and AI coding agents via MCP (Model Context Protocol).
+**codetrap** records structured coding pitfalls ("traps") and provides search across them before you write code. It is CLI-first for humans and AI coding agents, with an optional MCP (Model Context Protocol) adapter for clients that prefer tool schemas.
 
 ## Why?
 
@@ -36,8 +36,11 @@ codetrap add --json '{
   "tags": ["fetch", "timeout", "http"]
 }'
 
-# Search for relevant traps
+# Search for relevant traps as a human
 codetrap search "HTTP request timeout" --mode hybrid
+
+# Search for relevant traps as an agent
+codetrap search "HTTP request timeout" --mode hybrid --json
 
 # List all traps
 codetrap list
@@ -50,10 +53,12 @@ codetrap show 1
 
 - **Structured trap recording** — title, category, context, mistake, fix, severity, tags, lifecycle, evidence, before/after code
 - **Dual scope** — project-scoped (`.codetrap/traps.db`) and global (`~/.codetrap/traps.db`)
+- **CLI-first agent API** — `search/show/list/stats/doctor --json` and stdin query support for shell-friendly automation
 - **Three search modes** — FTS (SQLite FTS5), semantic (Jina embeddings), hybrid (RRF fusion)
 - **Chinese + mixed-language search** — CJK bigram tokenizer, synonym map for Chinese-English terms
-- **MCP server** — 10 tools + 4 resources for AI agent integration
+- **MCP server** — optional tools + resources for AI agent integration
 - **Embedding cache** with freshness tracking — embeddings are rebuildable, stale ones auto-invalidated
+- **Doctor diagnostics** — scope, database, and embedding health in text or JSON
 - **Schema migrations** — in-code migration system from v0 through current v4
 - **Single-binary builds** — `bun build --compile` produces standalone binaries in `dist/`
 
@@ -65,6 +70,7 @@ codetrap/
 │   ├── index.ts              CLI entry point
 │   ├── mcp-server.ts         MCP server entry point
 │   ├── commands/router.ts    CLI command dispatch
+│   ├── commands/command-result.ts  CLI command results + rendering
 │   ├── mcp/
 │   │   ├── server.ts         MCP stdio transport + handlers
 │   │   ├── tools.ts          10 MCP tool definitions
@@ -73,6 +79,11 @@ codetrap/
 │   ├── lib/
 │   │   ├── store.ts          Project/global scope orchestration
 │   │   ├── trap-operations.ts Shared CLI/MCP operation semantics
+│   │   ├── output-json.ts    Shared CLI/MCP JSON presenters
+│   │   ├── scope-context.ts  Scope/database diagnostic facts
+│   │   ├── scope-migration.ts Safe project trap scope repair/migration
+│   │   ├── doctor.ts         Scope and embedding health diagnostics
+│   │   ├── embedding-health.ts  Fresh/stale/missing embedding summaries
 │   │   ├── search-service.ts FTS/semantic/hybrid search, RRF fusion
 │   │   ├── search-result-card.ts Compact agent-facing result cards
 │   │   ├── search-normalizer.ts  CJK bigram, synonyms, search_text
@@ -80,6 +91,7 @@ codetrap/
 │   │   ├── trap-search-document.ts Derived search text + embedding passage
 │   │   ├── trap-json-fields.ts Tags/evidence JSON array codec
 │   │   ├── trap-archive.ts   Import/export compatibility
+│   │   ├── trap-transfer.ts  DB-to-DB transfer for scope migration
 │   │   ├── embedder.ts       Jina Embeddings adapter
 │   │   ├── embedding-job.ts  Batch embedding generation
 │   │   ├── format.ts         CLI output formatting
@@ -96,6 +108,7 @@ codetrap/
 │       ├── trap-*.test.ts
 │       ├── mcp-tools.test.ts
 │       ├── scope.test.ts
+│       ├── scope-migration-cli.test.ts
 │       ├── import-export-cli.test.ts
 │       └── fixtures/search-eval.json
 ├── skills/                   Agent skill definitions
@@ -111,9 +124,9 @@ codetrap/
 |---|---|
 | `init` | Initialize `.codetrap/` in current project |
 | `add` | Record a new trap (`--json` structured input; interactive mode is not implemented) |
-| `search <query>` | Search traps (--mode fts\|semantic\|hybrid, --category, --scope, --status, --limit) |
-| `list` | List traps (--category, --scope, --status, --limit) |
-| `show <id>` | Show full trap details |
+| `search <query>` | Search traps (--mode fts\|semantic\|hybrid, --category, --scope, --status, --limit, --json; query can come from stdin) |
+| `list` | List traps (--category, --scope, --status, --limit, --json) |
+| `show <id>` | Show full trap details (--json) |
 | `edit <id>` | Edit a trap |
 | `delete <id>` | Delete a trap |
 | `add_trap_evidence <id>` | Attach source/evidence metadata |
@@ -121,19 +134,22 @@ codetrap/
 | `supersede_trap <old_id> <new_id>` | Mark one trap as replaced by another |
 | `export` | Export traps to JSON |
 | `import` | Import traps from JSON |
-| `stats` | Show database statistics |
+| `stats` | Show database statistics (--json includes embedding health) |
+| `doctor` | Diagnose cwd, scope, database paths, trap counts, and embedding health (--json) |
+| `repair-scope` | Move legacy mis-scoped project traps into the current project (dry-run by default, `--apply` to mutate, `--json`) |
+| `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires JINA_API_KEY) |
 | `serve` | Start MCP server |
 
 ## Agent Integration
 
-For AI coding agents, use three layers:
+For AI coding agents, use the CLI as the default integration path:
 
-- **MCP** gives the agent structured tools like `search_traps` and `add_trap`.
+- **CLI JSON** is the primary agent API and works in any client that can run shell commands.
 - **AGENTS.md / CLAUDE.md** tells the agent when to use codetrap.
-- **CLI** is the fallback that works even when MCP is unavailable.
+- **MCP** is an optional adapter for clients that prefer tool schemas.
 
-MCP and project guidance are complementary. MCP tells the agent what it can call; `AGENTS.md` or `CLAUDE.md` tells it when to call it.
+CLI and project guidance are the main path. MCP should stay thin and share the same store/search behavior.
 
 ### MCP Setup
 
@@ -165,24 +181,34 @@ Add this to `AGENTS.md` for Codex, or to `CLAUDE.md` for Claude Code:
 
 Before non-trivial code edits, check codetrap for relevant pitfalls.
 
-Prefer MCP tools when available:
+Default to CLI JSON from the current project cwd:
+
+```bash
+codetrap search "<keywords>" --mode hybrid --json
+```
+
+Read the top 3 action cards before deciding no trap applies. If a card is highly relevant, or has `critical`/`error` severity and is plausibly related, inspect it before editing:
+
+```bash
+codetrap show <id> --scope <project|global> --json
+```
+
+When `.codetrap/` exists, prefer project scope for project conventions. Use global for cross-project rules.
+
+MCP tools are optional:
 - `search_traps`
 - `get_trap`
 - `add_trap`
-
-Fallback to CLI:
-
-```bash
-codetrap search "<keywords>" --mode hybrid
-```
 
 When a new recurring mistake or project convention is discovered, ask whether to record it with codetrap.
 ````
 
 Recommended behavior:
 
-- Use `search_traps` or `codetrap search` before risky edits in APIs, auth, database, security, migrations, or project conventions.
-- Call `get_trap` for highly relevant results before editing code.
+- Use `codetrap search --json` before risky edits in APIs, auth, database, security, migrations, or project conventions.
+- Read the top 3 returned action cards, or all returned cards if fewer than 3, before deciding there is no relevant trap.
+- Run the returned `next_action.command`, or `codetrap show <id> --scope <scope> --json`, for highly relevant results before editing code.
+- Treat `critical` or `error` traps as worth drilling into when they are plausibly related, even if they are not ranked first.
 - Apply the recorded `avoid` and `do_instead` guidance while making changes.
 - Ask before recording a new trap unless the user explicitly requested it.
 

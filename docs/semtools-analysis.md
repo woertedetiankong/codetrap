@@ -1,8 +1,11 @@
-# SemTools 参考分析与落地建议
+# SemTools 专项参考分析
 
 Date: 2026-05-15
 
 基于对 `run-llama/semtools` v3.0.0 的完整源码分析，提取对 codetrap 有帮助的思想和可落地的改进。
+
+Status: 本文是 SemTools 专项参考附录，不再作为实施路线图。可执行优先级已经归并到
+`docs/codetrap-optimization-roadmap.zh-CN.md`，后续排期以主 roadmap 为准。
 
 ---
 
@@ -111,7 +114,7 @@ cat report.md | semtools search "semantic search"
 
 每个子命令读 stdin、写 stdout，不关心输入从哪来、输出到哪去。
 
-**codetrap 的现状**：CLI 命令是独立终端交互，不参与管道。
+**codetrap 的原始现状**：CLI 命令是独立终端交互，不参与管道。
 
 ```bash
 codetrap search "http 请求约定" --mode hybrid
@@ -119,17 +122,17 @@ codetrap search "http 请求约定" --mode hybrid
 
 输出是格式化的终端文本，不适合被下游工具消费。
 
-**可落地的**：
+**2026-05-17 已落地**：
 
-- `codetrap search` 增加 `--json` 标志，输出 JSON 到 stdout
-- 当 stdin 不是终端时，从 stdin 读取查询文本（而不是从命令行参数）
+- `codetrap search` 增加 `--json` 标志，输出 JSON 到 stdout。
+- 当没有 positional query 且 stdin 不是终端时，从 stdin 读取查询文本。
+- `search/show/list/stats --json` 使用共享 JSON presenter。
+- `add/edit --json` 仍表示 JSON 输入；机器可读输出用 `--output-json`。
 - 配合 `--json` + `jq` 或其他工具做后处理：
 
 ```bash
 echo "认证实现模式" | codetrap search --json --limit 3 | jq '.[].title'
 ```
-
-改动量很小——主要是输出格式的切换和 stdin 检测。不影响现有交互式使用。
 
 ---
 
@@ -147,11 +150,11 @@ Qdrant 中存两份数据：文档元数据（用于变更检测）和行嵌入�
 
 **codetrap 的现状**：`embedding-job.ts` 中已经有 `trapsNeedingEmbeddings()` 方法，通过 `passage_hash` 检测内容变更。逻辑上是相同的思路，但实现比较朴素。
 
-**可落地的**：
+**2026-05-17 已落地/待补**：
 
-- 将嵌入新鲜度检测抽成一个清晰的 `EmbeddingState` 枚举（`fresh | stale | missing`），替代当前的布尔判断
-- 在 `codetrap stats` 中展示嵌入覆盖率（已有？）和新鲜度分布
-- 这个改动是纯重构，不影响功能，但让代码更接近 semtools 的清晰状态机
+- 已抽出 `src/lib/embedding-health.ts`。
+- `codetrap stats --json` 和 `codetrap doctor --json` 已展示 `fresh` / `stale` / `missing` 计数、provider、model、dimensions 和 passage_version。
+- 待补：本地 embedding provider、模型缓存目录和离线默认 provider。
 
 ---
 
@@ -167,19 +170,18 @@ Qdrant 中存两份数据：文档元数据（用于变更检测）和行嵌入�
 - Include a ## References section at the end
 ```
 
-**codetrap 的现状**：MCP tools 有 description，但 Skill 文件（`skills/codetrap-check/SKILL.md`）中的指导比较笼统。没有"何时用 search_traps vs get_trap vs list_traps"的决策树。
+**codetrap 的原始现状**：MCP tools 有 description，但 Skill 文件（`skills/codetrap-check/SKILL.md`）中的指导比较笼统。没有"何时用 search_traps vs get_trap vs list_traps"的决策树。
 
-**可落地的**：
+**2026-05-17 已落地**：
 
-在 `skills/codetrap-check/SKILL.md` 中加入工具选择决策树：
+`codetrap-check` / `codetrap-search` skills 已改成 CLI-first，MCP 作为 optional adapter。默认路径是：
 
 ```
-- search_traps: 概念性查询。比如"这个项目对 HTTP 请求有什么约定？"
-- get_trap: 已经知道 trap ID，需要看完整细节时
-- list_traps: 浏览某类别的所有陷阱，比如"列出所有 security 相关的陷阱"
+codetrap search "<keywords>" --mode hybrid --json
+codetrap show <id> --scope <project|global> --json
 ```
 
-不需要改代码，只改 skill 文件。
+规则也已明确：先看 top 3 action cards；`critical` / `error` 且相关时必须下钻。
 
 ---
 
@@ -267,18 +269,20 @@ ask = ["dep:async-openai", "dep:model2vec-rs", ...]
 
 ---
 
-## 四、落地优先级
+## 四、已归并到主 roadmap 的结论
 
-| 优先级 | 做什么 | 改动量 | 收益 |
-|--------|--------|--------|------|
-| **P0** | 新增本地 embedding provider 接口，默认候选先评估 `gte-multilingual-base` | 中（新增 provider、模型缓存、配置入口） | 消除外部 API 依赖，保持较好默认检索质量 |
-| **P0** | 用 `potion-multilingual-128M` 做 fast mode 对照实验 | 中（可能需要 Rust/Python sidecar 或 WASM） | 验证静态 embedding 是否足够支撑无感 pre-flight check |
-| **P1** | 搜索输出 `--json` + stdin 支持 | 小（30 行） | 管道可组合性 |
-| **P1** | Skills 工具选择决策树 | 极小（改 markdown） | Agent 使用体验 |
-| **P2** | 嵌入状态机重构 (`EmbeddingState`) | 小（纯重构） | 代码清晰度 |
-| **P2** | 嵌入覆盖率展示（stats 命令） | 小（加查询） | 运维可见性 |
-| **P3** | 配置文件支持 (`~/.codetrap/config.json`) | 中 | 体验改进 |
-| **P3** | npm 分发 | 中 | 降低安装门槛 |
+SemTools 相关行动项已经收敛到 `docs/codetrap-optimization-roadmap.zh-CN.md`：
+
+| SemTools 启发 | 主 roadmap 归属 |
+|---|---|
+| `--json` + stdin + stdout 机器输出 | Phase 1: CLI JSON 成为稳定契约 |
+| AGENTS/skill 工具选择协议 | Phase 2: CLI-first Agent 使用协议 |
+| embedding fresh/stale/missing 状态 | Phase 6: Embedding 健康度显式化 |
+| 本地 embedding provider 候选 | Phase 6: 本地 embedding 与离线体验 |
+| 配置优先级链 | Phase 8: 配置文件 |
+| npm / 预编译二进制 / onboarding | Phase 8: Hooks、plugin/bundle 与 onboarding |
+
+本文件只保留 SemTools 的来源分析、模型取舍和“不该照搬”的判断，避免和主 roadmap 形成两套排期。
 
 ---
 
@@ -295,12 +299,4 @@ SemTools 给 codetrap 最大的启发不是某一个具体技术，而是**"本�
 
 2026-05-15 的进一步判断是：**默认本地模型不必绑定 SemTools 的 model2vec 选择**。对 codetrap 来说，更稳的路线是先用 `onnx-community/gte-multilingual-base` 作为默认本地 provider 候选，再用 `minishlab/potion-multilingual-128M` 做极速 provider 对照实验。
 
-建议的下一步：
-
-1. 扩展 `EmbeddingProvider`，支持本地 provider 名称、模型维度、模型缓存目录和 passage version。
-2. 实现 `gte-multilingual-base` ONNX provider，优先跑通 `semantic` / `hybrid`。
-3. 在 `src/tests/fixtures/search-eval.json` 中增加更多真实 codetrap 查询，覆盖中文、中英混合、代码术语、隐含错误模式。
-4. 对比 Jina、`gte-multilingual-base`、`potion-multilingual-128M` 的 Recall@5、延迟和安装体积。
-5. 如果 `potion` 的 Recall@5 接近 `gte`，再考虑把它设为 fast mode；如果质量明显不足，就保留为可选极速模式。
-
-无论最终选哪个模型，目标都不变：把语义搜索从"依赖外部 API"变成"纯本地能力"，但默认体验必须先保证查得准。
+无论最终选哪个模型，目标都不变：把语义搜索从"依赖外部 API"变成"纯本地能力"，但默认体验必须先保证查得准。具体实施顺序见主 roadmap。

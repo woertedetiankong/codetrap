@@ -59,6 +59,86 @@
       "mistake": "Treating --mode hybrid as positionals appends hybrid to the search query.",
       "fix": "Return opts and positionals from parseArgs.",
       "severity": "error"
+    },
+    {
+      "title": "StickS3 projects need the correct ESP-IDF target and 8MB flash size",
+      "category": "convention",
+      "tags": ["StickS3", "ESP-IDF", "esp32p4", "flash", "target"],
+      "scope": "global",
+      "context": "When rebuilding a StickS3 project from ESP-IDF hello_world, configure target esp32p4 and 8MB flash.",
+      "mistake": "Leaving the default target or flash size creates builds that flash or boot incorrectly on StickS3.",
+      "fix": "Set the ESP-IDF target to esp32p4 and configure the board for 8MB flash before adding application logic.",
+      "severity": "error"
+    },
+    {
+      "title": "Do not assume StickS3 screen and buttons work directly through M5Unified",
+      "category": "bug",
+      "tags": ["StickS3", "M5Unified", "screen", "buttons"],
+      "scope": "global",
+      "context": "When wiring StickS3 screen or button support, verify M5Unified compatibility first.",
+      "mistake": "Assuming M5Unified abstracts the StickS3 LCD and buttons can hide board-specific setup gaps.",
+      "fix": "Check the board support path and fall back to explicit LCD/button initialization when M5Unified is not enough.",
+      "severity": "warning"
+    },
+    {
+      "title": "Native ST7789 screen init must power the PMIC over I2C first",
+      "category": "bug",
+      "tags": ["StickS3", "ST7789", "PMIC", "I2C", "screen"],
+      "scope": "global",
+      "context": "When a native SPI/ST7789 StickS3 screen stays black, check PMIC power rails before tuning SPI.",
+      "mistake": "Debugging SPI timing while the display power or backlight was never enabled.",
+      "fix": "Initialize the PMIC over I2C and enable display power before sending ST7789 commands.",
+      "severity": "critical"
+    },
+    {
+      "title": "Keep Doubao ASR on the Mac agent side, not inside ESP32 firmware",
+      "category": "convention",
+      "tags": ["StickS3", "ASR", "Doubao", "Mac", "firmware"],
+      "scope": "global",
+      "context": "When adding voice typing to StickS3, the ESP32 should stream audio and the Mac agent should call Doubao ASR.",
+      "mistake": "Trying to put Doubao ASR credentials and HTTP transcription directly into ESP32 firmware.",
+      "fix": "Keep ASR on the Mac proxy/agent side and let firmware send audio frames to that local service.",
+      "severity": "critical"
+    },
+    {
+      "title": "VOICE_SERVER_URI cannot use localhost or 127.0.0.1 from StickS3",
+      "category": "bug",
+      "tags": ["StickS3", "VOICE_SERVER_URI", "localhost", "WebSocket", "LAN"],
+      "scope": "global",
+      "context": "When StickS3 connects to a Mac WebSocket voice server, localhost points to the board, not the Mac.",
+      "mistake": "Setting VOICE_SERVER_URI to ws://127.0.0.1:8765 makes the board connect to itself.",
+      "fix": "Use the Mac LAN IP address in VOICE_SERVER_URI, for example ws://192.168.x.y:8765/...",
+      "severity": "error"
+    },
+    {
+      "title": "ES8311 probe address 0x18 is a 7-bit address, not an 8-bit address",
+      "category": "bug",
+      "tags": ["StickS3", "ES8311", "0x18", "I2C", "codec"],
+      "scope": "global",
+      "context": "When probing ES8311 over I2C and seeing address 0x18, distinguish 7-bit and 8-bit address notation.",
+      "mistake": "Treating 0x18 as the wrong shifted 8-bit address causes codec init confusion.",
+      "fix": "Use 0x18 as the 7-bit ES8311 I2C address expected by ESP-IDF drivers.",
+      "severity": "error"
+    },
+    {
+      "title": "StickS3 I2S microphone DIN is GPIO16, not GPIO14",
+      "category": "bug",
+      "tags": ["StickS3", "I2S", "GPIO16", "GPIO14", "DIN", "WAV"],
+      "scope": "global",
+      "context": "When recorded WAV samples are all zero on StickS3, check the I2S microphone DIN pin.",
+      "mistake": "Using GPIO14 for I2S DIN writes the speaker DOUT pin instead of reading the microphone.",
+      "fix": "Set I2S DIN to GPIO16 for microphone input and keep GPIO14 for speaker DOUT.",
+      "severity": "critical"
+    },
+    {
+      "title": "Do not lower VOICE_MIC_GAIN just because peak reaches 32768",
+      "category": "performance",
+      "tags": ["StickS3", "VOICE_MIC_GAIN", "peak", "32768", "quality", "asr_timing"],
+      "scope": "global",
+      "context": "When StickS3 voice capture reports peak=32768, inspect quality and ASR timing before changing gain.",
+      "mistake": "Immediately lowering gain and reflashing firmware based only on a saturated peak value.",
+      "fix": "Check quality metrics and asr_timing first; only tune VOICE_MIC_GAIN when the end-to-end signal is actually clipped or slow.",
+      "severity": "warning"
     }
   ],
   "queries": [
@@ -76,6 +156,14 @@
     { "query": "existing databases are stale after a table change", "mode": "semantic", "goldTrapIds": [3], "phaseGate": "phase4", "minRecallAt5": 1 },
     { "query": "do not scatter process environment reads", "mode": "semantic", "goldTrapIds": [4], "phaseGate": "phase4", "minRecallAt5": 1 },
     { "query": "stale results after writes", "mode": "semantic", "goldTrapIds": [5], "phaseGate": "phase4", "minRecallAt5": 1 },
-    { "query": "flag value accidentally appended to user search", "mode": "hybrid", "goldTrapIds": [6], "phaseGate": "phase4", "minRecallAt5": 1 }
+    { "query": "flag value accidentally appended to user search", "mode": "hybrid", "goldTrapIds": [6], "phaseGate": "phase4", "minRecallAt5": 1 },
+    { "query": "从 ESP-IDF hello_world 重建 StickS3 项目 target 8MB Flash", "mode": "hybrid", "goldTrapIds": [7], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
+    { "query": "StickS3 屏幕 按键 是否直接用 M5Unified", "mode": "hybrid", "goldTrapIds": [8], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
+    { "query": "原生 SPI ST7789 屏幕不亮 PMIC I2C 电源", "mode": "hybrid", "goldTrapIds": [9], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
+    { "query": "把豆包 ASR 直接放进 ESP32 固件", "mode": "hybrid", "goldTrapIds": [10], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
+    { "query": "VOICE_SERVER_URI=127.0.0.1 StickS3 WebSocket 连不上 Mac", "mode": "hybrid", "goldTrapIds": [11], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
+    { "query": "ES8311 probe 到 0x18 7-bit 8-bit 地址区别", "mode": "hybrid", "goldTrapIds": [12], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
+    { "query": "WAV 全 0 I2S DIN 写 GPIO14 应为 GPIO16", "mode": "hybrid", "goldTrapIds": [13], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
+    { "query": "peak=32768 是否马上降 VOICE_MIC_GAIN 重刷 quality asr_timing", "mode": "hybrid", "goldTrapIds": [14], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 }
   ]
 }

@@ -135,7 +135,33 @@ codetrap embed --scope global
 
 ## Codex / Claude Code 接入
 
-### MCP
+### CLI-first 接入（推荐）
+
+优先把下面片段放进项目的 `AGENTS.md` 或 `CLAUDE.md`：
+
+````md
+## Codetrap
+
+Before non-trivial code edits, check codetrap from the current project cwd:
+
+```bash
+codetrap search "<keywords>" --mode hybrid --json
+```
+
+Review the top 3 action cards before deciding no trap applies. If a card is highly relevant, or has `critical`/`error` severity and is plausibly related, inspect it before editing:
+
+```bash
+codetrap show <id> --scope <project|global> --json
+```
+
+When a new recurring mistake or project convention is discovered, ask whether to record it:
+
+```bash
+codetrap add --json '{...}'
+```
+````
+
+### MCP（可选）
 
 Codex：
 
@@ -162,33 +188,13 @@ Claude Code 或其他 MCP 客户端可以使用：
 }
 ```
 
-### AGENTS.md / CLAUDE.md
-
 即使已经配置 MCP，也建议在项目里写一段规则，因为：
 
 - MCP 解决“agent 能调用什么工具”。
 - `AGENTS.md` / `CLAUDE.md` 解决“agent 什么时候应该调用工具”。
+- CLI JSON 是默认可复制、可调试、跨客户端的 agent 接口。
 
-推荐模板：
-
-````md
-## Codetrap
-
-Before non-trivial code edits, check codetrap for relevant pitfalls.
-
-Prefer MCP tools when available:
-- `search_traps`
-- `get_trap`
-- `add_trap`
-
-Fallback to CLI:
-
-```bash
-codetrap search "<keywords>" --mode hybrid
-```
-
-When a new recurring mistake or project convention is discovered, ask whether to record it with codetrap.
-````
+MCP 作为 optional adapter 使用；如果客户端支持传参，tool calls 应传 `cwd`，让 project scope 从目标 workspace 解析。
 
 ## 发布新版本：完整流程
 
@@ -418,4 +424,3 @@ gh run list --workflow="npm-publish.yml" --repo woertedetiankong/codetrap --limi
 ```bash
 npm view codetrap version bin dist-tags --json
 ```
-

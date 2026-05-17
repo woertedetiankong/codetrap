@@ -1,10 +1,10 @@
 # codetrap ASCII 架构说明
 
-更新日期：2026-05-16
+更新日期：2026-05-17
 
 本文用纯 ASCII 流程图整理 codetrap 当前代码里的架构、数据流，以及已经落到代码中的思想架构。
 
-范围说明：本文只写当前代码已经体现出来的架构。compact action card、evidence/source metadata、lifecycle、archive/supersede 等能力已经落到代码中；`codetrap doctor`、team sharing、multimodal evidence、cross-encoder reranking 仍属于未来方向。
+范围说明：本文只写当前代码已经体现出来的架构。compact action card、CLI JSON、MCP thin adapter、`codetrap doctor`、embedding health、evidence/source metadata、lifecycle、archive/supersede 等能力已经落到代码中；team sharing、multimodal evidence、cross-encoder reranking 仍属于未来方向。
 
 ## 1. 一句话理解 codetrap
 
@@ -42,6 +42,7 @@ codetrap/
 |   |
 |   +-- commands/                CLI 命令适配层
 |   |   +-- router.ts
+|   |   +-- command-result.ts
 |   |
 |   +-- mcp/                     MCP 适配层
 |   |   +-- server.ts
@@ -54,7 +55,9 @@ codetrap/
 |   +-- lib/                     策略、搜索、格式化、embedding
 |   |   +-- store.ts
 |   |   +-- scope.ts
+|   |   +-- scope-context.ts
 |   |   +-- trap-operations.ts
+|   |   +-- output-json.ts
 |   |   +-- search-result-card.ts
 |   |   +-- search-service.ts
 |   |   +-- search-normalizer.ts
@@ -62,8 +65,11 @@ codetrap/
 |   |   +-- trap-search-document.ts
 |   |   +-- trap-json-fields.ts
 |   |   +-- trap-archive.ts
+|   |   +-- trap-transfer.ts
 |   |   +-- embedder.ts
 |   |   +-- embedding-job.ts
+|   |   +-- embedding-health.ts
+|   |   +-- doctor.ts
 |   |   +-- format.ts
 |   |   +-- constants.ts
 |   |
@@ -107,7 +113,7 @@ codetrap/
 | CLI adapter         |        | MCP adapter          |
 | commands/router.ts  |        | mcp/server.ts        |
 | parse flags         |        | tools/resources      |
-| render text         |        | return JSON text     |
+| CommandResult       |        | return JSON text     |
 +----------+----------+        +----------+-----------+
            |                              |
            +--------------+---------------+
@@ -156,6 +162,10 @@ codetrap/
 | src/domain/trap.ts           | Trap 类型、输入 schema、字段筛选        |
 | src/lib/store.ts             | project/global scope 策略               |
 | src/lib/trap-operations.ts   | CLI/MCP 共享命令语义                    |
+| src/lib/output-json.ts       | CLI/MCP 共享 JSON presenter             |
+| src/lib/doctor.ts            | doctor 诊断报告                         |
+| src/lib/scope-context.ts     | cwd/project/global DB 诊断事实          |
+| src/lib/embedding-health.ts  | fresh/stale/missing 统计与 fallback 原因 |
 | src/db/repository.ts         | 单个 SQLite 数据库的门面                |
 | src/lib/search-service.ts    | FTS / semantic / hybrid 检索协调        |
 | src/lib/search-result-card.ts | agent-facing action card 构建          |
@@ -951,10 +961,11 @@ active trap
 team sharing
 multimodal evidence
 cross-encoder reranking
-codetrap doctor
+local embedding provider
+path/module scoped traps
 ```
 
-其中一些想法出现在计划或参考文档中，但目前还没有形成完整代码功能。action cards、evidence/source metadata、lifecycle、supersede/archive commands 已经是当前 runtime 功能。
+其中一些想法出现在计划或参考文档中，但目前还没有形成完整代码功能。action cards、CLI JSON、doctor、repair-scope/migrate-project、embedding health、evidence/source metadata、lifecycle、supersede/archive commands 已经是当前 runtime 功能。
 
 ## 15. 最简心智模型
 

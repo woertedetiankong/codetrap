@@ -21,6 +21,8 @@ import * as queries from "./queries";
 import type { TrapStatus } from "../lib/constants";
 
 export type TrapStats = ReturnType<typeof queries.getStats>;
+export type EmbeddingStateCounts = ReturnType<typeof embeddingQueries.getEmbeddingStateCounts>;
+export type TrapRecordInsert = queries.TrapRecordInsert;
 
 export class TrapRepository {
   private readonly searchService: SearchService;
@@ -95,8 +97,36 @@ export class TrapRepository {
     return queries.getStats(this.db);
   }
 
+  embeddingStats(config: EmbeddingConfig | null): EmbeddingStateCounts {
+    return embeddingQueries.getEmbeddingStateCounts(this.db, config);
+  }
+
   exportAll(): TrapExportRecord[] {
     return queries.exportTraps(this.db);
+  }
+
+  exportProjectTrapsByPath(projectPath: string): TrapExportRecord[] {
+    return queries.exportProjectTrapsByPath(this.db, projectPath);
+  }
+
+  insertTrapRecord(record: TrapRecordInsert): number {
+    return queries.insertTrapRecord(this.db, record);
+  }
+
+  updateTrapSupersedesId(id: number, supersedesId: number): boolean {
+    return queries.updateTrapSupersedesId(this.db, id, supersedesId);
+  }
+
+  deleteTrapsByIds(ids: number[]): number {
+    return queries.deleteTrapsByIds(this.db, ids);
+  }
+
+  countProjectTrapsByPath(projectPath: string): number {
+    return queries.countProjectTrapsByPath(this.db, projectPath);
+  }
+
+  transaction<T>(callback: () => T): T {
+    return this.db.transaction(callback)();
   }
 
   getEmbedding(trapId: number): StoredEmbedding | null {

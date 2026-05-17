@@ -17,6 +17,7 @@ import { encodeEvidenceRelatedFiles, encodeTrapTags } from "../lib/trap-json-fie
 import { buildTrapSearchText, passageFieldsChanged, searchTextFieldsChanged } from "../lib/trap-search-document";
 
 export type TrapStatusFilter = TrapStatus | "all";
+export type TrapRecordInsert = Omit<Trap, "id">;
 
 export function insertTrap(db: Database, input: TrapInput): number {
   const tags = encodeTrapTags(input.tags);
@@ -265,12 +266,83 @@ export function exportTraps(db: Database): TrapExportRecord[] {
   }));
 }
 
+export function exportProjectTrapsByPath(db: Database, projectPath: string): TrapExportRecord[] {
+  const traps = db
+    .query("SELECT * FROM traps WHERE scope = 'project' AND project_path = ? ORDER BY id")
+    .all(projectPath) as Trap[];
+  return traps.map((trap) => ({
+    ...trap,
+    evidence: listTrapEvidence(db, trap.id).map(normalizeEvidenceForExport),
+  }));
+}
+
+export function insertTrapRecord(db: Database, record: TrapRecordInsert): number {
+  const stmt = db.prepare(`
+    INSERT INTO traps (
+      title, category, tags, scope, context, mistake, fix, search_text,
+      before_code, after_code, severity, state_key, status, supersedes_id,
+      valid_from, valid_until, project_path, hit_count, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const result = stmt.run(
+    record.title,
+    record.category,
+    record.tags,
+    record.scope,
+    record.context,
+    record.mistake,
+    record.fix,
+    record.search_text,
+    record.before_code,
+    record.after_code,
+    record.severity,
+    record.state_key,
+    record.status,
+    record.supersedes_id,
+    record.valid_from,
+    record.valid_until,
+    record.project_path,
+    record.hit_count,
+    record.created_at,
+    record.updated_at
+  );
+  return Number(result.lastInsertRowid);
+}
+
+export function updateTrapSupersedesId(db: Database, id: number, supersedesId: number): boolean {
+  const result = db.prepare("UPDATE traps SET supersedes_id = ? WHERE id = ?").run(supersedesId, id);
+  return result.changes > 0;
+}
+
+export function deleteTrapsByIds(db: Database, ids: number[]): number {
+  if (ids.length === 0) return 0;
+  let deleted = 0;
+  const stmt = db.prepare("DELETE FROM traps WHERE id = ?");
+  const tx = db.transaction(() => {
+    for (const id of ids) {
+      if (!getTrap(db, id)) continue;
+      stmt.run(id);
+      deleted++;
+    }
+  });
+  tx();
+  return deleted;
+}
+
 export function countTraps(db: Database, opts: { scope?: string; category?: string; status?: TrapStatusFilter } = {}): number {
   const conditions: string[] = [];
   const params: SQLQueryBindings[] = [];
   addTrapFilters(conditions, params, opts);
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const row = db.query(`SELECT COUNT(*) as c FROM traps ${where}`).get(...params) as { c: number };
+  return row.c;
+}
+
+export function countProjectTrapsByPath(db: Database, projectPath: string): number {
+  const row = db
+    .query("SELECT COUNT(*) as c FROM traps WHERE scope = 'project' AND project_path = ?")
+    .get(projectPath) as { c: number };
   return row.c;
 }
 

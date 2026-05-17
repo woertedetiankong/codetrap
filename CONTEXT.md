@@ -33,7 +33,9 @@ Evidence is loaded through `TrapDetails` for drill-down workflows. Default searc
 
 ### Action Card
 
-An action card is the compact search result shape for agents. It includes the trap id, scope, title, why it is relevant, what to avoid, what to do instead, score/sources, and a `next_action` that points to `get_trap` with both id and scope.
+An action card is the compact search result shape for agents. It includes the trap id, scope, title, why it is relevant, what to avoid, what to do instead, score/sources, and a `next_action`.
+
+CLI JSON uses `next_action.command`, for example `codetrap show <id> --scope <scope> --json`. MCP uses `next_action.details_args` with both id and scope for `get_trap`.
 
 ### Trap Operations
 
@@ -46,6 +48,12 @@ CLI and MCP adapters should call `TrapOperations` instead of duplicating Trap op
 Trap archive is the import/export format and compatibility layer. It preserves traps and trap evidence, handles JSON-string fields such as `tags` and `related_files`, and remaps imported evidence onto the new trap IDs created during import.
 
 `TrapStore` delegates archive import semantics to `src/lib/trap-archive.ts` so Scope policy stays separate from archive format compatibility.
+
+### Trap Transfer
+
+Trap transfer is the internal DB-to-DB move path used by `repair-scope` and `migrate-project`. It preserves storage metadata such as lifecycle fields, timestamps, hit counts, Trap Evidence, and remapped `supersedes_id` values while rewriting the destination `project_path`.
+
+Trap transfer lives in `src/lib/trap-transfer.ts`. It is separate from Trap Archive import because archive import is a user-facing compatibility format with forgiving partial-import behavior, while transfer is a maintenance workflow for moving existing project-scoped rows between SQLite databases.
 
 ### Trap JSON Field Codec
 
@@ -61,6 +69,8 @@ codetrap stores traps in two scopes:
 - `global`: traps shared across all projects in `~/.codetrap/`.
 
 Project scope is resolved from the current working directory by walking upward until `.codetrap/` is found. If no project root exists, project-scoped writes fail and callers should either run `codetrap init` or use `global`.
+
+The global home store `~/.codetrap/` must not be treated as a project root.
 
 ### Storage
 
@@ -79,7 +89,7 @@ By default, search checks project scope first when a project exists, then global
 
 Chinese and mixed-language search are implemented through derived `search_text`, CJK bigram expansion, and a Chinese-English synonym map before FTS query compilation.
 
-Retrieval background and the next CLI-first product direction live in `docs/reference-analysis.md` and `docs/codetrap-optimization-roadmap.zh-CN.md`.
+Implemented retrieval and agent-memory reference notes live in `docs/agent-memory-reference-analysis.md`. The next CLI-first product direction lives in `docs/codetrap-optimization-roadmap.zh-CN.md`.
 
 ## Adapter Rules
 
@@ -89,8 +99,11 @@ The CLI is optimized for direct terminal use.
 
 - `show <id>` increments the shown trap's `hit_count` in the scope where it was found.
 - `search` renders action cards; `show` renders full `TrapDetails`.
-- `add` and `edit` currently accept structured `--json` input.
+- `search/show/list/stats/doctor --json` are the stable machine-readable agent surface.
+- `search --json` can read the query from stdin when there is no positional query.
+- `add` and `edit` accept structured `--json` input; use `--output-json` for machine-readable mutation output.
 - `add_trap_evidence`, `archive_trap`, and `supersede_trap` expose evidence and lifecycle operations.
+- `repair-scope` and `migrate-project` safely move project-scoped traps between DB files. They default to dry-run, require `--apply` to mutate, back up DBs first, and never move true global traps.
 
 ### MCP Server
 
@@ -99,6 +112,7 @@ The MCP server is optimized for AI tool use.
 - Tools return JSON text payloads.
 - `search_traps` searches both scopes by default, unless `scope` is provided, and returns compact action cards.
 - `get_trap` is the drill-down tool for full `TrapDetails`, including evidence and lifecycle metadata.
+- Tool calls may pass `cwd` so project scope resolves from the target workspace; without `cwd`, the server falls back to its startup cwd.
 - MCP `get_trap` does not increment `hit_count`; the counter currently reflects CLI `show` usage.
 - `TrapStore.hit(id)` follows the same project-first fallback as `get(id)` when no scope is provided. Passing an explicit scope restricts the hit update to that scope.
 
@@ -133,9 +147,15 @@ src/
   lib/
     constants.ts        -- categories, severities, defaults
     scope.ts            -- scope resolution (walk up to .codetrap/)
+    scope-context.ts    -- cwd/project/global DB diagnostic facts
+    scope-migration.ts  -- repair-scope / migrate-project planning and apply logic
     store.ts            -- TrapStore: project/global scope policy
     trap-operations.ts  -- shared CLI/MCP Trap operation execution
+    output-json.ts      -- shared CLI/MCP JSON presenters
+    doctor.ts           -- doctor diagnostic report
+    embedding-health.ts -- embedding freshness and fallback summaries
     trap-archive.ts     -- Trap archive import/export compatibility
+    trap-transfer.ts    -- DB-to-DB Trap transfer for scope repair/migration
     trap-json-fields.ts -- JSON string-array codec for tags/related_files
     search-result-card.ts -- compact action-card builder
     format.ts           -- CLI formatting helpers
@@ -155,10 +175,9 @@ skills/
   codetrap-check/SKILL.md
   codetrap-search/SKILL.md
 docs/
-  architecture.md
   installation.md
+  agent-memory-reference-analysis.md
   codetrap-optimization-roadmap.zh-CN.md
-  reference-analysis.md
 ```
 
 ## Development
@@ -177,19 +196,17 @@ For tests, use `openDatabase(":memory:")` from `src/db/connection.ts` and pass t
 
 Based on `docs/codetrap-optimization-roadmap.zh-CN.md`.
 
-**P0 — CLI JSON contract:**
-- Make `search --json` return stable action cards that are easy for agents to consume.
-- Add `show --json` for full `TrapDetails` drill-down.
-- Keep JSON stdout clean and send diagnostics/errors to stderr or stable error objects.
+**Completed on 2026-05-17:**
+- CLI JSON contract for `search/show/list/stats/doctor --json`.
+- CLI `next_action.command`, stdin search, and `add/edit --output-json`.
+- CLI-first AGENTS/skills guidance with top 3 review.
+- MCP thin-adapter work: shared JSON presenters and optional `cwd` for tool calls.
+- Scope diagnostics via `codetrap doctor`.
+- Scope repair/migration via `repair-scope` and `migrate-project`.
+- Embedding health summaries in `stats --json` and `doctor --json`.
+- StickS3 search eval fixture with Recall@3/Recall@5 gates.
 
-**P1 — CLI-first agent protocol:**
-- Document an `AGENTS.md` pattern where agents use `codetrap search ... --json` before risky edits.
-- Keep MCP as a thin optional adapter over the same domain/store/search behavior.
-
-**P2 — Scope and lifecycle hardening:**
-- Keep project/global scope rules explicit and testable.
-- Deepen lifecycle and evidence workflows around `active`, `archived`, and `superseded` traps.
-
-**P3 — Search operations:**
-- Add `codetrap doctor` for index, embedding freshness, duplicate, and scope diagnostics.
-- Evaluate optional local embeddings or reranking without weakening the current local-first baseline.
+**Next priorities:**
+- Tune ranking with exact token/tag/severity boosts and MRR observation.
+- Add local embedding provider after CLI JSON, evals, and doctor remain stable.
+- Explore post-flight trap capture and path/module scoped traps later.

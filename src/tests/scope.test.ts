@@ -26,4 +26,28 @@ describe("project root detection", () => {
 
     expect(findProjectRoot(cwd, home)).toBe(project);
   });
+
+  test("finds a project root outside the home directory", () => {
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    mkdirSync(join(home, ".codetrap"));
+
+    const project = mkdtempSync(join(tmpdir(), "codetrap-external-project-"));
+    const cwd = join(project, "packages", "app");
+    mkdirSync(join(project, ".codetrap"), { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+
+    expect(findProjectRoot(cwd, home)).toBe(project);
+  });
+
+  test("uses the nearest nested project root", () => {
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const outer = join(home, "work", "outer");
+    const inner = join(outer, "packages", "inner");
+    const cwd = join(inner, "src");
+    mkdirSync(join(outer, ".codetrap"), { recursive: true });
+    mkdirSync(join(inner, ".codetrap"), { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+
+    expect(findProjectRoot(cwd, home)).toBe(inner);
+  });
 });

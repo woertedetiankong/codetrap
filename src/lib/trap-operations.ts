@@ -23,6 +23,7 @@ export type AddTrapEvidenceResult = {
 };
 
 export type TrapStatsResult = { project: TrapStats | null; global: TrapStats };
+export type EmbeddingStatsResult = ReturnType<TrapStore["embeddingStats"]>;
 
 export interface SearchTrapsArgs {
   query: string;
@@ -80,6 +81,10 @@ export class TrapOperations {
     });
   }
 
+  topTraps(scope: string, limit = 20): TrapListGroup[] {
+    return [{ traps: this.store.topTraps(scope, limit), scope }];
+  }
+
   updateTrap(
     id: number,
     args: Record<string, unknown>,
@@ -115,6 +120,10 @@ export class TrapOperations {
 
   getStats(): TrapStatsResult {
     return this.store.stats();
+  }
+
+  getEmbeddingStats(): EmbeddingStatsResult {
+    return this.store.embeddingStats();
   }
 
   exportTraps(scope?: string): ReturnType<TrapStore["exportAll"]> {

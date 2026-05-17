@@ -11,7 +11,8 @@ import {
   type TrapUpdate,
 } from "../domain/trap";
 import type { SearchMode, TrapStatus } from "./constants";
-import { createDefaultEmbeddingProvider, type EmbeddingProvider } from "./embedder";
+import { createDefaultEmbeddingProvider, embeddingConfig, type EmbeddingConfig, type EmbeddingProvider } from "./embedder";
+import { summarizeEmbeddingState, type EmbeddingStateSummary, type EmbeddingStatsResult } from "./embedding-health";
 import { findProjectRoot } from "./scope";
 import { importTrapArchive } from "./trap-archive";
 
@@ -27,6 +28,9 @@ export {
 };
 
 type Scope = "project" | "global";
+
+export type { EmbeddingStateSummary };
+export type TrapEmbeddingStats = EmbeddingStatsResult;
 
 export class TrapStore {
   private projectRoot: string | null;
@@ -165,6 +169,17 @@ export class TrapStore {
     return { project, global: this.globalRepo().stats() };
   }
 
+  embeddingStats(): TrapEmbeddingStats {
+    const config = this.embeddingConfig();
+    const project = this.projectRoot
+      ? summarizeEmbeddingState(this.projectRepo().embeddingStats(config), config)
+      : null;
+    return {
+      project,
+      global: summarizeEmbeddingState(this.globalRepo().embeddingStats(config), config),
+    };
+  }
+
   exportAll(opts: { scope?: string } = {}): TrapExportRecord[] {
     const traps: TrapExportRecord[] = [];
     for (const scoped of this.repositoriesForRead(opts.scope)) {
@@ -186,6 +201,18 @@ export class TrapStore {
 
   getProjectRoot(): string | null {
     return this.projectRoot;
+  }
+
+  hasEmbeddingProvider(): boolean {
+    return this.embedder !== undefined;
+  }
+
+  embeddingConfig(): EmbeddingConfig | null {
+    return this.embedder ? embeddingConfig(this.embedder) : null;
+  }
+
+  forCwd(cwd: string): TrapStore {
+    return new TrapStore(cwd, this.embedder);
   }
 
   async ensureEmbeddings(opts: { scope?: string; category?: string; limit?: number; force?: boolean; batchSize?: number } = {}): Promise<{

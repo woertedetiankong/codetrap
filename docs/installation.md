@@ -296,9 +296,13 @@ codex mcp add codetrap -- "$(bun pm bin -g)/codetrap" serve
 Agents can also use the CLI directly from `AGENTS.md`:
 
 ```md
-Before non-trivial code edits, check codetrap:
+Before non-trivial code edits, check codetrap from the current project cwd:
 
-codetrap search "<keywords>" --mode hybrid
+codetrap search "<keywords>" --mode hybrid --json
+
+Review the top 3 action cards before deciding no trap applies. If a critical/error result is plausibly related, inspect it before editing:
+
+codetrap show <id> --scope <project|global> --json
 
 To add a lesson:
 
