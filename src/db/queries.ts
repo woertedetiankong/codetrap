@@ -52,8 +52,8 @@ export function insertTrap(db: Database, input: TrapInput): number {
     null,
     input.project_path ?? null,
     fields.path_globs,
-    input.module ?? null,
-    input.owner ?? null
+    normalizeOptionalText(input.module),
+    normalizeOptionalText(input.owner)
   );
   return Number(result.lastInsertRowid);
 }
@@ -120,7 +120,7 @@ export function updateTrap(db: Database, id: number, input: TrapUpdate): boolean
     const value = input[key];
     if (value !== undefined) {
       updates.push(`${key} = ?`);
-      params.push(value ?? null);
+      params.push(key === "module" || key === "owner" ? normalizeOptionalText(value) : value ?? null);
     }
   }
   if (input.tags !== undefined) {
@@ -312,8 +312,8 @@ export function insertTrapRecord(db: Database, record: TrapRecordInsert): number
     record.valid_until,
     record.project_path,
     record.path_globs,
-    record.module,
-    record.owner,
+    normalizeOptionalText(record.module),
+    normalizeOptionalText(record.owner),
     record.hit_count,
     record.created_at,
     record.updated_at
@@ -376,12 +376,20 @@ function addTrapFilters(
     conditions.push(`${prefix}status = ?`);
     params.push(opts.status ?? DEFAULT_TRAP_STATUS);
   }
-  if (opts.module) {
-    conditions.push(`(${prefix}module IS NULL OR ${prefix}module = ?)`);
-    params.push(opts.module);
+  const module = normalizeOptionalText(opts.module);
+  if (module) {
+    conditions.push(`(${prefix}module IS NULL OR ${prefix}module = '' OR ${prefix}module = ?)`);
+    params.push(module);
   }
-  if (opts.owner) {
-    conditions.push(`(${prefix}owner IS NULL OR ${prefix}owner = ?)`);
-    params.push(opts.owner);
+  const owner = normalizeOptionalText(opts.owner);
+  if (owner) {
+    conditions.push(`(${prefix}owner IS NULL OR ${prefix}owner = '' OR ${prefix}owner = ?)`);
+    params.push(owner);
   }
+}
+
+function normalizeOptionalText(value: unknown): string | null {
+  if (typeof value !== "string") return value == null ? null : String(value);
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
 }
