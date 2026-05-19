@@ -60,8 +60,13 @@ export interface TrapSearchResult {
   rank: number;
   sources?: ("fts" | "semantic")[];
   score?: number;
-  diagnostics?: { code: string; message: string }[];
+  diagnostics?: TrapSearchDiagnostic[];
   ranking_signals?: RankingSignal[];
+}
+
+export interface TrapSearchDiagnostic {
+  code: string;
+  message: string;
 }
 
 export interface RankingSignal {
@@ -80,14 +85,8 @@ export interface TrapActionCard {
   severity: string;
   score: number | null;
   sources: ("fts" | "semantic")[];
+  diagnostics?: TrapSearchDiagnostic[];
   ranking_signals?: RankingSignal[];
-  next_action: {
-    details_tool: "get_trap";
-    details_args: {
-      id: number;
-      scope: Scope;
-    };
-  };
 }
 
 export type TrapUpdate = Partial<Omit<TrapInput, "scope" | "project_path">>;

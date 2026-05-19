@@ -1,4 +1,5 @@
 import type { RankingSignal, Trap, TrapSearchResult } from "../domain/trap";
+import type { TrapStatus } from "./constants";
 import { EmbeddingProviderUnavailableError } from "./embedder";
 import { parseTrapPathGlobs, parseTrapTags } from "./trap-json-fields";
 import {
@@ -8,9 +9,37 @@ import {
 } from "./trap-scope-match";
 
 export interface SearchPolicyOptions extends ApplicabilityFilter {
+  category?: string;
+  scope?: string;
+  status?: TrapStatus | "all";
   limit?: number;
   rerank?: boolean;
   includeRankingSignals?: boolean;
+}
+
+export type SearchStorageFilter = {
+  category?: string;
+  scope?: string;
+  status?: TrapStatus | "all";
+  module?: string;
+  owner?: string;
+  limit?: number;
+};
+
+export type SemanticStorageFilter = {
+  category?: string;
+  scope?: string;
+  status?: TrapStatus | "all";
+};
+
+export type SearchRetrievalSource = "fts" | "semantic";
+
+export interface SearchRetrievalPlan {
+  resultLimit: number;
+  candidateLimit: number;
+  ftsStorageFilter: SearchStorageFilter & { limit: number };
+  semanticStorageFilter: SemanticStorageFilter;
+  applicabilityFilter: ApplicabilityFilter;
 }
 
 export interface RankingConfig {
@@ -48,6 +77,33 @@ export const DEFAULT_RANKING_CONFIG: RankingConfig = {
 export class TrapSearchPolicy {
   constructor(private readonly ranking: RankingConfig = DEFAULT_RANKING_CONFIG) {}
 
+  plan(opts: SearchPolicyOptions, defaultLimit: number): SearchRetrievalPlan {
+    const resultLimit = opts.limit ?? defaultLimit;
+    const candidateLimit = this.candidateLimit(opts, resultLimit);
+    return {
+      resultLimit,
+      candidateLimit,
+      ftsStorageFilter: {
+        category: opts.category,
+        scope: opts.scope,
+        status: opts.status,
+        module: opts.module,
+        owner: opts.owner,
+        limit: candidateLimit,
+      },
+      semanticStorageFilter: {
+        category: opts.category,
+        scope: opts.scope,
+        status: opts.status,
+      },
+      applicabilityFilter: {
+        path: opts.path,
+        module: opts.module,
+        owner: opts.owner,
+      },
+    };
+  }
+
   candidateLimit(opts: SearchPolicyOptions, resultLimit: number): number {
     return shouldOverfetch(opts) ? Math.max(resultLimit * 5, 50) : resultLimit;
   }
@@ -66,6 +122,30 @@ export class TrapSearchPolicy {
 
   filterTraps(traps: Trap[], filter: ApplicabilityFilter): Trap[] {
     return traps.filter((trap) => this.matchesTrap(trap, filter));
+  }
+
+  prepareRetrievedResults(
+    results: TrapSearchResult[],
+    source: SearchRetrievalSource,
+    plan: SearchRetrievalPlan
+  ): TrapSearchResult[] {
+    const applicable = this.filterResults(results, plan.applicabilityFilter);
+    if (source === "semantic") {
+      return applicable
+        .filter((result) => (result.score ?? 0) >= this.semanticMinScore())
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+        .slice(0, plan.candidateLimit);
+    }
+    return applicable.slice(0, plan.candidateLimit);
+  }
+
+  finalizeResults(
+    results: TrapSearchResult[],
+    query: string,
+    opts: SearchPolicyOptions,
+    plan: SearchRetrievalPlan
+  ): TrapSearchResult[] {
+    return this.rankResults(results, query, opts, plan.resultLimit);
   }
 
   rankResults(
@@ -95,10 +175,19 @@ export class TrapSearchPolicy {
         score: applyLengthNormalization(result.score, result.trap, this.ranking),
         rank: applyLengthNormalization(result.score, result.trap, this.ranking),
       }))
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-      .slice(0, limit);
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
     return this.rankResults(fused, query, opts, limit);
+  }
+
+  fuseAndFinalize(
+    ftsResults: TrapSearchResult[],
+    semanticResults: TrapSearchResult[],
+    query: string,
+    opts: SearchPolicyOptions,
+    plan: SearchRetrievalPlan
+  ): TrapSearchResult[] {
+    return this.fuse(ftsResults, semanticResults, query, opts, plan.resultLimit);
   }
 
   withDiagnostics(

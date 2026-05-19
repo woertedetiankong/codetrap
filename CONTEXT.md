@@ -39,9 +39,9 @@ Trap lifecycle is the transition policy for `active`, `archived`, and `supersede
 
 ### Action Card
 
-An action card is the compact search result shape for agents. It includes the trap id, scope, title, why it is relevant, what to avoid, what to do instead, score/sources, and a `next_action`.
+An action card is the compact search result shape for agents. It includes the trap id, scope, title, why it is relevant, what to avoid, what to do instead, score/sources, diagnostics, and optional ranking signals.
 
-CLI JSON uses `next_action.command`, for example `codetrap show <id> --scope <scope> --json`. MCP uses `next_action.details_args` with both id and scope for `get_trap`.
+Action card content is transport-neutral. It preserves relevance, ranking signals, and search diagnostics. CLI and MCP presenters add their own `next_action` shape: CLI JSON uses `next_action.command`, for example `codetrap show <id> --scope <scope> --json`; MCP uses `next_action.details_args` with both id and scope for `get_trap`.
 
 ### Trap Operations
 
@@ -133,9 +133,9 @@ Chinese and mixed-language search are implemented through derived `search_text`,
 
 ### Search Policy
 
-Search policy owns applicability filtering, overfetch decisions, generic reranking, ranking signals, RRF fusion, and hybrid fallback diagnostics.
+Search policy owns retrieval filter planning, applicability filtering, overfetch decisions, semantic thresholding, generic reranking, ranking signals, RRF fusion, final ranking, and hybrid fallback diagnostics.
 
-`src/lib/search-policy.ts` sits behind `SearchService`. Retrieval Modules can fetch FTS or semantic candidates, while the policy Module decides path/module/owner applicability, exact title/tag/code identifier boosts, severity boosts, and whether ranking signals are exposed.
+`src/lib/search-policy.ts` sits behind `SearchService`. Retrieval Modules fetch FTS or semantic candidates from storage/index adapters, while the policy Module decides storage pushdown filters, path/module/owner applicability, candidate limits, exact title/tag/code identifier boosts, severity boosts, and whether ranking signals or diagnostics are exposed.
 
 ### Embedding Index
 

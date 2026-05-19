@@ -12,6 +12,7 @@ import {
   DEFAULT_RANKING_CONFIG,
   TrapSearchPolicy,
   type RankingConfig,
+  type SearchRetrievalPlan,
 } from "./search-policy";
 import { DatabaseEmbeddingIndex } from "./embedding-index";
 
@@ -60,20 +61,51 @@ export class SearchService {
   }
 
   ftsSearch(query: string, opts: SearchOptions = {}): TrapSearchResult[] {
-    const limit = opts.limit ?? DEFAULT_LIMIT;
-    const searchLimit = this.policy.candidateLimit(opts, limit);
+    const plan = this.policy.plan(opts, DEFAULT_LIMIT);
+    return this.policy.finalizeResults(this.retrieveFtsCandidates(query, plan), query, opts, plan);
+  }
+
+  async semanticSearch(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
+    const plan = this.policy.plan(opts, DEFAULT_LIMIT);
+    return this.policy.finalizeResults(await this.retrieveSemanticCandidates(query, plan), query, opts, plan);
+  }
+
+  async hybridSearch(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
+    const plan = this.policy.plan(opts, DEFAULT_LIMIT);
+    const ftsCandidates = this.retrieveFtsCandidates(query, plan);
+
+    try {
+      const semanticCandidates = await this.retrieveSemanticCandidates(query, plan);
+      if (semanticCandidates.length === 0) {
+        return this.policy.withDiagnostics(this.policy.finalizeResults(ftsCandidates, query, opts, plan), {
+          code: "semantic_no_candidates",
+          message: "Hybrid search used FTS results because no fresh semantic candidates passed the score threshold.",
+        });
+      }
+      return this.policy.fuseAndFinalize(ftsCandidates, semanticCandidates, query, opts, plan);
+    } catch (error) {
+      return this.policy.withDiagnostics(
+        this.policy.finalizeResults(ftsCandidates, query, opts, plan),
+        this.policy.semanticDiagnostic(error)
+      );
+    }
+  }
+
+  private retrieveFtsCandidates(query: string, plan: SearchRetrievalPlan): TrapSearchResult[] {
     const candidates = queries
-      .searchTraps(this.db, query, { ...opts, limit: searchLimit })
-      .filter((result) => this.policy.matchesTrap(result.trap, opts))
+      .searchTraps(this.db, query, plan.ftsStorageFilter)
       .map((result) => ({
         ...result,
         sources: ["fts"] as ("fts")[],
         score: ftsScore(result.rank),
       }));
-    return this.policy.rankResults(candidates, query, opts, limit);
+    return this.policy.prepareRetrievedResults(candidates, "fts", plan);
   }
 
-  async semanticSearch(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
+  private async retrieveSemanticCandidates(
+    query: string,
+    plan: SearchRetrievalPlan
+  ): Promise<TrapSearchResult[]> {
     if (!this.embedder) {
       throw new EmbeddingProviderUnavailableError();
     }
@@ -82,11 +114,7 @@ export class SearchService {
     if (!queryEmbedding) return [];
 
     const config = embeddingConfig(this.embedder);
-    const candidates = this.embeddingIndex.freshEmbeddings(config, {
-      category: opts.category,
-      scope: opts.scope,
-      status: opts.status,
-    });
+    const candidates = this.embeddingIndex.freshEmbeddings(config, plan.semanticStorageFilter);
 
     const results = candidates
       .map(({ trap, embedding }) => {
@@ -98,29 +126,8 @@ export class SearchService {
           score,
         };
       })
-      .filter((result) => this.policy.matchesTrap(result.trap, opts))
-      .filter((result) => (result.score ?? 0) >= this.policy.semanticMinScore())
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .map((result) => result as TrapSearchResult);
-    return this.policy.rankResults(results, query, opts, opts.limit ?? DEFAULT_LIMIT);
-  }
-
-  async hybridSearch(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
-    const limit = opts.limit ?? DEFAULT_LIMIT;
-    const ftsResults = this.ftsSearch(query, { ...opts, limit });
-
-    try {
-      const semanticResults = await this.semanticSearch(query, { ...opts, limit });
-      if (semanticResults.length === 0) {
-        return this.policy.withDiagnostics(ftsResults, {
-          code: "semantic_no_candidates",
-          message: "Hybrid search used FTS results because no fresh semantic candidates passed the score threshold.",
-        });
-      }
-      return this.policy.fuse(ftsResults, semanticResults, query, opts, limit);
-    } catch (error) {
-      return this.policy.withDiagnostics(ftsResults, this.policy.semanticDiagnostic(error));
-    }
+    return this.policy.prepareRetrievedResults(results, "semantic", plan);
   }
 }
 

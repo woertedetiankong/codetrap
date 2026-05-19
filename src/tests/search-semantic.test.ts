@@ -14,6 +14,16 @@ class MockEmbedder implements EmbeddingProvider {
   }
 }
 
+class HybridFusionEmbedder implements EmbeddingProvider {
+  readonly provider = "hybrid-fusion";
+  readonly model = "hybrid-fusion-embedding";
+  readonly dimensions = 2;
+
+  async embed(texts: string[], _task: EmbeddingTask): Promise<Float32Array[]> {
+    return texts.map(vectorForHybridFusion);
+  }
+}
+
 describe("semantic and hybrid search", () => {
   test("semantic search ranks traps with mock embeddings", async () => {
     const embedder = new MockEmbedder();
@@ -45,6 +55,38 @@ describe("semantic and hybrid search", () => {
     expect(results[0]?.trap.title).toContain("fetchWrapper");
     expect(results[0]?.sources).toEqual(["fts"]);
     expect(results[0]?.diagnostics?.[0]?.code).toBe("semantic_unavailable");
+  });
+
+  test("hybrid fusion considers overfetched candidates before final ranking", async () => {
+    const repo = new TrapRepository(openDatabase(":memory:"), new HybridFusionEmbedder());
+    repo.add(trap({
+      title: "FTS-only alpha alpha alpha rule",
+      tags: [],
+      context: "Alpha appears often in this rule.",
+      mistake: "Alpha-only text can dominate the lexical path.",
+      fix: "Keep it as a single-source lexical candidate.",
+    }));
+    const combinedId = repo.add(trap({
+      title: "Combined alpha rule",
+      tags: [],
+      context: "Alpha appears here too.",
+      mistake: "Slicing each retrieval path before fusion can drop this candidate.",
+      fix: "Fuse retrieval candidates first, then run final ranking.",
+    }));
+    repo.add(trap({
+      title: "Semantic-only rule",
+      tags: [],
+      context: "This rule is close to the query only in embedding space.",
+      mistake: "A semantic-only candidate can win one path.",
+      fix: "Keep semantic candidates available for fusion.",
+    }));
+
+    await repo.ensureEmbeddings();
+
+    const results = await repo.search("alpha", { mode: "hybrid", limit: 1 });
+
+    expect(results[0]?.trap.id).toBe(combinedId);
+    expect(results[0]?.sources).toEqual(["fts", "semantic"]);
   });
 
   test("embedding generation runs in batches and reports batch count", async () => {
@@ -87,4 +129,13 @@ function vectorFor(text: string): Float32Array {
   if (/(cache|redis|缓存)/.test(lower)) vector[4] = 1;
   if (vector.every((value) => value === 0)) vector[5] = 1;
   return vector;
+}
+
+function vectorForHybridFusion(text: string): Float32Array {
+  const lower = text.toLowerCase();
+  if (lower.trim() === "alpha") return new Float32Array([1, 0]);
+  if (lower.includes("semantic-only rule")) return new Float32Array([1, 0]);
+  if (lower.includes("combined alpha rule")) return new Float32Array([0.9, 0.43589]);
+  if (lower.includes("fts-only alpha")) return new Float32Array([0.2, 0.9798]);
+  return new Float32Array([0, 1]);
 }

@@ -1,4 +1,4 @@
-import type { RankingSignal, TrapActionCard, TrapDetails } from "../domain/trap";
+import type { RankingSignal, TrapActionCard, TrapDetails, TrapSearchDiagnostic } from "../domain/trap";
 import type { Scope } from "./constants";
 import type { DoctorReport } from "./doctor";
 import type { EmbeddingStatsResult } from "./embedding-health";
@@ -16,11 +16,24 @@ export type JsonTrapDetails = {
   evidence: JsonTrapEvidence[];
 };
 
-export type CliTrapActionCard = Omit<TrapActionCard, "next_action"> & {
+export type CliTrapActionCard = TrapActionCard & {
   next_action: {
     command: string;
   };
   ranking_signals?: RankingSignal[];
+  diagnostics?: TrapSearchDiagnostic[];
+};
+
+export type McpTrapActionCard = TrapActionCard & {
+  next_action: {
+    details_tool: "get_trap";
+    details_args: {
+      id: number;
+      scope: Scope;
+    };
+  };
+  ranking_signals?: RankingSignal[];
+  diagnostics?: TrapSearchDiagnostic[];
 };
 
 export type McpTextResult = {
@@ -43,6 +56,7 @@ export function toCliSearchJson(cards: TrapActionCard[]): CliTrapActionCard[] {
     severity: card.severity,
     score: card.score,
     sources: card.sources,
+    ...(card.diagnostics ? { diagnostics: card.diagnostics } : {}),
     ...(card.ranking_signals ? { ranking_signals: card.ranking_signals } : {}),
     next_action: {
       command: `codetrap show ${card.trap_id} --scope ${card.scope} --json`,
@@ -50,8 +64,17 @@ export function toCliSearchJson(cards: TrapActionCard[]): CliTrapActionCard[] {
   }));
 }
 
-export function toMcpSearchJson(cards: TrapActionCard[]): TrapActionCard[] {
-  return cards;
+export function toMcpSearchJson(cards: TrapActionCard[]): McpTrapActionCard[] {
+  return cards.map((card) => ({
+    ...card,
+    next_action: {
+      details_tool: "get_trap",
+      details_args: {
+        id: card.trap_id,
+        scope: card.scope,
+      },
+    },
+  }));
 }
 
 export function toMcpTextJson(value: unknown, isError = false): McpTextResult {

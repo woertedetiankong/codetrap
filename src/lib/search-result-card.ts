@@ -15,14 +15,8 @@ export function toTrapActionCard(result: TrapSearchResult, scope: Scope): TrapAc
     severity: trap.severity,
     score: result.score ?? null,
     sources: result.sources ?? [],
+    ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
     ...(result.ranking_signals ? { ranking_signals: result.ranking_signals } : {}),
-    next_action: {
-      details_tool: "get_trap",
-      details_args: {
-        id: trap.id,
-        scope,
-      },
-    },
   };
 }
 

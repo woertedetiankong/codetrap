@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../db/connection";
 import { TrapRepository } from "../db/repository";
+import { toCliSearchJson, toMcpSearchJson } from "../lib/output-json";
 import { toTrapActionCard } from "../lib/search-result-card";
 import { trap } from "./helpers";
 
@@ -21,15 +22,12 @@ describe("trap action cards", () => {
       do_instead: "Use fetchWrapper and follow the HTTP request convention.",
       severity: "warning",
       sources: ["fts"],
-      next_action: {
-        details_tool: "get_trap",
-        details_args: { id: result.trap.id, scope: "project" },
-      },
     });
     expect(card.score).not.toBeNull();
+    expect("next_action" in card).toBe(false);
   });
 
-  test("preserves scope when project and global traps have the same id", async () => {
+  test("preserves transport-neutral ids and scope when project and global traps have the same id", async () => {
     const projectRepo = new TrapRepository(openDatabase(":memory:"));
     const globalRepo = new TrapRepository(openDatabase(":memory:"));
     projectRepo.add(trap({ scope: "project", title: "Project fetchWrapper rule" }));
@@ -42,7 +40,21 @@ describe("trap action cards", () => {
     const projectCard = toTrapActionCard(projectResult, "project");
     const globalCard = toTrapActionCard(globalResult, "global");
 
-    expect(projectCard.next_action.details_args).toEqual({ id: projectResult.trap.id, scope: "project" });
-    expect(globalCard.next_action.details_args).toEqual({ id: globalResult.trap.id, scope: "global" });
+    expect(projectCard).toMatchObject({ trap_id: projectResult.trap.id, scope: "project" });
+    expect(globalCard).toMatchObject({ trap_id: globalResult.trap.id, scope: "global" });
+  });
+
+  test("preserves search diagnostics for presenters", async () => {
+    const repo = new TrapRepository(openDatabase(":memory:"));
+    repo.add(trap());
+
+    const [result] = await repo.search("fetchWrapper", { mode: "hybrid" });
+    const card = toTrapActionCard(result, "project");
+
+    expect(card.diagnostics?.[0]).toMatchObject({
+      code: "semantic_unavailable",
+    });
+    expect(toCliSearchJson([card])[0].diagnostics?.[0].code).toBe("semantic_unavailable");
+    expect(toMcpSearchJson([card])[0].diagnostics?.[0].code).toBe("semantic_unavailable");
   });
 });

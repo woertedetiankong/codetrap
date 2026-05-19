@@ -18,7 +18,7 @@ Why relevant: ${card.why_relevant}
 Avoid: ${card.avoid}
 Do instead: ${card.do_instead}
 Score: ${formatScore(card.score)} (${sourceLabel})
-Next: get_trap id=${card.next_action.details_args.id} scope=${card.next_action.details_args.scope}`;
+Next: codetrap show ${card.trap_id} --scope ${card.scope} --json`;
 }
 
 export function formatTrapDetail(t: Trap, scopeLabel: string): string {
