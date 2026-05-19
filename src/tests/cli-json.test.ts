@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { openDatabase } from "../db/connection";
+import * as queries from "../db/queries";
 
 describe("CLI JSON contract", () => {
   test("search/show/list/stats expose parseable agent-facing JSON", () => {
@@ -135,6 +137,54 @@ describe("CLI JSON contract", () => {
       semantic_available: false,
       fallback_reason: "semantic_unavailable",
     });
+    expect(doctor.diagnostics.mis_scoped_traps.global_db_project_traps).toEqual([]);
+  });
+
+  test("doctor --json reports project-scoped traps stranded in the global database", () => {
+    const cwd = tempProjectDir("codetrap-cli-doctor-misscoped-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    mkdirSync(join(home, ".codetrap"), { recursive: true });
+    const db = openDatabase(join(home, ".codetrap", "traps.db"));
+    try {
+      queries.insertTrap(db, {
+        title: "Legacy project trap in global DB",
+        category: "bug",
+        scope: "project",
+        context: "When older scope detection mistook home for a project.",
+        mistake: "The trap was stored in the global DB with project scope.",
+        fix: "Repair the scope or migrate it into a real project DB.",
+        tags: ["scope"],
+        severity: "error",
+        project_path: home,
+      });
+      queries.insertTrap(db, {
+        title: "Real global trap",
+        category: "bug",
+        scope: "global",
+        context: "When checking global traps.",
+        mistake: "Counting project traps as global traps.",
+        fix: "Filter repository stats by expected scope.",
+        tags: ["scope"],
+        severity: "warning",
+      });
+    } finally {
+      db.close();
+    }
+
+    const stats = JSON.parse(runCli(["stats", "--json"], cwd, home).stdout);
+    expect(stats.global.total).toBe(1);
+    expect(stats.global.embeddings.total).toBe(1);
+
+    const doctor = JSON.parse(runCli(["doctor", "--json"], cwd, home).stdout);
+    expect(doctor.traps.global).toBe(1);
+    expect(doctor.embeddings.global.total).toBe(1);
+    expect(doctor.diagnostics.mis_scoped_traps.global_db_project_traps).toEqual([
+      expect.objectContaining({
+        title: "Legacy project trap in global DB",
+        scope: "project",
+        project_path: home,
+      }),
+    ]);
   });
 
   test("mutation commands expose machine-readable JSON results", () => {
@@ -289,6 +339,7 @@ function runCli(args: string[], cwd: string, home: string, stdin?: string) {
     env: {
       ...process.env,
       HOME: home,
+      USERPROFILE: home,
       JINA_API_KEY: "",
       CODETRAP_SEARCH_MODE: "",
       CODETRAP_SEARCH_LIMIT: "",

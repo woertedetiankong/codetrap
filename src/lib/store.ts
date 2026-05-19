@@ -168,18 +168,38 @@ export class TrapStore {
   }
 
   stats(): { project: TrapStats | null; global: TrapStats } {
-    const project = this.scopes.repositoryEntry("project")?.repository.stats() ?? null;
-    return { project, global: this.scopes.repositoryFor("global").stats() };
+    const project = this.scopes.repositoryEntry("project")?.repository.stats({ scope: "project" }) ?? null;
+    return { project, global: this.scopes.repositoryFor("global").stats({ scope: "global" }) };
   }
 
   embeddingStats(): TrapEmbeddingStats {
     const config = this.embeddingConfig();
     const project = this.scopes.repositoryEntry("project")
-      ? summarizeEmbeddingState(this.scopes.repositoryFor("project").embeddingStats(config), config)
+      ? summarizeEmbeddingState(this.scopes.repositoryFor("project").embeddingStats(config, { scope: "project" }), config)
       : null;
     return {
       project,
-      global: summarizeEmbeddingState(this.scopes.repositoryFor("global").embeddingStats(config), config),
+      global: summarizeEmbeddingState(this.scopes.repositoryFor("global").embeddingStats(config, { scope: "global" }), config),
+    };
+  }
+
+  diagnostics(): {
+    mis_scoped_traps: {
+      global_db_project_traps: Pick<Trap, "id" | "title" | "scope" | "project_path" | "status">[];
+    };
+  } {
+    return {
+      mis_scoped_traps: {
+        global_db_project_traps: this.scopes.repositoryFor("global")
+          .listMisScoped("global")
+          .map((trap) => ({
+            id: trap.id,
+            title: trap.title,
+            scope: trap.scope,
+            project_path: trap.project_path,
+            status: trap.status,
+          })),
+      },
     };
   }
 

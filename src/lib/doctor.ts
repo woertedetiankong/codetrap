@@ -18,6 +18,11 @@ export type DoctorReport = {
     semantic_available: boolean;
     fallback_reason: HybridFallbackReason | null;
   };
+  diagnostics: {
+    mis_scoped_traps: {
+      global_db_project_traps: ReturnType<TrapStore["diagnostics"]>["mis_scoped_traps"]["global_db_project_traps"];
+    };
+  };
   mcp_hint: string;
 };
 
@@ -42,6 +47,9 @@ export function buildDoctorReport(
       semantic_available: semanticAvailable,
       fallback_reason: hybridFallbackReason(semanticAvailable, embeddings),
     },
+    diagnostics: {
+      mis_scoped_traps: store.diagnostics().mis_scoped_traps,
+    },
     mcp_hint: "Pass cwd in MCP tool calls, or restart codetrap serve after changing projects.",
   };
 }
@@ -60,6 +68,8 @@ export function formatDoctorText(report: DoctorReport): string {
     "Hybrid search:",
     `  semantic_available: ${report.hybrid_search.semantic_available ? "yes" : "no"}`,
     `  fallback_reason: ${report.hybrid_search.fallback_reason ?? "(none)"}`,
+    "Diagnostics:",
+    `  global_db_project_traps: ${report.diagnostics.mis_scoped_traps.global_db_project_traps.length}`,
     `mcp_hint: ${report.mcp_hint}`,
   ].join("\n");
 }

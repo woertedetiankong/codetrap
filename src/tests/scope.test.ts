@@ -15,6 +15,14 @@ describe("project root detection", () => {
     expect(findProjectRoot(cwd, home)).toBeNull();
   });
 
+  test("normalizes MSYS-style Windows home paths before stopping at the global store", () => {
+    const home = "C:\\Users\\EDY";
+    const cwd = "C:\\Users\\EDY\\Documents\\Code\\esp32";
+
+    expect(findProjectRoot(cwd, "/c/Users/EDY")).toBeNull();
+    expect(findProjectRoot(cwd, "c:/users/edy")).toBeNull();
+  });
+
   test("finds the nearest project .codetrap directory below the home directory", () => {
     const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
     mkdirSync(join(home, ".codetrap"));

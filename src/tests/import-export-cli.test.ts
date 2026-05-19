@@ -62,10 +62,15 @@ describe("import/export and CLI evidence handling", () => {
   });
 
   test("add_trap_evidence --json reports malformed JSON without a stack trace", () => {
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
     const result = Bun.spawnSync({
       cmd: ["bun", "run", join(import.meta.dir, "..", "index.ts"), "add_trap_evidence", "1", "--json", "{"],
       cwd: tempProjectDir("codetrap-cli-json-"),
-      env: { ...process.env, HOME: mkdtempSync(join(tmpdir(), "codetrap-home-")) },
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+      },
       stdout: "pipe",
       stderr: "pipe",
     });

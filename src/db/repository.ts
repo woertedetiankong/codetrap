@@ -67,6 +67,12 @@ export class TrapRepository {
       .slice(0, limit);
   }
 
+  listMisScoped(expectedScope: string): Trap[] {
+    return queries
+      .listTraps(this.db, { status: "all", limit: 100000 })
+      .filter((trap) => trap.scope !== expectedScope);
+  }
+
   update(id: number, input: TrapUpdate): boolean {
     const success = queries.updateTrap(this.db, id, input);
     if (success && passageFieldsChanged(input)) {
@@ -100,12 +106,12 @@ export class TrapRepository {
     return queries.getTopTraps(this.db, scope, limit);
   }
 
-  stats(): TrapStats {
-    return queries.getStats(this.db);
+  stats(opts: { scope?: string; status?: TrapStatus | "all" } = {}): TrapStats {
+    return queries.getStats(this.db, opts);
   }
 
-  embeddingStats(config: EmbeddingConfig | null): EmbeddingStateCounts {
-    return embeddingQueries.getEmbeddingStateCounts(this.db, config);
+  embeddingStats(config: EmbeddingConfig | null, opts: { scope?: string; status?: TrapStatus | "all" } = {}): EmbeddingStateCounts {
+    return embeddingQueries.getEmbeddingStateCounts(this.db, config, opts);
   }
 
   exportAll(): TrapExportRecord[] {

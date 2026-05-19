@@ -269,6 +269,7 @@ function runCli(args: string[], cwd: string, home: string) {
     env: {
       ...process.env,
       HOME: home,
+      USERPROFILE: home,
       JINA_API_KEY: "",
     },
     stdout: "pipe",

@@ -245,18 +245,22 @@ export function getTopTraps(db: Database, scope: string, limit = 20): Trap[] {
     .all(scope, limit) as Trap[];
 }
 
-export function getStats(db: Database): {
+export function getStats(db: Database, opts: { scope?: string; status?: TrapStatusFilter } = {}): {
   total: number;
   byCategory: Record<string, number>;
   bySeverity: Record<string, number>;
 } {
-  const total = (db.query("SELECT COUNT(*) as c FROM traps").get() as { c: number }).c;
+  const conditions: string[] = [];
+  const params: SQLQueryBindings[] = [];
+  addTrapFilters(conditions, params, opts);
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const total = (db.query(`SELECT COUNT(*) as c FROM traps ${where}`).get(...params) as { c: number }).c;
   const byCategory = db
-    .query("SELECT category, COUNT(*) as c FROM traps GROUP BY category")
-    .all() as { category: string; c: number }[];
+    .query(`SELECT category, COUNT(*) as c FROM traps ${where} GROUP BY category`)
+    .all(...params) as { category: string; c: number }[];
   const bySeverity = db
-    .query("SELECT severity, COUNT(*) as c FROM traps GROUP BY severity")
-    .all() as { severity: string; c: number }[];
+    .query(`SELECT severity, COUNT(*) as c FROM traps ${where} GROUP BY severity`)
+    .all(...params) as { severity: string; c: number }[];
 
   return {
     total,
