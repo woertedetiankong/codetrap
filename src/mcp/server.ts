@@ -21,6 +21,11 @@ import {
   toTrapDetailsJson,
 } from "../lib/output-json";
 import { storeForScopeContext } from "../lib/scope-context";
+import {
+  listRequestFromArgs,
+  searchRequestFromArgs,
+  statsRequestFromArgs,
+} from "../lib/command-requests";
 
 type ToolArgs = Record<string, any>;
 
@@ -30,19 +35,8 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
   try {
     switch (name) {
       case "search_traps": {
-        const cards = await operations.searchTrapCards({
-          query: args.query,
-          scope: args.scope,
-          category: args.category,
-          mode: args.mode,
-          limit: args.limit ?? 20,
-          status: args.status,
-          path: args.path,
-          module: args.module,
-          owner: args.owner,
-          rerank: args.rerank,
-          includeRankingSignals: args.ranking_signals,
-        });
+        const defaults = { mode: "hybrid" as const, limit: args.limit ?? 20, rerank: true };
+        const cards = await operations.searchTrapCards(searchRequestFromArgs(args.query, args, defaults));
         return toMcpTextJson(toMcpSearchJson(cards));
       }
 
@@ -60,15 +54,7 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
       }
 
       case "list_traps": {
-        const groups = operations.listTraps({
-          scope: args.scope,
-          category: args.category,
-          status: args.status,
-          limit: args.limit ?? 50,
-          path: args.path,
-          module: args.module,
-          owner: args.owner,
-        });
+        const groups = operations.listTraps(listRequestFromArgs(args));
         return toMcpTextJson(toListJson(groups));
       }
 
@@ -98,8 +84,9 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
       }
 
       case "get_stats": {
-        const stats = operations.getStats();
-        return toMcpTextJson(toStatsJson(stats, operations.getEmbeddingStats()));
+        const request = statsRequestFromArgs(args);
+        const stats = operations.getStats(request.scope);
+        return toMcpTextJson(toStatsJson(stats, operations.getEmbeddingStats(request.scope)));
       }
 
       default:

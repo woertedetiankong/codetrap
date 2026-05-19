@@ -1,10 +1,12 @@
-import { join, resolve } from "node:path";
 import { openGlobal, openProject } from "../db/connection";
 import { TrapRepository } from "../db/repository";
 import { CODETRAP_DIR, TRAPS_DB_FILE } from "./constants";
 import type { Scope } from "./constants";
 import type { EmbeddingProvider } from "./embedder";
-import { findProjectRoot, getGlobalDB } from "./scope";
+import { findProjectRoot, getGlobalDB, resolveScopePath } from "./scope";
+import { ScopePathResolver } from "./scope-path";
+
+const scopePath = new ScopePathResolver();
 
 export type ScopeContext = {
   cwd: string;
@@ -14,12 +16,12 @@ export type ScopeContext = {
 };
 
 export function createScopeContext(cwd = process.cwd()): ScopeContext {
-  const resolvedCwd = resolve(cwd);
+  const resolvedCwd = resolveScopePath(cwd);
   const projectRoot = findProjectRoot(resolvedCwd);
   return {
     cwd: resolvedCwd,
     project_root: projectRoot,
-    project_db: projectRoot ? join(projectRoot, CODETRAP_DIR, TRAPS_DB_FILE) : null,
+    project_db: projectRoot ? scopePath.join(projectRoot, CODETRAP_DIR, TRAPS_DB_FILE) : null,
     global_db: getGlobalDB(),
   };
 }

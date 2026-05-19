@@ -102,10 +102,12 @@ export function toStatsJson(stats: TrapStatsResult, embeddings?: EmbeddingStatsR
           embeddings: embeddings?.project ?? null,
         }
       : null,
-    global: {
-      ...stats.global,
-      embeddings: embeddings?.global ?? null,
-    },
+    global: stats.global
+      ? {
+          ...stats.global,
+          embeddings: embeddings?.global ?? null,
+        }
+      : null,
   };
 }
 

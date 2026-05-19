@@ -117,6 +117,27 @@ describe("MCP tool payloads", () => {
     expect(cards[0].next_action.details_args).toEqual({ id: added.id, scope: "project" });
   });
 
+  test("get_stats honors the requested scope", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-stats-"));
+    mkdirSync(join(cwd, ".codetrap"));
+    const store = new TrapStore(cwd, undefined);
+
+    store.add({
+      title: "Project stats trap",
+      category: "bug",
+      scope: "project",
+      context: "When requesting scoped stats.",
+      mistake: "Returning both scopes ignores the MCP scope argument.",
+      fix: "Normalize stats requests through the shared request module.",
+    });
+
+    const response = await handleToolCall(store, "get_stats", { scope: "project" });
+    const stats = JSON.parse(response.content[0].text);
+
+    expect(stats.project.total).toBe(1);
+    expect(stats.global).toBeNull();
+  });
+
   test("resources use the shared normalized JSON contract", () => {
     const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-resource-"));
     mkdirSync(join(cwd, ".codetrap"));

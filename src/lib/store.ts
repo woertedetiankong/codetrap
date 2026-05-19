@@ -167,19 +167,31 @@ export class TrapStore {
     return this.scopes.repositoryFor(resolvedScope).top(resolvedScope, limit);
   }
 
-  stats(): { project: TrapStats | null; global: TrapStats } {
-    const project = this.scopes.repositoryEntry("project")?.repository.stats({ scope: "project" }) ?? null;
-    return { project, global: this.scopes.repositoryFor("global").stats({ scope: "global" }) };
+  stats(opts: { scope?: string } = {}): { project: TrapStats | null; global: TrapStats | null } {
+    const scope = opts.scope ? normalizeScope(opts.scope) : null;
+    const project = scope === "global"
+      ? null
+      : this.scopes.repositoryEntry("project")?.repository.stats({ scope: "project" }) ?? null;
+    const global = scope === "project"
+      ? null
+      : this.scopes.repositoryFor("global").stats({ scope: "global" });
+    return { project, global };
   }
 
-  embeddingStats(): TrapEmbeddingStats {
+  embeddingStats(opts: { scope?: string } = {}): TrapEmbeddingStats {
+    const scope = opts.scope ? normalizeScope(opts.scope) : null;
     const config = this.embeddingConfig();
-    const project = this.scopes.repositoryEntry("project")
+    const project = scope === "global"
+      ? null
+      : this.scopes.repositoryEntry("project")
       ? summarizeEmbeddingState(this.scopes.repositoryFor("project").embeddingStats(config, { scope: "project" }), config)
       : null;
+    const global = scope === "project"
+      ? null
+      : summarizeEmbeddingState(this.scopes.repositoryFor("global").embeddingStats(config, { scope: "global" }), config);
     return {
       project,
-      global: summarizeEmbeddingState(this.scopes.repositoryFor("global").embeddingStats(config, { scope: "global" }), config),
+      global,
     };
   }
 

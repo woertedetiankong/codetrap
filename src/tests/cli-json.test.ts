@@ -90,6 +90,10 @@ describe("CLI JSON contract", () => {
       provider_available: false,
     });
     expect(statsJson.global.total).toBe(0);
+
+    const scopedStats = JSON.parse(runCli(["stats", "--scope", "project", "--json"], cwd, home).stdout);
+    expect(scopedStats.project.total).toBe(1);
+    expect(scopedStats.global).toBeNull();
   });
 
   test("search --json reads stdin only when no positional query is provided", () => {

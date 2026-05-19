@@ -17,7 +17,7 @@ export type EmbeddingStateSummary = EmbeddingStateCounts & {
 
 export type EmbeddingStatsResult = {
   project: EmbeddingStateSummary | null;
-  global: EmbeddingStateSummary;
+  global: EmbeddingStateSummary | null;
 };
 
 export type HybridFallbackReason = "semantic_unavailable" | "semantic_no_candidates";
@@ -42,8 +42,8 @@ export function hybridFallbackReason(
 ): HybridFallbackReason | null {
   if (!providerAvailable) return "semantic_unavailable";
 
-  const fresh = (embeddings.project?.fresh ?? 0) + embeddings.global.fresh;
-  const total = (embeddings.project?.total ?? 0) + embeddings.global.total;
+  const fresh = (embeddings.project?.fresh ?? 0) + (embeddings.global?.fresh ?? 0);
+  const total = (embeddings.project?.total ?? 0) + (embeddings.global?.total ?? 0);
   if (total > 0 && fresh === 0) return "semantic_no_candidates";
   return null;
 }

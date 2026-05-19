@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { TrapStore } from "../lib/store";
 import { formatTrapShort, formatTrapDetails, formatTrapActionCard } from "../lib/format";
 import type { Trap } from "../domain/trap";
-import { SEARCH_MODES, type SearchMode } from "../lib/constants";
 import {
   formatScopeMigrationText,
   runScopeMigration,
@@ -24,6 +23,13 @@ import {
   type CommandResult,
 } from "./command-result";
 import { mutationJsonPayload } from "../lib/trap-mutation-result";
+import {
+  embedRequestFromArgs,
+  evidenceRequestFromArgs,
+  listRequestFromArgs,
+  searchRequestFromArgs,
+  statsRequestFromArgs,
+} from "../lib/command-requests";
 
 type ParsedArgs = {
   opts: Record<string, string>;
@@ -141,21 +147,8 @@ async function cmdSearch(args: string[], operations: TrapOperations): Promise<Co
   }
 
   try {
-    const mode = opts.mode ? parseSearchMode(opts.mode) : undefined;
     const defaults = searchDefaultsFromConfig();
-    const cards = await operations.searchTrapCards({
-      query,
-      category: opts.category,
-      scope: opts.scope ?? defaults.scope,
-      limit: opts.limit ? parseOptionalInt(opts.limit) : defaults.limit,
-      mode: mode ?? defaults.mode,
-      status: opts.status,
-      path: opts.path,
-      module: opts.module,
-      owner: opts.owner,
-      rerank: opts["no-rerank"] !== undefined ? false : defaults.rerank,
-      includeRankingSignals: opts["ranking-signals"] !== undefined,
-    });
+    const cards = await operations.searchTrapCards(searchRequestFromArgs(query, opts, defaults));
     if (opts.json !== undefined) return jsonResult(toCliSearchJson(cards));
     return textResult(cards.length > 0 ? cards.map(formatTrapActionCard).join("\n\n") : "No traps found.");
   } catch (error) {
@@ -166,15 +159,7 @@ async function cmdSearch(args: string[], operations: TrapOperations): Promise<Co
 function cmdList(args: string[], operations: TrapOperations): CommandResult {
   const { opts } = parseArgs(args);
   try {
-    const groups = operations.listTraps({
-      category: opts.category,
-      scope: opts.scope,
-      status: opts.status,
-      path: opts.path,
-      module: opts.module,
-      owner: opts.owner,
-      limit: parseOptionalInt(opts.limit, 50),
-    });
+    const groups = operations.listTraps(listRequestFromArgs(opts));
     if (opts.json !== undefined) return jsonResult(toListJson(groups));
 
     const lines = groups.flatMap((group) =>
@@ -246,13 +231,7 @@ function cmdAddTrapEvidence(args: string[], operations: TrapOperations): Command
   if (typeof id !== "number") return id;
 
   try {
-    const input = opts.json ? JSON.parse(opts.json) : {
-      source_type: opts.source_type ?? opts["source-type"],
-      source_ref: opts.source_ref ?? opts["source-ref"],
-      observed_at: opts.observed_at ?? opts["observed-at"],
-      related_files: parseCsv(opts.related_files ?? opts["related-files"]),
-      note: opts.note,
-    };
+    const input = opts.json ? JSON.parse(opts.json) : evidenceRequestFromArgs(opts);
     const result = operations.addTrapEvidence(id, input, opts.scope);
     if (opts["output-json"] !== undefined) {
       return mutationJsonResult({ id, ...result }, `Trap #${id} not found.`);
@@ -331,8 +310,9 @@ function cmdImport(args: string[], operations: TrapOperations): CommandResult {
 
 function cmdStats(args: string[], operations: TrapOperations): CommandResult {
   const { opts } = parseArgs(args);
-  const stats = operations.getStats();
-  const embeddingStats = operations.getEmbeddingStats();
+  const request = statsRequestFromArgs(opts);
+  const stats = operations.getStats(request.scope);
+  const embeddingStats = operations.getEmbeddingStats(request.scope);
   return opts.json !== undefined
     ? jsonResult(toStatsJson(stats, embeddingStats))
     : textResult(formatStatsText(stats));
@@ -378,13 +358,7 @@ function cmdScopeMigration(
 async function cmdEmbed(args: string[], store: TrapStore): Promise<CommandResult> {
   const { opts } = parseArgs(args);
   try {
-    const result = await store.ensureEmbeddings({
-      scope: opts.scope,
-      category: opts.category,
-      limit: opts.limit ? parseOptionalInt(opts.limit) : undefined,
-      force: opts.force === "true",
-      batchSize: opts["batch-size"] ? parseOptionalInt(opts["batch-size"]) : undefined,
-    });
+    const result = await store.ensureEmbeddings(embedRequestFromArgs(opts));
     return textResult([
       ...result.scopes.map((scoped) =>
         `[${scoped.scope}] embeddings generated: ${scoped.generated}, skipped: ${scoped.skipped}, batches: ${scoped.batches}`
@@ -401,7 +375,9 @@ function formatStatsText(stats: ReturnType<TrapOperations["getStats"]>): string 
   if (stats.project) {
     sections.push("── Project ──", formatStatsBlock(stats.project));
   }
-  sections.push("── Global ──", formatStatsBlock(stats.global));
+  if (stats.global) {
+    sections.push("── Global ──", formatStatsBlock(stats.global));
+  }
   return sections.join("\n");
 }
 
@@ -415,39 +391,16 @@ function formatStatsBlock(stats: { total: number; byCategory: Record<string, num
   ].join("\n");
 }
 
-function parseSearchMode(mode: string): SearchMode {
-  if ((SEARCH_MODES as readonly string[]).includes(mode)) return mode as SearchMode;
-  throw new Error(`Invalid search mode: ${mode}. Expected one of: ${SEARCH_MODES.join(", ")}`);
-}
-
 function parseId(value: string | undefined, usage: string): number | CommandResult {
   if (value === undefined) return errorResult(usage);
   const id = Number.parseInt(value, 10);
   return Number.isNaN(id) ? errorResult("Error: id must be a number") : id;
 }
 
-function parseOptionalInt(value: string | undefined, fallback?: number): number {
-  if (value === undefined) {
-    if (fallback === undefined) throw new Error("Missing numeric value.");
-    return fallback;
-  }
-  const parsed = Number.parseInt(value, 10);
-  if (Number.isNaN(parsed)) throw new Error(`Invalid number: ${value}`);
-  return parsed;
-}
-
 function readQuery(positionals: string[]): string {
   if (positionals.length > 0) return positionals.join(" ").trim();
   if (process.stdin.isTTY) return "";
   return readFileSync(0, "utf-8").trim();
-}
-
-function parseCsv(value?: string): string[] | undefined {
-  if (!value) return undefined;
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 function mutationJsonResult<T extends Record<string, unknown> & { success: boolean }>(

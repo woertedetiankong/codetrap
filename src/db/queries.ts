@@ -180,6 +180,10 @@ export function listTrapEvidence(db: Database, trapId: number): TrapEvidence[] {
 }
 
 export function archiveTrap(db: Database, id: number): boolean {
+  return markTrapArchived(db, id);
+}
+
+export function markTrapArchived(db: Database, id: number): boolean {
   const result = db
     .prepare(
       `
@@ -208,32 +212,42 @@ export function supersedeTrap(
 
   const key = stateKey ?? oldTrap.state_key ?? newTrap.state_key ?? `trap:${id}`;
   const tx = db.transaction(() => {
-    db.prepare(
-      `
-      UPDATE traps
-      SET status = 'superseded',
-          state_key = ?,
-          valid_until = COALESCE(valid_until, datetime('now')),
-          updated_at = datetime('now')
-      WHERE id = ?
-    `
-    ).run(key, id);
-    db.prepare(
-      `
-      UPDATE traps
-      SET status = 'active',
-          state_key = ?,
-          supersedes_id = ?,
-          valid_from = COALESCE(valid_from, datetime('now')),
-          valid_until = NULL,
-          updated_at = datetime('now')
-      WHERE id = ?
-    `
-    ).run(key, id, supersededById);
+    markTrapSuperseded(db, id, key);
+    markTrapSuperseding(db, supersededById, id, key);
   });
   tx();
   return true;
 }
+
+export function markTrapSuperseded(db: Database, id: number, stateKey: string): boolean {
+  const result = db.prepare(supersedeTrapSql).run(stateKey, id);
+  return result.changes > 0;
+}
+
+export function markTrapSuperseding(db: Database, id: number, supersedesId: number, stateKey: string): boolean {
+  const result = db.prepare(supersedingTrapSql).run(stateKey, supersedesId, id);
+  return result.changes > 0;
+}
+
+const supersedeTrapSql = `
+  UPDATE traps
+  SET status = 'superseded',
+      state_key = ?,
+      valid_until = COALESCE(valid_until, datetime('now')),
+      updated_at = datetime('now')
+  WHERE id = ?
+`;
+
+const supersedingTrapSql = `
+  UPDATE traps
+  SET status = 'active',
+      state_key = ?,
+      supersedes_id = ?,
+      valid_from = COALESCE(valid_from, datetime('now')),
+      valid_until = NULL,
+      updated_at = datetime('now')
+  WHERE id = ?
+`;
 
 export function incrementHitCount(db: Database, id: number): void {
   db.prepare("UPDATE traps SET hit_count = hit_count + 1, updated_at = datetime('now') WHERE id = ?").run(id);

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findProjectRoot } from "../lib/scope";
+import { findProjectRoot, resolveScopePath, ScopePathResolver } from "../lib/scope";
 
 describe("project root detection", () => {
   test("does not treat the global home .codetrap directory as a project root", () => {
@@ -21,6 +21,24 @@ describe("project root detection", () => {
 
     expect(findProjectRoot(cwd, "/c/Users/EDY")).toBeNull();
     expect(findProjectRoot(cwd, "c:/users/edy")).toBeNull();
+    expect(findProjectRoot("/c/Users/EDY/Documents/Code/esp32", home)).toBeNull();
+    expect(resolveScopePath("/c/Users/EDY/Documents/Code/esp32", home)).toBe("C:\\Users\\EDY\\Documents\\Code\\esp32");
+  });
+
+  test("can test Windows project root detection through a filesystem adapter", () => {
+    const resolver = new ScopePathResolver({
+      platform: "linux",
+      fs: {
+        exists: (path) => path.toLowerCase() === "c:\\users\\edy\\documents\\code\\project\\.codetrap",
+        realpath: (path) => path,
+      },
+    });
+
+    expect(findProjectRoot(
+      "/c/Users/EDY/Documents/Code/project/src",
+      "/c/Users/EDY",
+      resolver
+    )).toBe("C:\\Users\\EDY\\Documents\\Code\\project");
   });
 
   test("finds the nearest project .codetrap directory below the home directory", () => {

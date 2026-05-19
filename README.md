@@ -13,7 +13,7 @@ AI coding agents make the same mistakes repeatedly across sessions and projects.
 For detailed setup options, see [Installation](docs/installation.md). Maintainers can use the Chinese [Release Playbook](docs/release-playbook.zh-CN.md) when publishing updates.
 
 ```bash
-# Prerequisites: Bun >= 1.x (https://bun.sh) or Node.js >= 18
+# Prerequisites: Bun >= 1.x (https://bun.sh) for npm/source installs
 
 # npm global install (recommended)
 npm install -g codetrap

@@ -40,7 +40,7 @@ export function buildDoctorReport(
     ...scope,
     traps: {
       project: stats.project?.total ?? null,
-      global: stats.global.total,
+      global: stats.global?.total ?? 0,
     },
     embeddings,
     hybrid_search: {

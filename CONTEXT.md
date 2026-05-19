@@ -31,6 +31,12 @@ Trap evidence records where a trap came from. A trap can have multiple evidence 
 
 Evidence is loaded through `TrapDetails` for drill-down workflows. Default search results do not include full evidence.
 
+### Trap Lifecycle
+
+Trap lifecycle is the transition policy for `active`, `archived`, and `superseded` traps.
+
+`src/lib/trap-lifecycle.ts` owns lifecycle transition semantics such as archive and supersede state-key resolution. Raw SQL remains in `src/db/queries.ts`; repository code adapts the SQL operations to the lifecycle Module.
+
 ### Action Card
 
 An action card is the compact search result shape for agents. It includes the trap id, scope, title, why it is relevant, what to avoid, what to do instead, score/sources, and a `next_action`.
@@ -42,6 +48,12 @@ CLI JSON uses `next_action.command`, for example `codetrap show <id> --scope <sc
 Trap operations are the shared execution layer for CLI and MCP trap commands. They turn transport-neutral inputs into `TrapStore` calls for add/search/get/list/update/delete/evidence/archive/supersede/stats/export/import workflows.
 
 CLI and MCP adapters should call `TrapOperations` instead of duplicating Trap operation semantics. The adapters still own argument parsing, terminal rendering, MCP JSON text payloads, and process exit behavior.
+
+### Command Request
+
+Command request is the normalized input shape shared by CLI and MCP before calling Trap Operations.
+
+`src/lib/command-requests.ts` owns command argument normalization for search, list, stats, embedding, and evidence inputs. CLI and MCP adapters should translate transport-specific flags or tool arguments into Command Requests instead of reimplementing defaults, aliases, or numeric/boolean parsing.
 
 ### Trap Mutation Result
 
@@ -60,6 +72,12 @@ Trap archive is the import/export format and compatibility layer. It preserves t
 Trap transfer is the internal DB-to-DB move path used by `repair-scope` and `migrate-project`. It preserves storage metadata such as lifecycle fields, timestamps, hit counts, Trap Evidence, and remapped `supersedes_id` values while rewriting the destination `project_path`.
 
 Trap transfer lives in `src/lib/trap-transfer.ts`. It is separate from Trap Archive import because archive import is a user-facing compatibility format with forgiving partial-import behavior, while transfer is a maintenance workflow for moving existing project-scoped rows between SQLite databases.
+
+### Scope Maintenance
+
+Scope maintenance is the safe repair and migration workflow for project-scoped traps across SQLite databases.
+
+`src/lib/scope-maintenance.ts` owns scope-maintenance path derivation, validation, backup creation, and readonly repository opening. `src/lib/scope-migration.ts` composes those operations into dry-run/apply workflows and result shaping.
 
 ### Trap JSON Field Codec
 
@@ -90,6 +108,12 @@ Scope context resolves cwd, project root, project/global database paths, and laz
 
 `src/lib/scope-context.ts` owns cwd-specific repository selection for `TrapStore`, MCP tool calls, and MCP resource reads. This keeps project/global lookup rules in one Module while `TrapStore` remains the scope policy Interface used by operations.
 
+### Scope Path
+
+Scope path is the cross-platform path normalization Module for cwd, home directory, project root, and scope database paths.
+
+`src/lib/scope-path.ts` owns Windows/MSYS/POSIX path flavor detection, canonical path comparison, path joining, and testable filesystem probing. Scope Context and Scope Maintenance should use this Module instead of open-coding path normalization.
+
 ### Storage
 
 Each scope has its own SQLite database named `traps.db`.
@@ -112,6 +136,12 @@ Chinese and mixed-language search are implemented through derived `search_text`,
 Search policy owns applicability filtering, overfetch decisions, generic reranking, ranking signals, RRF fusion, and hybrid fallback diagnostics.
 
 `src/lib/search-policy.ts` sits behind `SearchService`. Retrieval Modules can fetch FTS or semantic candidates, while the policy Module decides path/module/owner applicability, exact title/tag/code identifier boosts, severity boosts, and whether ranking signals are exposed.
+
+### Embedding Index
+
+Embedding index is the Module for semantic trap availability and embedding freshness.
+
+`src/lib/embedding-index.ts` owns the index-facing Interface for fresh semantic candidates, embeddable counts, traps needing embeddings, and embedding state counts. Provider-specific embedding calls stay behind `EmbeddingProvider`; raw SQL stays in `src/db/embedding-queries.ts`.
 
 Implemented retrieval and agent-memory reference notes live in `docs/agent-memory-reference-analysis.md`. The next CLI-first product direction lives in `docs/codetrap-optimization-roadmap.zh-CN.md`.
 
@@ -171,14 +201,19 @@ src/
     trap.ts             -- canonical types, schema metadata, builders
   lib/
     constants.ts        -- categories, severities, defaults
+    command-requests.ts -- CLI/MCP command request normalization
     scope.ts            -- scope resolution (walk up to .codetrap/)
+    scope-path.ts       -- cross-platform path normalization for scope paths
     scope-context.ts    -- cwd/project/global DB diagnostic facts
+    scope-maintenance.ts -- shared scope repair/migration safety helpers
     scope-migration.ts  -- repair-scope / migrate-project planning and apply logic
     store.ts            -- TrapStore: project/global scope policy
     trap-operations.ts  -- shared CLI/MCP Trap operation execution
     trap-mutation-result.ts -- shared mutation result and scoped fallback semantics
+    trap-lifecycle.ts   -- Trap lifecycle transition semantics
     output-json.ts      -- shared CLI/MCP JSON presenters
     doctor.ts           -- doctor diagnostic report
+    embedding-index.ts  -- semantic candidate and embedding freshness Interface
     embedding-health.ts -- embedding freshness and fallback summaries
     trap-archive.ts     -- Trap archive import/export compatibility
     trap-codec.ts       -- whole Trap shape conversion for JSON/archive/storage inputs
@@ -240,7 +275,7 @@ Based on `docs/codetrap-optimization-roadmap.zh-CN.md`.
 - `~/.codetrap/config.json` search defaults with env fallback.
 - MCP resource `?cwd=` project resolution.
 - Codex plugin/onboarding scaffold and release preflight script.
-- Architecture deepening for Search Policy, Trap Shape Codec, Scope Context, Trap Mutation Result, and CLI Command Workflow.
+- Architecture deepening for Search Policy, Trap Shape Codec, Scope Context, Trap Mutation Result, CLI Command Workflow, Scope Path, Command Request, Scope Maintenance, Embedding Index, and Trap Lifecycle.
 
 **Next priorities:**
 - Add local embedding provider after CLI JSON, evals, and doctor remain stable.

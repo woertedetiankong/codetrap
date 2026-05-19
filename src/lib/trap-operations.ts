@@ -18,7 +18,7 @@ export type TrapListGroup = { traps: Trap[]; scope: string };
 export type TrapSearchGroup = { results: TrapSearchResult[]; scope: string };
 export type { AddTrapEvidenceResult, TrapMutationResult };
 
-export type TrapStatsResult = { project: TrapStats | null; global: TrapStats };
+export type TrapStatsResult = { project: TrapStats | null; global: TrapStats | null };
 export type EmbeddingStatsResult = ReturnType<TrapStore["embeddingStats"]>;
 
 export interface SearchTrapsArgs {
@@ -130,12 +130,12 @@ export class TrapOperations {
     return this.store.supersede(id, supersededById, scope, stateKey);
   }
 
-  getStats(): TrapStatsResult {
-    return this.store.stats();
+  getStats(scope?: string): TrapStatsResult {
+    return this.store.stats({ scope });
   }
 
-  getEmbeddingStats(): EmbeddingStatsResult {
-    return this.store.embeddingStats();
+  getEmbeddingStats(scope?: string): EmbeddingStatsResult {
+    return this.store.embeddingStats({ scope });
   }
 
   exportTraps(scope?: string): ReturnType<TrapStore["exportAll"]> {

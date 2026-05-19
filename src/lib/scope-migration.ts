@@ -1,19 +1,23 @@
-import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
 import { openDatabase } from "../db/connection";
 import { TrapRepository } from "../db/repository";
 import type { TrapExportRecord } from "../domain/trap";
-import { CODETRAP_DIR, TRAPS_DB_FILE } from "./constants";
-import { findProjectRoot } from "./scope";
+import { findProjectRoot, resolveScopePath } from "./scope";
+import {
+  backupScopeDatabase,
+  buildScopeMaintenancePaths,
+  validateScopeMaintenancePaths,
+  withReadOnlyScopeRepository,
+  type ScopeMaintenanceCommand,
+} from "./scope-maintenance";
 import {
   deleteTransferredSourceTraps,
   importProjectTrapTransfer,
   type TrapTransferMapping,
 } from "./trap-transfer";
 
-export type ScopeMigrationCommand = "repair-scope" | "migrate-project";
+export type ScopeMigrationCommand = ScopeMaintenanceCommand;
 export type ScopeMigrationMode = "dry-run" | "apply";
 
 export type ScopeMigrationCandidate = {
@@ -151,16 +155,16 @@ export function formatScopeMigrationText(result: ScopeMigrationResult): string {
 
 function buildScopeMigrationPlan(options: ScopeMigrationOptions): ScopeMigrationPlan {
   const resolved = resolveScopeMigrationOptions(options);
-  validateMigrationPaths(resolved);
+  validateScopeMaintenancePaths(resolved);
   const sourceDbExists = existsSync(resolved.sourceDb);
   const destinationDbExists = existsSync(resolved.destinationDb);
   const records = sourceDbExists
-    ? withReadOnlyRepository(resolved.sourceDb, (repository) =>
+    ? withReadOnlyScopeRepository(resolved.sourceDb, (repository) =>
         repository.exportProjectTrapsByPath(resolved.fromProjectPath)
       )
     : [];
   const destinationBefore = destinationDbExists
-    ? withReadOnlyRepository(resolved.destinationDb, (repository) =>
+    ? withReadOnlyScopeRepository(resolved.destinationDb, (repository) =>
         repository.countProjectTrapsByPath(resolved.toProjectPath)
       )
     : 0;
@@ -177,8 +181,8 @@ function buildScopeMigrationPlan(options: ScopeMigrationOptions): ScopeMigration
 
 function applyScopeMigrationPlan(plan: ScopeMigrationPlan): ScopeMigrationApplyResult {
   const backups = {
-    source_db: backupDatabase(plan.sourceDb, "source"),
-    destination_db: plan.destinationDbExists ? backupDatabase(plan.destinationDb, "destination") : null,
+    source_db: backupScopeDatabase(plan.sourceDb, "source"),
+    destination_db: plan.destinationDbExists ? backupScopeDatabase(plan.destinationDb, "destination") : null,
   };
 
   const applyResult = applyScopeMigration(
@@ -197,43 +201,25 @@ function applyScopeMigrationPlan(plan: ScopeMigrationPlan): ScopeMigrationApplyR
 }
 
 function resolveScopeMigrationOptions(options: ScopeMigrationOptions): ResolvedScopeMigration {
-  const cwd = resolve(options.cwd ?? process.cwd());
+  const cwd = resolveScopePath(options.cwd ?? process.cwd());
   const projectRoot = findProjectRoot(cwd);
-  const fromProjectPath = resolve(options.fromProjectPath ?? homedir());
+  const fromProjectPath = resolveScopePath(options.fromProjectPath ?? homedir());
   const rawToProjectPath = options.toProjectPath ?? projectRoot;
 
   if (!rawToProjectPath) {
     throw new Error("Destination project not found. Run 'codetrap init' first, or pass --to-project-path.");
   }
-  const toProjectPath = resolve(rawToProjectPath);
+  const toProjectPath = resolveScopePath(rawToProjectPath);
 
   return {
-    command: options.command,
+    ...buildScopeMaintenancePaths({
+      command: options.command,
+      fromProjectPath,
+      toProjectPath,
+    }),
     mode: options.apply ? "apply" : "dry-run",
     apply: options.apply === true,
-    fromProjectPath,
-    toProjectPath,
-    sourceDb: projectDbPath(fromProjectPath),
-    destinationDb: projectDbPath(toProjectPath),
   };
-}
-
-function validateMigrationPaths(input: {
-  command: ScopeMigrationCommand;
-  fromProjectPath: string;
-  toProjectPath: string;
-  sourceDb: string;
-  destinationDb: string;
-}): void {
-  if (input.command === "migrate-project" && input.fromProjectPath === input.toProjectPath) {
-    throw new Error("--from-project-path and --to-project-path must be different.");
-  }
-  if (canonicalPath(input.sourceDb) === canonicalPath(input.destinationDb)) {
-    throw new Error("Source and destination database paths are the same.");
-  }
-  if (!existsSync(join(input.toProjectPath, CODETRAP_DIR))) {
-    throw new Error(`Destination project is not initialized: ${input.toProjectPath}. Run 'codetrap init' first.`);
-  }
 }
 
 function applyScopeMigration(
@@ -307,29 +293,6 @@ function toCandidate(record: TrapExportRecord): ScopeMigrationCandidate {
   };
 }
 
-function withReadOnlyRepository<T>(dbPath: string, callback: (repository: TrapRepository) => T): T {
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    return callback(new TrapRepository(db));
-  } finally {
-    db.close();
-  }
-}
-
-function backupDatabase(dbPath: string, label: string): string {
-  const backupDir = join(dirname(dbPath), "backups");
-  mkdirSync(backupDir, { recursive: true });
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = join(backupDir, `${basename(dbPath)}.${label}.${timestamp}.backup`);
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    writeFileSync(backupPath, db.serialize());
-  } finally {
-    db.close();
-  }
-  return backupPath;
-}
-
 function buildApplyCommand(
   command: ScopeMigrationCommand,
   fromProjectPath: string,
@@ -345,14 +308,6 @@ function buildApplyCommand(
     "--apply",
     "--json",
   ].join(" ");
-}
-
-function projectDbPath(projectPath: string): string {
-  return join(projectPath, CODETRAP_DIR, TRAPS_DB_FILE);
-}
-
-function canonicalPath(path: string): string {
-  return existsSync(path) ? realpathSync(path) : path;
 }
 
 function shellQuote(value: string): string {

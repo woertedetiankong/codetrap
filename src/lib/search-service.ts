@@ -1,5 +1,4 @@
 import type { Database } from "bun:sqlite";
-import * as embeddingQueries from "../db/embedding-queries";
 import * as queries from "../db/queries";
 import type { TrapSearchResult } from "../domain/trap";
 import type { SearchMode, TrapStatus } from "./constants";
@@ -14,6 +13,7 @@ import {
   TrapSearchPolicy,
   type RankingConfig,
 } from "./search-policy";
+import { DatabaseEmbeddingIndex } from "./embedding-index";
 
 export interface SearchOptions {
   category?: string;
@@ -32,6 +32,7 @@ const DEFAULT_LIMIT = 20;
 
 export class SearchService {
   private readonly policy: TrapSearchPolicy;
+  private readonly embeddingIndex: DatabaseEmbeddingIndex;
 
   constructor(
     private readonly db: Database,
@@ -39,6 +40,7 @@ export class SearchService {
     ranking: RankingConfig = DEFAULT_RANKING_CONFIG
   ) {
     this.policy = new TrapSearchPolicy(ranking);
+    this.embeddingIndex = new DatabaseEmbeddingIndex(db);
   }
 
   async search(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
@@ -80,7 +82,7 @@ export class SearchService {
     if (!queryEmbedding) return [];
 
     const config = embeddingConfig(this.embedder);
-    const candidates = embeddingQueries.getAllFreshEmbeddings(this.db, config, {
+    const candidates = this.embeddingIndex.freshEmbeddings(config, {
       category: opts.category,
       scope: opts.scope,
       status: opts.status,

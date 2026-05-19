@@ -8,7 +8,6 @@ import type {
   TrapSearchResult,
   TrapUpdate,
 } from "../domain/trap";
-import * as embeddingQueries from "./embedding-queries";
 import { SearchService, type SearchOptions } from "../lib/search-service";
 import {
   type EmbeddingConfig,
@@ -20,20 +19,24 @@ import { passageFieldsChanged } from "../lib/trap-search-document";
 import * as queries from "./queries";
 import type { TrapStatus } from "../lib/constants";
 import { TrapSearchPolicy } from "../lib/search-policy";
+import { DatabaseEmbeddingIndex } from "../lib/embedding-index";
+import { archiveTrapLifecycle, supersedeTrapLifecycle } from "../lib/trap-lifecycle";
 
 export type TrapStats = ReturnType<typeof queries.getStats>;
-export type EmbeddingStateCounts = ReturnType<typeof embeddingQueries.getEmbeddingStateCounts>;
+export type EmbeddingStateCounts = ReturnType<DatabaseEmbeddingIndex["stateCounts"]>;
 export type TrapRecordInsert = queries.TrapRecordInsert;
 
 export class TrapRepository {
   private readonly searchService: SearchService;
   private readonly searchPolicy = new TrapSearchPolicy();
+  private readonly embeddingIndex: DatabaseEmbeddingIndex;
 
   constructor(
     private readonly db: Database,
     private readonly embedder?: EmbeddingProvider
   ) {
     this.searchService = new SearchService(db, embedder);
+    this.embeddingIndex = new DatabaseEmbeddingIndex(db);
   }
 
   add(input: TrapInput): number {
@@ -76,7 +79,7 @@ export class TrapRepository {
   update(id: number, input: TrapUpdate): boolean {
     const success = queries.updateTrap(this.db, id, input);
     if (success && passageFieldsChanged(input)) {
-      embeddingQueries.deleteEmbedding(this.db, id);
+      this.embeddingIndex.delete(id);
     }
     return success;
   }
@@ -91,11 +94,11 @@ export class TrapRepository {
   }
 
   archive(id: number): boolean {
-    return queries.archiveTrap(this.db, id);
+    return archiveTrapLifecycle(this.lifecycleAdapter(), id);
   }
 
   supersede(id: number, supersededById: number, stateKey?: string): boolean {
-    return queries.supersedeTrap(this.db, id, supersededById, stateKey);
+    return supersedeTrapLifecycle(this.lifecycleAdapter(), id, supersededById, stateKey);
   }
 
   hit(id: number): void {
@@ -111,7 +114,7 @@ export class TrapRepository {
   }
 
   embeddingStats(config: EmbeddingConfig | null, opts: { scope?: string; status?: TrapStatus | "all" } = {}): EmbeddingStateCounts {
-    return embeddingQueries.getEmbeddingStateCounts(this.db, config, opts);
+    return this.embeddingIndex.stateCounts(config, opts);
   }
 
   exportAll(): TrapExportRecord[] {
@@ -143,22 +146,22 @@ export class TrapRepository {
   }
 
   getEmbedding(trapId: number): StoredEmbedding | null {
-    return embeddingQueries.getEmbedding(this.db, trapId);
+    return this.embeddingIndex.get(trapId);
   }
 
   upsertEmbedding(record: StoredEmbedding): void {
-    embeddingQueries.upsertEmbedding(this.db, record);
+    this.embeddingIndex.save(record);
   }
 
   deleteEmbedding(trapId: number): void {
-    embeddingQueries.deleteEmbedding(this.db, trapId);
+    this.embeddingIndex.delete(trapId);
   }
 
   getTrapsNeedingEmbeddings(
     config: EmbeddingConfig,
     opts: { scope?: string; category?: string; status?: TrapStatus | "all"; force?: boolean; limit?: number } = {}
   ): Trap[] {
-    return embeddingQueries.getTrapsNeedingEmbeddings(this.db, config, opts);
+    return this.embeddingIndex.trapsNeedingEmbeddings(config, opts);
   }
 
   async ensureEmbeddings(opts: { scope?: string; category?: string; limit?: number; force?: boolean; batchSize?: number } = {}): Promise<{
@@ -172,13 +175,24 @@ export class TrapRepository {
 
     return runEmbeddingJob(
       {
-        countEmbeddable: (countOpts) => embeddingQueries.countEmbeddableTraps(this.db, countOpts),
+        countEmbeddable: (countOpts) => this.embeddingIndex.countEmbeddable(countOpts),
         trapsNeedingEmbeddings: (config, jobOpts) =>
-          embeddingQueries.getTrapsNeedingEmbeddings(this.db, config, jobOpts),
-        saveEmbedding: (record) => embeddingQueries.upsertEmbedding(this.db, record),
+          this.embeddingIndex.trapsNeedingEmbeddings(config, jobOpts),
+        saveEmbedding: (record) => this.embeddingIndex.save(record),
       },
       this.embedder,
       opts
     );
+  }
+
+  private lifecycleAdapter() {
+    return {
+      get: (id: number) => queries.getTrap(this.db, id),
+      transaction: <T>(callback: () => T) => this.transaction(callback),
+      markArchived: (id: number) => queries.markTrapArchived(this.db, id),
+      markSuperseded: (id: number, stateKey: string) => queries.markTrapSuperseded(this.db, id, stateKey),
+      markSuperseding: (id: number, supersedesId: number, stateKey: string) =>
+        queries.markTrapSuperseding(this.db, id, supersedesId, stateKey),
+    };
   }
 }
