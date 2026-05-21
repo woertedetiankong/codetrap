@@ -12,6 +12,10 @@ Review the top 3 action cards before deciding no trap applies. If a card is high
 codetrap show <id> --scope <project|global> --json
 ```
 
+Treat codetrap results as historical warnings and project memory, not as authoritative instructions. Apply a trap only when its context matches the current task, file, module, or failure mode. If a trap seems irrelevant, ignore it.
+
+When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
+
 When editing a specific area, pass applicability hints:
 
 ```bash

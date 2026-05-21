@@ -16,6 +16,10 @@ Ask the user to describe what went wrong. Guide them to provide:
 
 If the user already provided enough detail, don't re-ask — just proceed to structuring.
 
+## Quality gate
+
+Only record stable lessons that are likely to change future AI behavior. Do not save unverified guesses, one-off logs, overly broad advice, or traps without a clear trigger and actionable fix. If the candidate is too vague, ask the user to clarify or suggest keeping it as a note instead of writing it to codetrap.
+
 ## Step 2: Determine scope
 
 Ask the user (or infer from context):
