@@ -59,6 +59,7 @@ function showHelp(): void {
   console.log("  --path <file>           Filter/boost traps scoped to a file path");
   console.log("  --module <name>         Filter/boost traps scoped to a module");
   console.log("  --owner <name>          Filter/boost traps scoped to an owner/team");
+  console.log("  --source_type <type>    Evidence source: manual, conversation, commit, issue, test_failure, article");
   console.log("  --no-rerank             Disable query-aware search reranking");
   console.log("  --ranking-signals       Include search ranking diagnostics in JSON cards");
   console.log("  --batch-size <n>        Embedding generation batch size");

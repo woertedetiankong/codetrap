@@ -237,10 +237,24 @@ Codex users can optionally install the bundled skills from `skills/`:
 - `codetrap-check` — pre-flight check before code changes.
 - `codetrap-search` — search existing lessons.
 - `codetrap-add` — record a new pitfall.
+- `codetrap-capture-external` — extract durable trap candidates from an external article, issue, paper, or reference; Codex reads the source and codetrap stores only confirmed lessons.
 
 Skills are a convenience layer for Codex users. They do not replace MCP or `AGENTS.md`; they make manual triggers like "run codetrap-check" easier.
 
 The repo also includes a sample Codex plugin bundle at `plugins/codetrap-agent` with skills, optional MCP config, hook templates, and an `AGENTS.md` snippet.
+
+External lessons should keep codetrap local-first: let the agent read the URL or pasted source, ask which candidate traps to save, then attach the source as evidence instead of making the CLI crawl the web:
+
+```bash
+codetrap add --json '{...}' --output-json
+
+codetrap add_trap_evidence <id> \
+  --scope global \
+  --source_type article \
+  --source_ref "https://example.com/debugging-post" \
+  --note "External lesson captured from the debugging post." \
+  --output-json
+```
 
 ### MCP Tools
 

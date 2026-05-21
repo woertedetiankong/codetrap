@@ -29,6 +29,8 @@ The canonical TypeScript definitions and schema metadata live in `src/domain/tra
 
 Trap evidence records where a trap came from. A trap can have multiple evidence entries with `source_type`, optional `source_ref`, `observed_at`, `related_files`, and `note`.
 
+Supported evidence source types are defined in `src/lib/constants.ts`: `manual`, `conversation`, `commit`, `issue`, `test_failure`, and `article`. `article` is for external references such as blog posts, papers, issues, or docs that an agent reads and then records as confirmed traps.
+
 Evidence is loaded through `TrapDetails` for drill-down workflows. Default search results do not include full evidence.
 
 ### Trap Lifecycle
@@ -237,6 +239,7 @@ src/
 skills/
   codetrap-add/SKILL.md
   codetrap-check/SKILL.md
+  codetrap-capture-external/SKILL.md
   codetrap-search/SKILL.md
 docs/
   installation.md
@@ -275,6 +278,7 @@ Based on `docs/codetrap-optimization-roadmap.zh-CN.md`.
 - `~/.codetrap/config.json` search defaults with env fallback.
 - MCP resource `?cwd=` project resolution.
 - Codex plugin/onboarding scaffold and release preflight script.
+- External lesson capture via `codetrap-capture-external` skill plus `article` trap evidence source type.
 - Architecture deepening for Search Policy, Trap Shape Codec, Scope Context, Trap Mutation Result, CLI Command Workflow, Scope Path, Command Request, Scope Maintenance, Embedding Index, and Trap Lifecycle.
 
 **Next priorities:**

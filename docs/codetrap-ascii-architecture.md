@@ -88,6 +88,10 @@ codetrap/
 |   +-- tests/                   搜索和存储行为测试
 |
 +-- skills/                      给 agent 使用的操作 playbook
+|   +-- codetrap-check
+|   +-- codetrap-search
+|   +-- codetrap-add
+|   +-- codetrap-capture-external
 |
 +-- plugins/codetrap-agent/      Codex plugin/bundle 示例
 |
@@ -282,7 +286,7 @@ updated_at
 
 - `traps` 是原始事实表。
 - `status` 支持 `active`、`superseded`、`archived` 三种 lifecycle 状态。
-- `trap_evidence` 保存来源、相关文件、观察时间和备注，用于下钻解释 trap 来历。
+- `trap_evidence` 保存来源、相关文件、观察时间和备注，用于下钻解释 trap 来历。来源类型包括 `manual`、`conversation`、`commit`、`issue`、`test_failure`、`article`。
 - `path_globs`、`module`、`owner` 是 schema v5 的可选适用范围字段；为空表示 trap 对所有路径/模块/owner 生效。
 - `traps_fts` 是由 `traps` 派生出来的 FTS5 索引表。
 - `search_text` 是由 Trap 字段派生出来的检索文本，用于中文 bigram 和同义词扩展。
@@ -1063,7 +1067,7 @@ local embedding provider
 local model cache / ONNX provider
 ```
 
-其中一些想法出现在计划或参考文档中，但目前还没有形成完整代码功能。action cards、CLI JSON、doctor、repair-scope/migrate-project、embedding health、evidence/source metadata、lifecycle、supersede/archive commands、path/module/owner scoped traps、config defaults、plugin scaffold 和 release preflight 已经是当前 runtime/packaging 功能。
+其中一些想法出现在计划或参考文档中，但目前还没有形成完整代码功能。action cards、CLI JSON、doctor、repair-scope/migrate-project、embedding health、evidence/source metadata、`article` 来源证据、lifecycle、supersede/archive commands、path/module/owner scoped traps、config defaults、plugin scaffold、external capture skill 和 release preflight 已经是当前 runtime/packaging 功能。
 
 ## 15. 最简心智模型
 

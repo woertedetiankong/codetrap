@@ -37,7 +37,7 @@ export type Scope = (typeof SCOPES)[number];
 export const TRAP_STATUSES = ["active", "superseded", "archived"] as const;
 export type TrapStatus = (typeof TRAP_STATUSES)[number];
 
-export const EVIDENCE_SOURCE_TYPES = ["manual", "conversation", "commit", "issue", "test_failure"] as const;
+export const EVIDENCE_SOURCE_TYPES = ["manual", "conversation", "commit", "issue", "test_failure", "article"] as const;
 export type EvidenceSourceType = (typeof EVIDENCE_SOURCE_TYPES)[number];
 
 export const SEARCH_MODES = ["fts", "semantic", "hybrid"] as const;

@@ -226,7 +226,7 @@ function cmdAddTrapEvidence(args: string[], operations: TrapOperations): Command
   const { opts, positionals } = parseArgs(args);
   const id = parseId(
     positionals[0],
-    "Usage: codetrap add_trap_evidence <id> --source_type manual|conversation|commit|issue|test_failure [--scope project|global] [--source_ref X] [--related_files a,b] [--note X]"
+    "Usage: codetrap add_trap_evidence <id> --source_type manual|conversation|commit|issue|test_failure|article [--scope project|global] [--source_ref X] [--related_files a,b] [--note X]"
   );
   if (typeof id !== "number") return id;
 

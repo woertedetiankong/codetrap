@@ -311,4 +311,8 @@ codetrap search "<keywords>" --path src/db/repository.ts --module db --json
 To add a lesson:
 
 codetrap add --json '{...}' --output-json
+
+To save a lesson from an external article or reference, let the agent read the source and attach the URL as evidence after the user confirms the trap:
+
+codetrap add_trap_evidence <id> --scope global --source_type article --source_ref "https://example.com/post" --output-json
 ```

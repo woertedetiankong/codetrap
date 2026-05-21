@@ -246,7 +246,7 @@ export function trapEvidenceInputSchema(): JsonSchema {
         enum: [...EVIDENCE_SOURCE_TYPES] as string[],
         description: "Where this evidence came from",
       },
-      source_ref: { type: "string", description: "Optional file path, commit SHA, issue URL, or transcript ID" },
+      source_ref: { type: "string", description: "Optional file path, commit SHA, issue/article URL, or transcript ID" },
       observed_at: { type: "string", description: "When this was observed (ISO-like timestamp, optional)" },
       related_files: {
         type: "array",

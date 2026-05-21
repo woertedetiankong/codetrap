@@ -17,7 +17,7 @@
   "interface": {
     "displayName": "codetrap Agent",
     "shortDescription": "Check local pitfall memory before code changes.",
-    "longDescription": "Installs CLI-first guidance, optional MCP config, and example hooks so coding agents can search codetrap before risky edits and propose new trap captures after failures.",
+    "longDescription": "Installs CLI-first guidance, optional MCP config, and example hooks so coding agents can search codetrap before risky edits, propose new trap captures after failures, and save useful lessons from external references.",
     "developerName": "codetrap maintainers",
     "category": "Productivity",
     "capabilities": ["Tools", "Memory", "Code"],
@@ -27,7 +27,8 @@
     "defaultPrompt": [
       "Check codetrap before editing this code.",
       "Search prior pitfalls for this task.",
-      "Propose a codetrap for this failure."
+      "Propose a codetrap for this failure.",
+      "Capture useful lessons from this article."
     ],
     "brandColor": "#2563EB"
   }

@@ -235,13 +235,24 @@ describe("CLI JSON contract", () => {
       "--scope",
       "project",
       "--source_type",
-      "manual",
+      "article",
+      "--source_ref",
+      "https://vllm.ai/blog/2025-10-28-kimi-k2-accuracy",
+      "--note",
+      "External lesson captured from a vLLM blog post.",
       "--output-json",
     ], cwd, home);
     expect(JSON.parse(evidence.stdout)).toMatchObject({
       id: first.id,
       scope: "project",
       success: true,
+    });
+
+    const details = JSON.parse(runCli(["show", String(first.id), "--scope", "project", "--json"], cwd, home).stdout);
+    expect(details.evidence[0]).toMatchObject({
+      source_type: "article",
+      source_ref: "https://vllm.ai/blog/2025-10-28-kimi-k2-accuracy",
+      note: "External lesson captured from a vLLM blog post.",
     });
 
     const archive = runCli(["archive", String(first.id), "--scope", "project", "--json"], cwd, home);

@@ -15,19 +15,19 @@ describe("import/export and CLI evidence handling", () => {
       owner: "platform",
     }));
     source.addEvidence(added.id, {
-      source_type: "commit",
-      source_ref: "abc123",
+      source_type: "article",
+      source_ref: "https://vllm.ai/blog/2025-10-28-kimi-k2-accuracy",
       related_files: ["src/api.ts"],
-      note: "Captured from review.",
+      note: "Captured from an external article.",
     }, "project");
 
     const exported = source.exportAll({ scope: "project" });
     expect(exported).toHaveLength(1);
     expect(exported[0].evidence[0]).toMatchObject({
-      source_type: "commit",
-      source_ref: "abc123",
+      source_type: "article",
+      source_ref: "https://vllm.ai/blog/2025-10-28-kimi-k2-accuracy",
       related_files: ["src/api.ts"],
-      note: "Captured from review.",
+      note: "Captured from an external article.",
     });
     expect(exported[0].path_globs).toEqual(["src/api/**"]);
     expect(exported[0].module).toBe("api");
@@ -54,9 +54,9 @@ describe("import/export and CLI evidence handling", () => {
     expect(details?.evidence).toHaveLength(1);
     expect(details?.evidence[0]).toMatchObject({
       trap_id: imported!.id,
-      source_type: "commit",
-      source_ref: "abc123",
-      note: "Captured from review.",
+      source_type: "article",
+      source_ref: "https://vllm.ai/blog/2025-10-28-kimi-k2-accuracy",
+      note: "Captured from an external article.",
     });
     expect(JSON.parse(details?.evidence[0].related_files ?? "[]")).toEqual(["src/api.ts"]);
   });
