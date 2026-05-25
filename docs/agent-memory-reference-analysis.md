@@ -96,11 +96,12 @@ codetrap 的边界仍然是：SQLite + FTS5 + optional embeddings + MCP/CLI/skil
 
 - MMR diversity：如果 top results 开始出现高度重复，可以在 hybrid 后加去重/降权。
 - Reranker：当前已有轻量通用 rerank；如果 eval set 显示 top-k 召回高但排序仍差，再考虑 cross-encoder 或 LLM reranker。
-- Duplicate/conflict detection：当 trap 数量上升后，`add` 时可提示相似或冲突 trap。
-- Doctor/index health：scope 诊断、embedding freshness 和 hybrid fallback reason 已落到 `codetrap doctor` / `stats --json`；后续仍可补 FTS 覆盖率、重复项和冲突检测。
+- Duplicate/conflict detection：`session accept` 已有轻量 possible-conflict 检查和 `--accept-anyway` / `--supersedes` 分支；accept-time edits 会先参与冲突检测，path scope 检查能识别 glob 覆盖关系。`add` 的 quality gate 与更系统的重复项治理仍可后续补齐。
+- Doctor/index health：scope 诊断、embedding freshness 和 hybrid fallback reason 已落到 `codetrap doctor` / `stats --json`；后续仍可补 FTS 覆盖率、重复项和 stale trap 检查。
 
 ## 4. 当前权威文档
 
 - 主路线图：`docs/codetrap-optimization-roadmap.zh-CN.md`
+- Session Mode 开发规格：`docs/session-mode-capture-spec.zh-CN.md`
 - SemTools 专项实现参考：`docs/semtools-analysis.md`
 - 安装与使用：`docs/installation.md`

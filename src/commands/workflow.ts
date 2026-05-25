@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { TrapStore } from "../lib/store";
 import { formatTrapShort, formatTrapDetails, formatTrapActionCard } from "../lib/format";
 import type { Trap } from "../domain/trap";
+import type { SessionMetadata } from "../domain/session";
 import {
   formatScopeMigrationText,
   runScopeMigration,
@@ -10,6 +11,15 @@ import {
 import { TrapOperations } from "../lib/trap-operations";
 import { buildDoctorReport, formatDoctorText } from "../lib/doctor";
 import { searchDefaultsFromConfig } from "../lib/config";
+import { SessionStore } from "../lib/session-store";
+import { SessionOperations, type SessionConflictResult } from "../lib/session-operations";
+import {
+  CANDIDATES_FILE,
+  NOTES_FILE,
+  RECAP_FILE,
+  sessionRelativeDir,
+  sessionRelativeFile,
+} from "../lib/session-codec";
 import {
   toCliSearchJson,
   toListJson,
@@ -28,6 +38,15 @@ import {
   evidenceRequestFromArgs,
   listRequestFromArgs,
   searchRequestFromArgs,
+  sessionAcceptRequestFromArgs,
+  sessionCandidateRequestFromArgs,
+  sessionCloseRequestFromArgs,
+  sessionIdRequestFromArgs,
+  sessionListRequestFromArgs,
+  sessionNoteRequestFromArgs,
+  sessionRejectRequestFromArgs,
+  sessionShowRequestFromArgs,
+  sessionStartRequestFromArgs,
   statsRequestFromArgs,
 } from "../lib/command-requests";
 
@@ -80,10 +99,12 @@ export async function executeCommand(strip: string[], store: TrapStore): Promise
       return cmdScopeMigration("migrate-project", args, operations);
     case "embed":
       return cmdEmbed(args, store);
+    case "session":
+      return cmdSession(args, store, operations);
     default:
       return errorResult([
         `Unknown command: ${sub}`,
-        "Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, repair-scope, migrate-project, embed",
+        "Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, repair-scope, migrate-project, embed, session",
       ].join("\n"));
   }
 }
@@ -370,6 +391,204 @@ async function cmdEmbed(args: string[], store: TrapStore): Promise<CommandResult
   }
 }
 
+async function cmdSession(args: string[], store: TrapStore, trapOperations: TrapOperations): Promise<CommandResult> {
+  const sub = args[0];
+  const rest = args.slice(1);
+  const projectRoot = store.getProjectRoot();
+  if (!projectRoot) {
+    return errorResult("Not in a project. Run 'codetrap init' first.");
+  }
+
+  const sessions = new SessionOperations(new SessionStore(projectRoot), trapOperations);
+  try {
+    switch (sub) {
+      case "start":
+        return cmdSessionStart(rest, sessions);
+      case "note":
+        return cmdSessionNote(rest, sessions);
+      case "status":
+        return cmdSessionStatus(rest, sessions);
+      case "list":
+        return cmdSessionList(rest, sessions);
+      case "show":
+        return cmdSessionShow(rest, sessions);
+      case "notes":
+        return cmdSessionNotes(rest, sessions);
+      case "close":
+        return cmdSessionClose(rest, sessions);
+      case "candidates":
+        return cmdSessionCandidates(rest, sessions);
+      case "candidate":
+        return cmdSessionCandidate(rest, sessions);
+      case "accept":
+        return cmdSessionAccept(rest, sessions);
+      case "reject":
+        return cmdSessionReject(rest, sessions);
+      default:
+        return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|candidates|candidate|accept|reject>");
+    }
+  } catch (error) {
+    return errorFrom(error);
+  }
+}
+
+function cmdSessionStart(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const session = sessions.startSession(sessionStartRequestFromArgs(positionals, opts));
+  const payload = sessionPayload(session);
+  if (opts.json !== undefined) return jsonResult(payload);
+  return textResult([
+    `Started session ${session.id}`,
+    `Notes: ${payload.notes_path}`,
+  ].join("\n"));
+}
+
+function cmdSessionNote(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const result = sessions.addNote(sessionNoteRequestFromArgs(positionals, opts, {
+    isTTY: process.stdin.isTTY === true,
+    read: () => readFileSync(0, "utf-8"),
+  }));
+  const payload = {
+    session_id: result.session.id,
+    kind: result.note.kind,
+    note: result.note,
+    notes_path: result.notes_path,
+  };
+  if (opts.json !== undefined) return jsonResult(payload);
+  return textResult([
+    `Added ${result.note.kind} note to session ${result.session.id}.`,
+    `Notes: ${result.notes_path}`,
+  ].join("\n"));
+}
+
+function cmdSessionStatus(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts } = parseArgs(args);
+  const status = sessions.status();
+  if (opts.json !== undefined) {
+    return jsonResult({
+      active_session_id: status.active_session_id,
+      session: status.session ? sessionPayload(status.session) : null,
+    });
+  }
+  if (!status.session) return textResult("No active session.");
+  return textResult([
+    `Active session ${status.session.id}`,
+    `Goal: ${status.session.goal}`,
+    `Notes: ${sessionRelativeFile(status.session.id, NOTES_FILE)}`,
+  ].join("\n"));
+}
+
+function cmdSessionList(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts } = parseArgs(args);
+  const entries = sessions.listSessions(sessionListRequestFromArgs(opts));
+  if (opts.json !== undefined) return jsonResult(entries);
+  if (entries.length === 0) return textResult("No sessions found.");
+  return textResult(entries.map((entry) => `${entry.id} [${entry.status}] ${entry.goal}`).join("\n"));
+}
+
+function cmdSessionShow(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const request = sessionShowRequestFromArgs(positionals);
+  const shown = sessions.showSession(request.sessionId);
+  if (opts.json !== undefined) {
+    return jsonResult({
+      ...sessionPayload(shown.session),
+      session_dir: shown.session_dir,
+      recap: shown.recap,
+    });
+  }
+  if (shown.recap) return textResult(shown.recap.trimEnd());
+  return textResult([
+    `Session ${shown.session.id} [${shown.session.status}]`,
+    `Goal: ${shown.session.goal}`,
+    `Notes: ${shown.notes_path}`,
+  ].join("\n"));
+}
+
+function cmdSessionNotes(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const request = sessionIdRequestFromArgs(positionals);
+  const summary = sessions.summarizeNotes(request.sessionId);
+  if (opts.json !== undefined) return jsonResult(summary);
+  return textResult(summary.content.trimEnd());
+}
+
+function cmdSessionClose(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const request = sessionCloseRequestFromArgs(positionals, opts);
+  const result = sessions.closeSession(request.sessionId, request.proposeTraps);
+  const payload = {
+    ...sessionPayload(result.session),
+    recap_path: result.recap_path,
+    candidate_count: result.candidate_count,
+    traps_written: result.traps_written,
+  };
+  if (opts.json !== undefined) return jsonResult(payload);
+  const lines = [
+    `Closed session ${result.session.id}`,
+    `Generated ${RECAP_FILE}`,
+  ];
+  if (opts["propose-traps"] !== undefined) {
+    lines.push(`Proposed ${result.candidate_count} candidate traps`);
+    lines.push(`0 traps were written. Use \`codetrap session accept <candidate-id> --session ${result.session.id}\` to save one.`);
+  }
+  return textResult(lines.join("\n"));
+}
+
+function cmdSessionCandidates(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const request = sessionIdRequestFromArgs(positionals);
+  const document = sessions.candidateDocument(request.sessionId);
+  if (opts.json !== undefined) return jsonResult(document);
+  if (document.candidates.length === 0) return textResult("No candidate traps found.");
+  return textResult(document.candidates.map((candidate) =>
+    `${candidate.id} [${candidate.status}] ${candidate.trap.title} (${candidate.quality_score.toFixed(2)})`
+  ).join("\n"));
+}
+
+function cmdSessionCandidate(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const request = sessionCandidateRequestFromArgs(positionals, opts);
+  const result = sessions.getCandidate(request.candidateId, request.sessionId);
+  if (opts.json !== undefined) return jsonResult({ session_id: result.session.id, candidate: result.candidate });
+  return textResult(JSON.stringify(result.candidate, null, 2));
+}
+
+async function cmdSessionAccept(args: string[], sessions: SessionOperations): Promise<CommandResult> {
+  const { opts, positionals } = parseArgs(args);
+  const accepted = await sessions.acceptCandidate(sessionAcceptRequestFromArgs(positionals, opts));
+  if (!accepted.success) return possibleConflictResult(accepted, opts.json !== undefined);
+  const payload = {
+    success: true,
+    session_id: accepted.session.id,
+    candidate_id: accepted.candidate.id,
+    status: accepted.candidate.status,
+    trap_id: accepted.trap_id,
+    scope: accepted.scope,
+    evidence_id: accepted.evidence_id,
+    superseded_id: accepted.superseded_id,
+  };
+  if (opts.json !== undefined) return jsonResult(payload);
+  const lines = [`Accepted ${accepted.candidate.id}; wrote trap #${accepted.trap_id} to ${accepted.scope} scope.`];
+  if (accepted.superseded_id !== null) lines.push(`Superseded trap #${accepted.superseded_id}.`);
+  return textResult(lines.join("\n"));
+}
+
+function cmdSessionReject(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const rejected = sessions.rejectCandidate(sessionRejectRequestFromArgs(positionals, opts));
+  const payload = {
+    success: true,
+    session_id: rejected.session.id,
+    candidate_id: rejected.candidate.id,
+    status: rejected.candidate.status,
+    reason: rejected.candidate.rejection_reason ?? null,
+  };
+  if (opts.json !== undefined) return jsonResult(payload);
+  return textResult(`Rejected ${rejected.candidate.id}.`);
+}
+
 function formatStatsText(stats: ReturnType<TrapOperations["getStats"]>): string {
   const sections: string[] = [];
   if (stats.project) {
@@ -416,4 +635,44 @@ function errorFrom(error: unknown): CommandResult {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function sessionPayload(session: SessionMetadata) {
+  return {
+    ...session,
+    session_dir: sessionRelativeDir(session.id),
+    notes_path: sessionRelativeFile(session.id, NOTES_FILE),
+    recap_path: sessionRelativeFile(session.id, RECAP_FILE),
+    candidate_traps_path: sessionRelativeFile(session.id, CANDIDATES_FILE),
+  };
+}
+
+function possibleConflictResult(
+  result: SessionConflictResult,
+  asJson: boolean
+): CommandResult {
+  const payload = {
+    success: false,
+    error: "Possible active trap conflict found.",
+    session_id: result.session_id,
+    candidate_id: result.candidate_id,
+    possible_conflicts: result.possible_conflicts,
+    next_actions: [
+      `codetrap session accept ${result.candidate_id} --session ${result.session_id} --accept-anyway`,
+      `codetrap session accept ${result.candidate_id} --session ${result.session_id} --supersedes <trap-id>`,
+      `codetrap session reject ${result.candidate_id} --session ${result.session_id} --reason <reason>`,
+    ],
+  };
+  if (asJson) return jsonResult(payload, 1);
+
+  return errorResult([
+    "Possible active trap conflict found:",
+    ...result.possible_conflicts.map((conflict) => [
+      `#${conflict.trap_id} ${conflict.title}`,
+      `  reason: ${conflict.reason}`,
+      `  fix: ${conflict.fix}`,
+    ].join("\n")),
+    "",
+    `Use --accept-anyway to save as a new trap, or --supersedes <trap-id> to preserve lifecycle history.`,
+  ].join("\n"));
 }

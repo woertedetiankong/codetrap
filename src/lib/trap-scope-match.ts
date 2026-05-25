@@ -46,7 +46,7 @@ export function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
-function globMatchesPath(glob: string, path: string): boolean {
+export function globMatchesPath(glob: string, path: string): boolean {
   const normalizedGlob = normalizePath(glob);
   return new RegExp(`^${globToRegExp(normalizedGlob)}$`).test(path);
 }

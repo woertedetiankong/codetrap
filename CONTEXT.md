@@ -51,11 +51,37 @@ Trap operations are the shared execution layer for CLI and MCP trap commands. Th
 
 CLI and MCP adapters should call `TrapOperations` instead of duplicating Trap operation semantics. The adapters still own argument parsing, terminal rendering, MCP JSON text payloads, and process exit behavior.
 
+### Session
+
+A session is one local AI collaboration run around a goal. It records temporary working memory under `.codetrap/sessions/` instead of writing directly to `traps.db`.
+
+Session files include `session.json`, `implementation-notes.md`, optional `recap.md`, and optional `candidate-traps.json`. Session notes may record decisions, deviations, tradeoffs, open questions, failures, test failures, corrections, reviews, and observations.
+
+Session files are a candidate pool and audit trail. Confirmed Trap memory still lives only in `traps.db` after an explicit accept step.
+
+### Candidate Trap
+
+A candidate trap is a proposed Trap extracted from a session. It lives in `candidate-traps.json` with a quality score, quality diagnostics, candidate status, Trap-shaped content, and evidence. Accept-time edits update the candidate document so the audit trail matches the Trap that was saved or blocked.
+
+Candidate traps can be `proposed`, `accepted`, or `rejected`. Accepting a candidate writes a confirmed Trap through `TrapOperations`, attaches session evidence, and may supersede an older active Trap. Rejected and proposed candidates do not appear in normal Trap search.
+
+### Session Operations
+
+Session operations are the shared execution layer for session commands. They compose `SessionStore`, `TrapOperations`, and candidate conflict detection for start/note/status/list/show/notes/close/candidates/accept/reject workflows. During accept, `SessionOperations` applies `--edit-json` before conflict detection, checks the edited candidate, then either writes the Trap and evidence or records conflict diagnostics on the candidate.
+
+CLI and future MCP session adapters should call `SessionOperations` instead of duplicating candidate accept, conflict, evidence, or supersede behavior.
+
+### Session Store
+
+Session store owns session file layout and project-local session state under `.codetrap/sessions/`.
+
+`src/lib/session-store.ts` reads and writes active session state, session index entries, session metadata, implementation notes, recaps, and candidate documents. It does not write confirmed Traps; that behavior belongs to Session Operations through Trap Operations.
+
 ### Command Request
 
 Command request is the normalized input shape shared by CLI and MCP before calling Trap Operations.
 
-`src/lib/command-requests.ts` owns command argument normalization for search, list, stats, embedding, and evidence inputs. CLI and MCP adapters should translate transport-specific flags or tool arguments into Command Requests instead of reimplementing defaults, aliases, or numeric/boolean parsing.
+`src/lib/command-requests.ts` owns command argument normalization for search, list, stats, embedding, evidence, and session inputs. CLI and MCP adapters should translate transport-specific flags or tool arguments into Command Requests instead of reimplementing defaults, aliases, or numeric/boolean parsing.
 
 ### Trap Mutation Result
 
@@ -211,6 +237,11 @@ src/
     scope-migration.ts  -- repair-scope / migrate-project planning and apply logic
     store.ts            -- TrapStore: project/global scope policy
     trap-operations.ts  -- shared CLI/MCP Trap operation execution
+    session-store.ts    -- project-local session file storage
+    session-operations.ts -- shared Session operation execution
+    session-capture.ts  -- deterministic candidate extraction from notes
+    session-conflicts.ts -- possible active Trap conflict detection for candidates
+    trap-quality.ts     -- deterministic candidate Trap quality scoring
     trap-mutation-result.ts -- shared mutation result and scoped fallback semantics
     trap-lifecycle.ts   -- Trap lifecycle transition semantics
     output-json.ts      -- shared CLI/MCP JSON presenters

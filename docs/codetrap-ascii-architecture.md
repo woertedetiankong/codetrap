@@ -1,10 +1,10 @@
 # codetrap ASCII 架构说明
 
-更新日期：2026-05-17
+更新日期：2026-05-24
 
 本文用纯 ASCII 流程图整理 codetrap 当前代码里的架构、数据流，以及已经落到代码中的思想架构。
 
-范围说明：本文只写当前代码已经体现出来的架构。compact action card、CLI JSON、MCP thin adapter、`codetrap doctor`、embedding health、evidence/source metadata、lifecycle、archive/supersede、schema v5 path/module/owner scope、config defaults、generic rerank、Codex plugin scaffold 和 release preflight 等能力已经落到代码中；team sharing、multimodal evidence、cross-encoder reranking、本地 embedding provider 仍属于未来方向。
+范围说明：本文只写当前代码已经体现出来的架构。compact action card、CLI JSON、MCP thin adapter、`codetrap doctor`、embedding health、evidence/source metadata、lifecycle、archive/supersede、schema v5 path/module/owner scope、config defaults、generic rerank、session mode、candidate trap capture、candidate conflict checks、Codex plugin scaffold 和 release preflight 等能力已经落到代码中；team sharing、multimodal evidence、cross-encoder reranking、本地 embedding provider 仍属于未来方向。
 
 ## 1. 一句话理解 codetrap
 
@@ -52,13 +52,21 @@ codetrap/
 |   |
 |   +-- domain/                  核心领域定义
 |   |   +-- trap.ts
+|   |   +-- session.ts
 |   |
-|   +-- lib/                     策略、搜索、格式化、embedding
+|   +-- lib/                     策略、搜索、session、格式化、embedding
 |   |   +-- store.ts
 |   |   +-- scope.ts
 |   |   +-- scope-context.ts
 |   |   +-- trap-operations.ts
+|   |   +-- session-operations.ts
+|   |   +-- session-store.ts
+|   |   +-- session-codec.ts
+|   |   +-- session-capture.ts
+|   |   +-- session-conflicts.ts
+|   |   +-- trap-quality.ts
 |   |   +-- trap-mutation-result.ts
+|   |   +-- command-requests.ts
 |   |   +-- output-json.ts
 |   |   +-- search-result-card.ts
 |   |   +-- search-service.ts
@@ -108,7 +116,7 @@ codetrap/
 
 ## 3. 运行时分层架构
 
-核心原则：入口层保持薄，scope 策略集中在 `TrapStore`，cwd/repository 解析集中在 `ScopeContext`，单数据库操作集中在 `TrapRepository`，检索候选在 `SearchService`，排序和 applicability 策略集中在 `SearchPolicy`。
+核心原则：入口层保持薄，trap 命令语义集中在 `TrapOperations`，session 命令语义集中在 `SessionOperations`，scope 策略集中在 `TrapStore`，cwd/repository 解析集中在 `ScopeContext`，单数据库操作集中在 `TrapRepository`，检索候选在 `SearchService`，排序和 applicability 策略集中在 `SearchPolicy`。
 
 ```text
 +---------------------+        +----------------------+
@@ -132,6 +140,31 @@ codetrap/
            +--------------+---------------+
                           |
                           v
+              +----------------------+
+              | Operation layer      |
+              | TrapOperations       |
+              | SessionOperations    |
+              +----------+-----------+
+                         |
+          +--------------+--------------+
+          | trap commands               | session commands
+          v                             v
++----------------------+       +----------------------+
+| TrapStore            |       | SessionStore         |
+| project/global       |       | .codetrap/sessions  |
+| scope policy         |       | notes/recap/candidates |
++----------+-----------+       +----------------------+
+           |
+           v
++----------------------+
+| ScopeContext         |
+| cwd -> repositories  |
++----------------------+
+```
+
+Trap path 继续进入 SQLite scope/repository/search 层：
+
+```text
               +----------------------+
               | TrapStore            |
               | src/lib/store.ts     |
@@ -181,10 +214,18 @@ codetrap/
 | Module                       | Responsibility                          |
 +------------------------------+-----------------------------------------+
 | src/domain/trap.ts           | Trap 类型、输入 schema、字段筛选        |
+| src/domain/session.ts        | Session、SessionNote、CandidateTrap 类型 |
 | src/lib/store.ts             | project/global scope 策略               |
 | src/lib/scope-context.ts     | cwd/project/global DB 解析与 repository 选择 |
 | src/lib/trap-operations.ts   | CLI/MCP 共享命令语义                    |
+| src/lib/session-operations.ts | session 命令语义、accept/reject、冲突与 supersede |
+| src/lib/session-store.ts     | session 文件、active/index、notes/recap/candidates |
+| src/lib/session-codec.ts     | session JSON/Markdown/candidate 文件转换 |
+| src/lib/session-capture.ts   | 从 session notes 生成 candidate traps   |
+| src/lib/session-conflicts.ts | candidate 与 active traps 的冲突检测    |
+| src/lib/trap-quality.ts      | deterministic candidate quality scorer  |
 | src/lib/trap-mutation-result.ts | mutation 结果与 scope fallback 语义  |
+| src/lib/command-requests.ts  | CLI/MCP command request 标准化          |
 | src/lib/output-json.ts       | CLI/MCP 共享 JSON presenter             |
 | src/lib/doctor.ts            | doctor 诊断报告                         |
 | src/lib/embedding-health.ts  | fresh/stale/missing 统计与 fallback 原因 |
@@ -221,6 +262,9 @@ Project scope:
 
 Global scope:
   ~/.codetrap/traps.db
+
+Project session files:
+  <project-root>/.codetrap/sessions/
 ```
 
 单个 SQLite 数据库内部结构：
@@ -292,6 +336,7 @@ updated_at
 - `search_text` 是由 Trap 字段派生出来的检索文本，用于中文 bigram 和同义词扩展。
 - `trap_embeddings` 是可重建缓存，不是事实来源。
 - embedding 是否新鲜由 provider、model、dimensions、passage_version、passage_hash 共同决定。
+- `.codetrap/sessions/` 保存 temporary working memory：active session、轻量 index、implementation notes、recap 和 candidate traps；它不是默认搜索索引。
 
 ## 6. CLI 数据流
 
@@ -361,6 +406,75 @@ Terminal command
 
 - `codetrap show <id>` 找到 trap 后会调用 `store.hit(id, scope)`，增加 `hit_count`。
 - MCP 的 `get_trap` 不会增加 `hit_count`；当前计数主要反映 CLI `show` 使用情况。
+
+### 6.1 Session Mode 数据流
+
+Session mode 是项目本地的临时工作记忆。它默认不写 `traps.db`，只有用户明确 accept 的 candidate 才会进入长期 trap memory。
+
+```text
+codetrap session start/note/close
+        |
+        v
++--------------------------+
+| commands/workflow.ts     |
+| parse session request    |
++------------+-------------+
+             |
+             v
++--------------------------+
+| SessionOperations        |
+| command semantics        |
++------------+-------------+
+             |
+             v
++--------------------------+
+| SessionStore             |
+| .codetrap/sessions       |
+| active/index/notes/recap |
++------------+-------------+
+             |
+             v
++--------------------------+
+| session-capture          |
+| trap-quality             |
+| candidate-traps.json     |
++--------------------------+
+```
+
+`session accept` 进入更深的共享写入路径。`--edit-json` 会先合并到 candidate trap，再参与冲突检测和最终写库；因此 scope/module/title/tags/path_globs 的 accept-time edit 不会绕过 conflict check。
+
+```text
+candidate trap
+      |
+      v
++--------------------------+
+| SessionOperations        |
+| apply accept edits       |
+| conflict check           |
+| accept-anyway/supersedes |
++------------+-------------+
+             |
+       no conflict / confirmed
+             |
+             v
++--------------------------+
+| TrapOperations.addTrap() |
+| TrapStore.add()          |
++------------+-------------+
+             |
+             v
++--------------------------+
+| traps.db + evidence      |
++------------+-------------+
+             |
+             v
++--------------------------+
+| SessionStore             |
+| mark candidate accepted  |
++--------------------------+
+```
+
+如果 conflict check 阻止写入，`SessionOperations` 不碰 `traps.db`，只让 `SessionStore` 把 edited candidate shape 和 `quality.conflict_checked/conflict_status/suggested_action` 写回 `candidate-traps.json`。`session-conflicts.ts` 的 path 判断复用 scope matching：既能识别完全相同的 `path_globs`，也能识别 `src/api/**` 覆盖 `src/api/client.ts` 这类 glob overlap。
 
 ## 7. MCP 数据流
 
@@ -1055,6 +1169,28 @@ schema v5 让一条 trap 可以声明它适用的路径、模块或 owner。搜�
 
 排序信号保持通用：title/tag/code identifier exact match、severity、path/module/owner match。代码没有内置 ESP32、StickS3 或其他项目专用词库。
 
+### 13.11 Session temporary memory
+
+Session mode 把一次协作开发中的过程记录和长期 trap memory 分开。implementation notes、recap 和 candidate traps 都在 `.codetrap/sessions/` 下，默认不会进入 `traps.db`。
+
+```text
+working session
+   |
+   v
+implementation-notes.md
+   |
+   v
+recap.md + candidate-traps.json
+   |
+   v
+user accept
+   |
+   v
+confirmed Trap + session evidence
+```
+
+这个分层让 agent 可以记录过程和失败，但长期搜索结果只包含用户确认过、质量达标的 traps。`SessionOperations` 负责 accept-time edits、冲突检测、`--accept-anyway`、`--supersedes` 和 evidence 绑定；`SessionStore` 只负责 session 文件状态、candidate 状态和冲突诊断，不写 confirmed traps。
+
 ## 14. 当前没有实现的内容
 
 下面这些不是当前 runtime 架构的一部分：
@@ -1065,9 +1201,11 @@ multimodal evidence
 cross-encoder reranking
 local embedding provider
 local model cache / ONNX provider
+session MCP tools
+session archive/prune/review commands
 ```
 
-其中一些想法出现在计划或参考文档中，但目前还没有形成完整代码功能。action cards、CLI JSON、doctor、repair-scope/migrate-project、embedding health、evidence/source metadata、`article` 来源证据、lifecycle、supersede/archive commands、path/module/owner scoped traps、config defaults、plugin scaffold、external capture skill 和 release preflight 已经是当前 runtime/packaging 功能。
+其中一些想法出现在计划或参考文档中，但目前还没有形成完整代码功能。action cards、CLI JSON、doctor、repair-scope/migrate-project、embedding health、evidence/source metadata、`article` 来源证据、lifecycle、supersede/archive commands、path/module/owner scoped traps、session mode CLI、candidate quality scorer、candidate conflict checks、config defaults、plugin scaffold、external capture skill 和 release preflight 已经是当前 runtime/packaging 功能。
 
 ## 15. 最简心智模型
 
@@ -1075,12 +1213,14 @@ local model cache / ONNX provider
 codetrap is a local mistake-pattern index.
 
 CLI/MCP are doors.
+SessionOperations turns temporary session lessons into confirmed traps.
 TrapStore decides which notebook to open.
 ScopeContext resolves the right notebook for a cwd.
 TrapRepository manages one notebook.
 SearchService retrieves possible matches.
 SearchPolicy filters and ranks them.
 SQLite stores the notebooks.
+.codetrap/sessions stores temporary working memory.
 Embeddings are optional index cards for semantic lookup.
 ```
 

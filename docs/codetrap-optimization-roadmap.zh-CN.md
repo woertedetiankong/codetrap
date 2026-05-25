@@ -1,7 +1,7 @@
 # codetrap 后续优化路线图
 
 Date: 2026-05-16
-Last updated: 2026-05-17
+Last updated: 2026-05-24
 
 本文记录一次真实使用 codetrap 后得到的改进方向，并归并 Claude Code 和 SemTools
 相关参考对产品定位、agent harness、CLI 体验的启发。测试场景来自
@@ -17,7 +17,21 @@ MCP 可以保留，但应降级为可选适配层。
 AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 ```
 
-## 2026-05-17 状态快照
+## 状态快照
+
+2026-05-24 增量：
+
+- Session Mode v1 已完成 CLI 闭环：`session start/note/status/list/show/notes/close/candidates/candidate/accept/reject`。
+- Session files 保存在 `.codetrap/sessions/`，作为 temporary working memory、recap 和 candidate trap 池；默认 search 仍只检索 confirmed traps。
+- Candidate accept 已集中到 `SessionOperations`：接受时先应用 `--edit-json`，再做 possible conflict check、写入 `TrapOperations` / `TrapStore`、自动挂 `source_type=conversation` session evidence，并更新 candidate 状态。
+- Candidate quality scorer 和 possible conflict check 已落地；存在相似 active trap 时会把 edited candidate shape 与 conflict diagnostics 写回 `candidate-traps.json`，并要求 `--accept-anyway` 或 `--supersedes <trap-id>`。
+- Session command request normalization 已移入 `src/lib/command-requests.ts`，避免 `workflow.ts` 重复解析 session flags。
+
+仍未完成：
+
+- 本地 embedding provider、模型缓存、ONNX/local model path。
+- Playbook export、learning review、staleness review、session archive/prune。
+- MCP session tools；当前 session mode 是 CLI-first。
 
 截至 2026-05-17，roadmap 里的 v0.2 主线已经完成，并顺手做完除本地 embedding provider 之外的大部分 v0.3 / v0.4 架构硬化。
 

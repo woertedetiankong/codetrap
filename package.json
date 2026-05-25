@@ -30,6 +30,7 @@
     "src/domain",
     "src/lib",
     "src/mcp",
+    "src/web",
     "src/index.ts",
     "src/mcp-server.ts",
     "skills",

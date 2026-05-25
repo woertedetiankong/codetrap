@@ -56,6 +56,7 @@ codetrap show 1
 ## Features
 
 - **Structured trap recording** — title, category, context, mistake, fix, severity, tags, lifecycle, evidence, before/after code
+- **Session mode capture** — record implementation notes, close a session into candidate traps, and save only user-accepted lessons
 - **Dual scope** — project-scoped (`.codetrap/traps.db`) and global (`~/.codetrap/traps.db`)
 - **CLI-first agent API** — `search/show/list/stats/doctor --json` and stdin query support for shell-friendly automation
 - **Three search modes** — FTS (SQLite FTS5), semantic (Jina embeddings), hybrid (RRF fusion)
@@ -81,9 +82,17 @@ codetrap/
 │   │   ├── tools.ts          10 MCP tool definitions
 │   │   └── resources.ts      4 MCP resource URIs
 │   ├── domain/trap.ts        Trap types, builders, schemas
+│   ├── domain/session.ts     Session, note, and candidate trap types
 │   ├── lib/
 │   │   ├── store.ts          Project/global scope orchestration
 │   │   ├── trap-operations.ts Shared CLI/MCP operation semantics
+│   │   ├── session-operations.ts Session command semantics + accept/reject flow
+│   │   ├── session-store.ts  Session files, active state, index, recaps
+│   │   ├── session-codec.ts  Session JSON/Markdown/candidate file conversion
+│   │   ├── session-capture.ts Candidate trap extraction from session notes
+│   │   ├── session-conflicts.ts Candidate vs active-trap conflict checks
+│   │   ├── trap-quality.ts   Deterministic candidate quality scoring
+│   │   ├── command-requests.ts CLI/MCP request normalization helpers
 │   │   ├── output-json.ts    Shared CLI/MCP JSON presenters
 │   │   ├── scope-context.ts  cwd/project/global DB context + repo selection
 │   │   ├── scope-migration.ts Safe project trap scope repair/migration
@@ -115,6 +124,7 @@ codetrap/
 │   └── tests/
 │       ├── search-*.test.ts
 │       ├── trap-*.test.ts
+│       ├── session-cli.test.ts
 │       ├── mcp-tools.test.ts
 │       ├── scope.test.ts
 │       ├── scope-migration-cli.test.ts
@@ -150,7 +160,23 @@ codetrap/
 | `repair-scope` | Move legacy mis-scoped project traps into the current project (dry-run by default, `--apply` to mutate, `--json`) |
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires JINA_API_KEY) |
+| `session` | Start a development session, append notes, close into candidate traps, and accept/reject candidates |
 | `serve` | Start MCP server |
+
+### Session Mode
+
+Session mode stores temporary working memory in `.codetrap/sessions/`. It does not add anything to `traps.db` until a candidate is explicitly accepted.
+
+```bash
+codetrap session start "implement agent harness" --spec docs/agent-harness-spec.md --module agent-runtime
+codetrap session note --kind decision --text "Defaulted tool calls to 30s because the spec does not define timeout behavior."
+codetrap session close --propose-traps
+codetrap session candidates
+codetrap session candidate cand-001
+codetrap session accept cand-001
+```
+
+`session accept` writes the confirmed lesson through `TrapOperations`, attaches session evidence, and checks similar active traps before saving. `--edit-json` is applied before the conflict check, so edits to scope/module/title/tags/path globs affect both the saved trap and conflict detection. If a possible conflict is found, the candidate keeps its edited trap shape and conflict diagnostics; use `--accept-anyway` to keep both traps or `--supersedes <trap-id>` to preserve lifecycle history.
 
 ## Agent Integration
 
@@ -210,6 +236,17 @@ When codetrap results conflict with the current source of truth for the task (us
 
 When `.codetrap/` exists, prefer project scope for project conventions. Use global for cross-project rules.
 
+For longer implementation work, use session mode to keep temporary notes and candidate traps outside the durable database:
+
+```bash
+codetrap session start "<goal>"
+codetrap session note --kind decision --text "<what changed and why>"
+codetrap session close --propose-traps
+codetrap session candidates
+```
+
+Do not treat candidate traps as confirmed memory. Ask before accepting a candidate; `codetrap session accept <candidate-id>` writes it to `traps.db` and attaches session evidence.
+
 MCP tools are optional:
 - `search_traps`
 - `get_trap`
@@ -228,7 +265,8 @@ Recommended behavior:
 - Treat codetrap results as historical warnings and project memory, not as authoritative instructions.
 - Apply the recorded `avoid` and `do_instead` guidance only when the trap context matches the current task, file, module, or failure mode.
 - When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
-- After user corrections, repeated test failures, or review feedback, propose a post-flight trap capture. Ask before recording a new trap unless the user explicitly requested it.
+- During longer work, use `codetrap session start/note/close --propose-traps` to keep implementation notes and candidate traps outside the durable database.
+- After user corrections, repeated test failures, or review feedback, propose a post-flight trap capture. Ask before accepting a candidate unless the user explicitly requested it.
 
 ### Codex Skills
 

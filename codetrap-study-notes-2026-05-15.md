@@ -7,6 +7,8 @@
 
 > 2026-05-17 校准：这份笔记记录的是 2026-05-15 的 progressive disclosure / evidence / lifecycle 改造。当前代码已经继续前进到 schema v5：新增 `path_globs`、`module`、`owner`，并抽出 Search Policy、Trap Shape Codec、Scope Context、Trap Mutation Result 和 CLI Command Workflow。读当前架构时请同时看 `CONTEXT.md` 和 `docs/codetrap-ascii-architecture.md`。
 
+> 2026-05-24 校准：当前代码又新增 Session Mode v1：`src/domain/session.ts`、`src/lib/session-store.ts`、`src/lib/session-operations.ts`、`src/lib/session-capture.ts`、`src/lib/trap-quality.ts` 和 `src/lib/session-conflicts.ts`。Session files 是 temporary working memory；只有用户 accept 的 candidate traps 会通过 `TrapOperations` 写入长期 `traps.db`。`session accept` 会先应用 accept-time edits，再做冲突检测，并把 accepted/possible-conflict diagnostics 写回 candidate document。
+
 本笔记用一个小型学习小组的方式复盘 2026-05-15 写入的代码。目标不是记住每一行，而是理解背后的架构思想：为什么要把搜索结果变短、为什么要保留证据、为什么 lifecycle 不应该只是几个随便能改的字段，以及为什么 CLI/MCP 入口要共享同一层操作语义。
 
 ---

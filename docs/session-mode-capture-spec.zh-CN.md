@@ -1,7 +1,7 @@
 # codetrap Session Mode 与 Post-flight Capture 开发 Spec
 
 Date: 2026-05-20
-Status: Draft
+Status: v1 CLI implemented on 2026-05-24; v2+ remains planned
 
 ## 1. 背景
 
@@ -12,7 +12,7 @@ codetrap 当前已经具备稳定的踩坑记忆核心：
 - 用 evidence、archive、supersede、path/module/owner scope 支持记录演化和适用范围。
 - 用 Codex skills 和 plugin 模板提示 agent 在用户纠正、测试失败、review feedback 后提出 post-flight trap。
 
-但当前仍缺少一个完整的“从一次开发会话沉淀长期经验”的管道：
+这份 spec 最初定义一个完整的“从一次开发会话沉淀长期经验”的管道：
 
 ```text
 开始一个目标
@@ -22,7 +22,7 @@ codetrap 当前已经具备稳定的踩坑记忆核心：
 -> 用户确认后保存到 traps.db
 ```
 
-这份 spec 定义下一阶段要补齐的产品和工程能力。
+截至 2026-05-24，v1 CLI 闭环已经落地：`session start/note/status/list/show/notes/close/candidates/candidate/accept/reject`、deterministic quality scorer、candidate conflict check、`--accept-anyway`、`--supersedes`、accepted candidate 写入 `traps.db` 并挂 session evidence。MCP session tools、playbook export、review/staleness/prune 仍属于后续阶段。
 
 ## 2. 一句话目标
 
@@ -185,11 +185,12 @@ bun test src/tests 2>&1 | codetrap session note --kind test_failure --stdin
 
 ```bash
 codetrap session status
+codetrap session show 2026-05-20-agent-harness
 codetrap session notes
 codetrap session notes 2026-05-20-agent-harness
 ```
 
-默认只展示摘要，不把完整 notes 全部输出到 agent 上下文。
+`session status` 和 `session list` 只展示轻量状态与索引信息。`session show <id>` 优先展示 `recap.md`，没有 recap 时只展示目标和 notes 路径。`session notes [id]` 会输出完整 `implementation-notes.md`，应只在需要追溯细节时使用。
 
 ### 4.4 结束会话并生成 recap
 
@@ -236,6 +237,15 @@ codetrap session accept cand-001 --edit-json '{
   "path_globs": ["src/agent/**"]
 }'
 ```
+
+如果接受前发现相似 active trap，默认会拒绝写库并给出 next actions。用户可以明确选择：
+
+```bash
+codetrap session accept cand-001 --accept-anyway
+codetrap session accept cand-001 --supersedes 12
+```
+
+`--edit-json` 会在 conflict check 前合并到 candidate trap；如果 edit 改了 `scope`、`module`、`title`、`tags` 或 `path_globs`，冲突检测和最终写库都使用 edited shape。被 possible conflict 拦下时，candidate 仍保持 `proposed`，但 `candidate-traps.json` 会保存 edited trap shape 和 `quality.conflict_checked=true` / `conflict_status="possible"` / `suggested_action="supersede"`，方便 agent 或用户下次继续处理。
 
 拒绝候选：
 
@@ -413,10 +423,16 @@ Related files:
       "quality_score": 0.86,
       "quality": {
         "has_clear_trigger": true,
+        "has_clear_mistake": true,
         "has_actionable_fix": true,
         "not_too_broad": true,
         "future_reuse_likely": true,
+        "proper_scope": true,
         "evidence_count": 2,
+        "conflict_checked": false,
+        "conflict_status": "none",
+        "staleness_risk": "low",
+        "suggested_action": "accept",
         "warnings": []
       },
       "trap": {
@@ -506,9 +522,11 @@ codetrap session note [--kind kind] [--text text|--stdin] [--related_files a,b] 
 codetrap session status [--json]
 codetrap session list [--status active|closed|all] [--limit n] [--json]
 codetrap session show <id> [--json]
+codetrap session notes [<id>] [--json]
 codetrap session close [<id>] [--propose-traps] [--json]
 codetrap session candidates [<id>] [--json]
-codetrap session accept <candidate-id> [--session id] [--edit-json json] [--json]
+codetrap session candidate <candidate-id> [--session id] [--json]
+codetrap session accept <candidate-id> [--session id] [--edit-json json] [--accept-anyway] [--supersedes id] [--json]
 codetrap session reject <candidate-id> [--session id] [--reason text] [--json]
 ```
 
@@ -573,7 +591,7 @@ skills 的核心规则：
 
 ## 9. 与现有架构的对齐
 
-新增代码建议放置：
+v1 已落地代码放置：
 
 ```text
 src/domain/session.ts
@@ -581,6 +599,10 @@ src/domain/session.ts
 
 src/lib/session-store.ts
   session 文件读写、index/active 管理。
+
+src/lib/session-operations.ts
+  start/note/status/list/show/notes/close/candidates/accept/reject 命令语义；
+  组合 SessionStore、TrapOperations 和 candidate conflict checks。
 
 src/lib/session-codec.ts
   session JSON / markdown / candidate-traps shape 转换。
@@ -591,14 +613,21 @@ src/lib/trap-quality.ts
 src/lib/session-capture.ts
   从 notes、diff、test output、review text 生成候选 trap 的纯逻辑。
 
+src/lib/session-conflicts.ts
+  accept 前搜索并标记相似 active traps。
+
+src/lib/command-requests.ts
+  session 命令参数、stdin、edit-json、supersedes、accept-anyway 的 request 标准化。
+
 src/commands/workflow.ts
-  增加 session/playbook/review 命令分发。
+  增加 session 命令分发；playbook/review 仍属后续阶段。
 ```
 
 遵守现有架构规则：
 
 - CLI adapter 保持薄，命令行为放在 `src/commands/workflow.ts` 和 `src/lib/*`。
 - trap 写库继续走 `TrapOperations` / `TrapStore`。
+- candidate accept、session evidence、possible conflict 和 supersede 行为集中在 `SessionOperations`。
 - 不绕过现有 scope policy。
 - 不把 session 临时记录直接混进 trap search。
 
@@ -705,6 +734,8 @@ v1 的策略是：发现疑似冲突，提示用户确认。
 
 `session accept` 和未来的 `codetrap add` quality gate 应搜索相似 active traps。
 
+2026-05-24 的 v1 已在 `session accept` 中实现轻量检查：先应用 accept-time edits，再用 edited candidate 的 title/tags/module 搜索 active traps，发现相似结果时要求用户选择 `--accept-anyway` 或 `--supersedes <id>`；`codetrap add` 的 quality gate 仍属后续工作。
+
 触发条件：
 
 ```text
@@ -717,10 +748,11 @@ fix/avoid 语义可能相反
 第一版可以先做确定性和检索式检查：
 
 ```text
-1. 用 candidate title + tags + module 搜索现有 active traps
-2. 取 top 3 相似结果
-3. 如果同 module/path 且 fix 明显不同，标记 possible_conflict
-4. 要求用户选择 accept / supersede / archive / reject / edit
+1. 合并 `--edit-json`，得到 edited candidate trap
+2. 用 edited candidate title + tags + module 搜索现有 active traps
+3. 取 top 3 相似结果
+4. 如果同 module、path_globs 完全相同、或 existing glob 覆盖 candidate path，标记 possible_conflict
+5. 要求用户选择 accept / supersede / archive / reject / edit
 ```
 
 示例输出：
@@ -738,7 +770,6 @@ Candidate cand-001: Use fetchWrapper for API calls
 Choose:
 - accept anyway
 - accept and supersede #12
-- archive #12 and accept
 - edit candidate
 - reject candidate
 ```
@@ -760,7 +791,7 @@ codetrap session accept cand-001 --supersedes 12
 4. 给旧 trap 更新 status=superseded, valid_until=now
 ```
 
-也可支持：
+后续也可考虑：
 
 ```bash
 codetrap session accept cand-001 --archive-conflict 12
@@ -780,6 +811,8 @@ suggested_action      accept / edit / supersede / archive_old / reject
 ```
 
 如果存在 possible conflict，candidate 不应该直接推荐保存为普通新 trap，而应该推荐 `supersede` 或要求用户确认。
+
+2026-05-24 的 v1 行为：possible conflict 会写回 candidate quality diagnostics，而不是只返回一次性错误。`--accept-anyway` 成功保存时 `conflict_status` 保持 `possible`，`--supersedes <id>` 成功保存时 `conflict_status` 变为 `confirmed`。
 
 ### 13.6 doctor / review 提醒陈旧规则
 
@@ -845,6 +878,8 @@ keep active search clean
 
 ### v1: Session 到 Candidate Trap 的最小闭环
 
+状态：2026-05-24 已完成 CLI 版本。
+
 范围：
 
 - `session start`
@@ -855,8 +890,9 @@ keep active search clean
 - deterministic quality scorer
 - `session accept/reject`
 - accepted candidate 写入 traps.db，并挂 session evidence
+- `session accept --edit-json` 在 conflict check 前生效，并持久化 edited candidate shape
 - `session accept --supersedes <id>`，支持接受新规则时替代旧规则
-- accept 前提示 possible conflict，但不自动失效旧 trap
+- accept 前提示 possible conflict、写回 candidate diagnostics，但不自动失效旧 trap
 
 验收：
 
@@ -866,7 +902,7 @@ keep active search clean
 - 候选不会自动写库。
 - 用户 accept 后才写入 traps.db。
 - accept 后 `codetrap search` 能搜到新 trap。
-- accept 前如发现相似 active trap，必须提示用户确认是否 supersede/archive/accept anyway。
+- accept 前如发现相似 active trap，必须提示用户确认是否 supersede/archive/accept anyway，并保持 candidate diagnostics 可追溯。
 
 ### v2: Playbook Export
 
@@ -970,9 +1006,10 @@ codetrap session accept cand-001
 结果：
 
 ```text
-Trap #42 added to project scope.
-Evidence attached from session 2026-05-20-agent-harness.
+Accepted cand-001; wrote trap #42 to project scope.
 ```
+
+`--json` 输出包含 `trap_id`、`scope`、`evidence_id` 和 `superseded_id`。
 
 下一次 agent 开工前：
 
@@ -982,27 +1019,33 @@ codetrap search "agent harness tool call parser nested arguments" --mode hybrid 
 
 搜索结果会返回刚接受的 trap，而不是要求 agent 重新读取整个 session 目录。
 
-## 17. 开放问题
+## 17. 已决和开放问题
 
-- v1 是否允许一个项目同时存在多个 active session？
-- candidate trap 的生成第一版是否完全由 agent skill 完成，CLI 只负责存储和评分？
-- `recap.md` 第一版是命令生成模板，还是由 agent 写入后 CLI 校验存在？
+已决：
+
+- v1 一个项目只允许一个 active session。
+- candidate trap 由 CLI 根据 session notes 生成 fallback/explicit candidates，并由 deterministic scorer 评分。
+- `recap.md` 由 `session close` 基于 notes 和 candidates 生成。
+- conflict detection 第一版使用轻量检索式相似检查，不引入 LLM 判断；accept-time edits 先参与检测，path scope 检测能识别简单 glob overlap。
+
+仍开放：
+
 - 是否需要把 accepted candidate 的原始 note ids 存入 evidence，方便追溯？
 - playbook export 是否应该直接更新 `AGENTS.md`，还是只输出片段由用户手动合并？
-- conflict detection 第一版只做检索式相似检查，还是引入可选 LLM 判断？
 - `state_key` 是否应在 session candidate 阶段自动建议？
+- 是否要增加 session archive/prune/review 和 MCP session tools？
 
-## 18. 推荐第一步
+## 18. 后续建议
 
-先实现 v1 的最小闭环，但不要碰复杂自动分析：
+v1 的最小闭环已经完成。后续应优先选择一个方向推进：
 
 ```text
-session start
-session note
-session close --propose-traps
-quality scorer
-session accept/reject
-session accept --supersedes
+playbook export
+learning review
+staleness review
+session archive/prune
+MCP session tools
+local embedding provider
 ```
 
-第一版候选 trap 可以由 agent skill 根据 notes 草拟，CLI 负责保存、评分、确认和写库。这样能最快验证产品价值，同时保持 codetrap 的长期记忆库干净。
+无论选择哪个方向，仍应保持一条边界：session files 是 temporary working memory，confirmed traps 才是默认检索的长期记忆。

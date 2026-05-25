@@ -312,6 +312,19 @@ To add a lesson:
 
 codetrap add --json '{...}' --output-json
 
+For longer implementation work, keep temporary notes and candidate traps in session files first:
+
+codetrap session start "<goal>"
+codetrap session note --kind decision --text "<what changed and why>"
+codetrap session close --propose-traps
+codetrap session candidates
+
+Only accepted candidates are written to `traps.db`:
+
+codetrap session accept <candidate-id>
+
+`codetrap session accept --edit-json ...` applies the edit before conflict detection. If a possible active-trap conflict is found, the candidate remains proposed and records conflict diagnostics until you choose `--accept-anyway`, `--supersedes <trap-id>`, or reject it.
+
 To save a lesson from an external article or reference, let the agent read the source and attach the URL as evidence after the user confirms the trap:
 
 codetrap add_trap_evidence <id> --scope global --source_type article --source_ref "https://example.com/post" --output-json
