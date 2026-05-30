@@ -1,8 +1,13 @@
 import type { TrapStore } from "./store";
 import type { TrapOperations } from "./trap-operations";
-import type { EmbeddingStatsResult, HybridFallbackReason } from "./embedding-health";
+import type { EmbeddingStateSummary, EmbeddingStatsResult, HybridFallbackReason } from "./embedding-health";
 import { createScopeContext } from "./scope-context";
 import { hybridFallbackReason } from "./embedding-health";
+
+export type DoctorNextAction = {
+  command: string;
+  reason: string;
+};
 
 export type DoctorReport = {
   cwd: string;
@@ -23,6 +28,7 @@ export type DoctorReport = {
       global_db_project_traps: ReturnType<TrapStore["diagnostics"]>["mis_scoped_traps"]["global_db_project_traps"];
     };
   };
+  next_actions: DoctorNextAction[];
   mcp_hint: string;
 };
 
@@ -35,6 +41,7 @@ export function buildDoctorReport(
   const stats = operations.getStats();
   const embeddings = operations.getEmbeddingStats();
   const semanticAvailable = store.hasEmbeddingProvider();
+  const diagnostics = store.diagnostics();
 
   return {
     ...scope,
@@ -48,8 +55,9 @@ export function buildDoctorReport(
       fallback_reason: hybridFallbackReason(semanticAvailable, embeddings),
     },
     diagnostics: {
-      mis_scoped_traps: store.diagnostics().mis_scoped_traps,
+      mis_scoped_traps: diagnostics.mis_scoped_traps,
     },
+    next_actions: buildDoctorNextActions(semanticAvailable, embeddings, diagnostics),
     mcp_hint: "Pass cwd in MCP tool calls, or restart codetrap serve after changing projects.",
   };
 }
@@ -70,8 +78,60 @@ export function formatDoctorText(report: DoctorReport): string {
     `  fallback_reason: ${report.hybrid_search.fallback_reason ?? "(none)"}`,
     "Diagnostics:",
     `  global_db_project_traps: ${report.diagnostics.mis_scoped_traps.global_db_project_traps.length}`,
+    "Next actions:",
+    ...formatNextActions(report.next_actions),
     `mcp_hint: ${report.mcp_hint}`,
   ].join("\n");
+}
+
+function buildDoctorNextActions(
+  semanticAvailable: boolean,
+  embeddings: EmbeddingStatsResult,
+  diagnostics: ReturnType<TrapStore["diagnostics"]>
+): DoctorNextAction[] {
+  const actions: DoctorNextAction[] = [];
+  if (!semanticAvailable) {
+    actions.push({
+      command: "export JINA_API_KEY=<your-jina-api-key>",
+      reason: "Enable semantic and hybrid search; otherwise use --mode fts.",
+    });
+  } else {
+    const projectAction = embeddingRefreshAction("project", embeddings.project);
+    const globalAction = embeddingRefreshAction("global", embeddings.global);
+    if (projectAction) actions.push(projectAction);
+    if (globalAction) actions.push(globalAction);
+  }
+
+  const stranded = diagnostics.mis_scoped_traps.global_db_project_traps.length;
+  if (stranded > 0) {
+    actions.push({
+      command: "codetrap repair-scope --dry-run --json",
+      reason: `${stranded} project-scoped trap(s) are stored in the global database.`,
+    });
+  }
+  return actions;
+}
+
+function embeddingRefreshAction(
+  scope: "project" | "global",
+  stats: EmbeddingStateSummary | null
+): DoctorNextAction | null {
+  if (!stats || stats.total === 0) return null;
+  const needsRefresh = stats.missing + stats.stale;
+  if (needsRefresh === 0) return null;
+  const parts = [
+    stats.missing > 0 ? `${stats.missing} missing` : null,
+    stats.stale > 0 ? `${stats.stale} stale` : null,
+  ].filter((item): item is string => item !== null);
+  return {
+    command: `codetrap embed --scope ${scope}`,
+    reason: `${scope} embeddings need refresh (${parts.join(", ")}).`,
+  };
+}
+
+function formatNextActions(actions: DoctorNextAction[]): string[] {
+  if (actions.length === 0) return ["  (none)"];
+  return actions.map((action) => `  - ${action.command} # ${action.reason}`);
 }
 
 function formatEmbeddingStats(

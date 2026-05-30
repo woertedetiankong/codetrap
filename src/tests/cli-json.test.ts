@@ -142,6 +142,11 @@ describe("CLI JSON contract", () => {
       fallback_reason: "semantic_unavailable",
     });
     expect(doctor.diagnostics.mis_scoped_traps.global_db_project_traps).toEqual([]);
+    expect(doctor.next_actions).toEqual([
+      expect.objectContaining({
+        command: "export JINA_API_KEY=<your-jina-api-key>",
+      }),
+    ]);
   });
 
   test("doctor --json reports project-scoped traps stranded in the global database", () => {
@@ -189,6 +194,13 @@ describe("CLI JSON contract", () => {
         project_path: home,
       }),
     ]);
+    expect(doctor.next_actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          command: "codetrap repair-scope --dry-run --json",
+        }),
+      ])
+    );
   });
 
   test("mutation commands expose machine-readable JSON results", () => {

@@ -31,6 +31,22 @@ Note:
 
 ## Observations
 
+## 2026-05-30 - CLI UX next-action hints
+
+Task: Improve agent-facing UX hints for doctor, embed, and dogfood eval report without changing core search semantics.
+Query: doctor embed search json dogfood report ux next_action diagnostics
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - not applicable to CLI output hints.
+2. No second result.
+3. No third result.
+
+Judgment: noisy_hit
+Action changed: no
+Promote: no
+Note: The result was search-policy related but did not apply to output guidance, so this stays as a raw dogfood observation.
+
 ## 2026-05-30 - dogfood eval judgment support
 
 Task: Add no_relevant_trap support, improve unknown goldTrapIds guidance, and create this dogfood log.

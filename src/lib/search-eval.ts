@@ -56,6 +56,11 @@ export type SearchEvalMetrics = {
   semantic_error_count: number;
 };
 
+export type SearchEvalNextAction = {
+  command: string;
+  reason: string;
+};
+
 export type SearchEvalReport = {
   mode: "deterministic" | "live";
   fixture: string;
@@ -71,6 +76,7 @@ export type SearchEvalReport = {
   failures: EvalCaseReport[];
   misses: EvalCaseReport[];
   noisy_hits: EvalCaseReport[];
+  next_actions: SearchEvalNextAction[];
 };
 
 export type RecordDogfoodResult = {
@@ -111,17 +117,22 @@ export async function reportDogfood(fixturePath: string, live: boolean): Promise
   const fixture = readEvalFixture(fixturePath);
   const provider = live ? createDefaultEmbeddingProvider() : new EvalEmbedder();
   const evaluated = await evaluateSearchFixture(fixture, provider);
-  return {
-    mode: live ? "live" : "deterministic",
+  const mode: SearchEvalReport["mode"] = live ? "live" : "deterministic";
+  const report: Omit<SearchEvalReport, "next_actions"> = {
+    mode,
     fixture: fixturePath,
     ...evaluated,
+  };
+  return {
+    ...report,
+    next_actions: buildSearchEvalNextActions(report),
   };
 }
 
 export async function evaluateSearchFixture(
   fixture: EvalFixture,
   provider: EmbeddingProvider | undefined
-): Promise<Omit<SearchEvalReport, "mode" | "fixture">> {
+): Promise<Omit<SearchEvalReport, "mode" | "fixture" | "next_actions">> {
   const repo = fixtureRepository(fixture, provider);
 
   let providerError: string | null = null;
@@ -153,6 +164,9 @@ export async function evaluateSearchFixture(
   }
 
   const dogfoodCases = cases.filter((item) => item.phaseGate === "dogfood" || item.judgment !== undefined);
+  const failures = cases.filter((item) => !item.passed);
+  const misses = cases.filter((item) => item.judgment === "miss" || item.recallAt5 < (fixtureQuery(item, fixture)?.minRecallAt5 ?? 1));
+  const noisyHits = cases.filter((item) => item.judgment === "noisy_hit");
   const metrics = aggregateMetrics(cases);
   return {
     provider: provider ? embeddingConfig(provider) : null,
@@ -173,9 +187,9 @@ export async function evaluateSearchFixture(
         no_relevant_trap: dogfoodCases.filter((item) => item.judgment === "no_relevant_trap").length,
       },
     },
-    failures: cases.filter((item) => !item.passed),
-    misses: cases.filter((item) => item.judgment === "miss" || item.recallAt5 < (fixtureQuery(item, fixture)?.minRecallAt5 ?? 1)),
-    noisy_hits: cases.filter((item) => item.judgment === "noisy_hit"),
+    failures,
+    misses,
+    noisy_hits: noisyHits,
   };
 }
 
@@ -211,9 +225,88 @@ export function formatSearchEvalReport(report: SearchEvalReport): string {
     `MRR: ${report.metrics.mrr}`,
     `Hybrid fallback count: ${report.metrics.hybrid_fallback_count}`,
     `Semantic error count: ${report.metrics.semantic_error_count}`,
-    `Dogfood cases: ${report.dogfood.total}`
+    `Dogfood cases: ${report.dogfood.total}`,
+    `Judgments: ${formatJudgmentCounts(report.dogfood.judgment_counts)}`
   );
+  appendCaseSection(lines, "Failures", report.failures);
+  appendCaseSection(lines, "Misses to inspect", report.misses);
+  appendCaseSection(lines, "Noisy hits to inspect", report.noisy_hits);
+  lines.push("Next actions:", ...formatNextActions(report.next_actions));
   return lines.join("\n");
+}
+
+function buildSearchEvalNextActions(
+  report: Omit<SearchEvalReport, "next_actions">
+): SearchEvalNextAction[] {
+  const actions: SearchEvalNextAction[] = [];
+  if (report.mode === "live" && !report.semantic_available) {
+    actions.push({
+      command: "export JINA_API_KEY=<your-jina-api-key>",
+      reason: "Enable live semantic checks, then rerun bun run eval:dogfood -- report --live.",
+    });
+  }
+  if (report.failures.length > 0) {
+    actions.push({
+      command: "bun run eval:dogfood -- report --json",
+      reason: "Inspect expected ids, top results, and errors before changing search behavior or fixture expectations.",
+    });
+  }
+  if (report.misses.length > 0) {
+    actions.push({
+      command: 'codetrap search "<miss query>" --mode hybrid --ranking-signals --json',
+      reason: "Replay a miss with ranking signals before deciding whether to tune search or promote a fixture case.",
+    });
+  }
+  if (report.noisy_hits.length > 0) {
+    actions.push({
+      command: 'codetrap search "<noisy query>" --mode hybrid --ranking-signals --json',
+      reason: "Inspect why noisy results ranked before deciding whether the case belongs in dogfood eval.",
+    });
+  }
+  if (actions.length === 0) {
+    actions.push({
+      command: 'codetrap search "<task keywords>" --mode hybrid --json',
+      reason: "Keep logging real pre-edit searches in dogfood-log.md before automating promotion.",
+    });
+  }
+  return actions;
+}
+
+function formatJudgmentCounts(counts: Record<DogfoodJudgment, number>): string {
+  return DOGFOOD_JUDGMENTS.map((judgment) => `${judgment}=${counts[judgment]}`).join(", ");
+}
+
+function appendCaseSection(lines: string[], title: string, cases: EvalCaseReport[]): void {
+  if (cases.length === 0) return;
+  lines.push(`${title}:`);
+  for (const item of cases.slice(0, 5)) {
+    lines.push(`  - [${item.mode}] ${item.query}`);
+    if (item.goldTrapIds.length > 0) {
+      lines.push(`    expected: ${formatExpected(item)}`);
+    }
+    lines.push(`    top: ${formatTopResults(item)}`);
+    if (item.error) lines.push(`    error: ${item.error}`);
+  }
+  if (cases.length > 5) lines.push(`  ... ${cases.length - 5} more`);
+}
+
+function formatExpected(item: EvalCaseReport): string {
+  return item.goldTrapIds
+    .map((id, index) => `#${id} ${item.expectedTitles[index] ?? ""}`.trim())
+    .join(", ");
+}
+
+function formatTopResults(item: EvalCaseReport): string {
+  if (item.topResults.length === 0) return "(none)";
+  return item.topResults
+    .slice(0, 3)
+    .map((result) => `#${result.id} ${result.title}`)
+    .join("; ");
+}
+
+function formatNextActions(actions: SearchEvalNextAction[]): string[] {
+  if (actions.length === 0) return ["  (none)"];
+  return actions.map((action) => `  - ${action.command} # ${action.reason}`);
 }
 
 function fixtureRepository(fixture: EvalFixture, provider: EmbeddingProvider | undefined): TrapRepository {

@@ -122,6 +122,17 @@ describe("dogfood eval script", () => {
     expect(payload.metrics.recall_at_5).toBeGreaterThanOrEqual(1);
     expect(payload.metrics.mrr).toBeGreaterThanOrEqual(0.8);
     expect(payload.failures).toEqual([]);
+    expect(payload.next_actions[0].reason).toContain("Keep logging real pre-edit searches");
+  });
+
+  test("report text includes judgment counts and next actions", () => {
+    const fixture = tempFixture();
+    const result = runDogfood(["report", "--fixture", fixture]);
+    expect(result.exitCode).toBe(0);
+
+    expect(result.stdout).toContain("Judgments: useful_hit=1, miss=0, noisy_hit=0, no_relevant_trap=0");
+    expect(result.stdout).toContain("Next actions:");
+    expect(result.stdout).toContain('codetrap search "<task keywords>" --mode hybrid --json');
   });
 
   test("report --live reports semantic unavailable without an embedding provider", () => {
@@ -139,6 +150,13 @@ describe("dogfood eval script", () => {
     expect(payload.metrics.hybrid_fallback_count).toBeGreaterThan(0);
     expect(payload.metrics.semantic_error_count).toBeGreaterThan(0);
     expect(payload.failures.length).toBeGreaterThan(0);
+    expect(payload.next_actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          command: "export JINA_API_KEY=<your-jina-api-key>",
+        }),
+      ])
+    );
   });
 });
 

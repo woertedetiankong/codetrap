@@ -10,6 +10,7 @@ import {
 } from "../lib/scope-migration";
 import { TrapOperations } from "../lib/trap-operations";
 import { buildDoctorReport, formatDoctorText } from "../lib/doctor";
+import { formatEmbedText } from "../lib/embed-output";
 import { searchDefaultsFromConfig } from "../lib/config";
 import { SessionStore } from "../lib/session-store";
 import { SessionOperations, type SessionConflictResult } from "../lib/session-operations";
@@ -380,12 +381,7 @@ async function cmdEmbed(args: string[], store: TrapStore): Promise<CommandResult
   const { opts } = parseArgs(args);
   try {
     const result = await store.ensureEmbeddings(embedRequestFromArgs(opts));
-    return textResult([
-      ...result.scopes.map((scoped) =>
-        `[${scoped.scope}] embeddings generated: ${scoped.generated}, skipped: ${scoped.skipped}, batches: ${scoped.batches}`
-      ),
-      `Total generated: ${result.generated}, skipped: ${result.skipped}, batches: ${result.batches}`,
-    ].join("\n"));
+    return textResult(formatEmbedText(result));
   } catch (error) {
     return errorFrom(error);
   }
