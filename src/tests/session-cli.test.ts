@@ -155,7 +155,7 @@ describe("session CLI", () => {
     });
   });
 
-  test("captures piped test failures as fallback candidate traps", () => {
+  test("keeps raw test failures as notes instead of fallback candidate traps", () => {
     const cwd = tempProjectDir("codetrap-session-stdin-");
     const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
     const started = JSON.parse(runCli([
@@ -182,24 +182,16 @@ describe("session CLI", () => {
     const notes = JSON.parse(runCli(["session", "notes", "--json"], cwd, home).stdout);
     expect(notes.note_counts).toMatchObject({ test_failure: 1 });
 
-    runCli(["session", "close", "--propose-traps"], cwd, home);
-    const candidates = JSON.parse(runCli(["session", "candidates", started.id, "--json"], cwd, home).stdout);
-    expect(candidates.candidates[0]).toMatchObject({
-      id: "cand-001",
-      status: "proposed",
-      trap: {
-        category: "bug",
-        scope: "project",
-        module: "parser",
-        path_globs: ["src/parser.ts"],
-      },
-      evidence: [
-        expect.objectContaining({
-          source_type: "test_failure",
-          related_files: ["src/parser.ts"],
-        }),
-      ],
+    const close = JSON.parse(runCli(["session", "close", "--propose-traps", "--json"], cwd, home).stdout);
+    expect(close).toMatchObject({
+      id: started.id,
+      status: "closed",
+      candidate_count: 0,
+      traps_written: 0,
     });
+
+    const candidates = JSON.parse(runCli(["session", "candidates", started.id, "--json"], cwd, home).stdout);
+    expect(candidates.candidates).toEqual([]);
   });
 
   test("blocks possible conflicts unless the user accepts lifecycle handling", () => {
