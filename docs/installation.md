@@ -312,16 +312,21 @@ To add a lesson:
 
 codetrap add --json '{...}' --output-json
 
-For longer implementation work, keep temporary notes and candidate traps in session files first:
+For longer implementation work, keep temporary notes and explicit candidate traps in session files first:
 
+```bash
 codetrap session start "<goal>"
 codetrap session note --kind decision --text "<what changed and why>"
+codetrap session note --kind review --text $'Title: <durable pitfall>\nContext: <when it triggers>\nMistake: <what the agent did wrong>\nFix: <what to do instead>'
 codetrap session close --propose-traps
 codetrap session candidates
+```
 
 Only accepted candidates are written to `traps.db`:
 
+```bash
 codetrap session accept <candidate-id>
+```
 
 `codetrap session accept --edit-json ...` applies the edit before conflict detection. If a possible active-trap conflict is found, the candidate remains proposed and records conflict diagnostics until you choose `--accept-anyway`, `--supersedes <trap-id>`, or reject it.
 

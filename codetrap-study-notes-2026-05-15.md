@@ -9,6 +9,8 @@
 
 > 2026-05-24 校准：当前代码又新增 Session Mode v1：`src/domain/session.ts`、`src/lib/session-store.ts`、`src/lib/session-operations.ts`、`src/lib/session-capture.ts`、`src/lib/trap-quality.ts` 和 `src/lib/session-conflicts.ts`。Session files 是 temporary working memory；只有用户 accept 的 candidate traps 会通过 `TrapOperations` 写入长期 `traps.db`。`session accept` 会先应用 accept-time edits，再做冲突检测，并把 accepted/possible-conflict diagnostics 写回 candidate document。
 
+> 2026-05-26 校准：`session-capture.ts` 不再把 raw failure/test_failure/correction/review notes 套模板生成 candidate traps。`session close --propose-traps` 只从显式包含 `Title`、`Context`、`Mistake`、`Fix` 的结构化 trap note 生成候选；原始失败和 review 文本只作为 session notes/recap 证据。
+
 本笔记用一个小型学习小组的方式复盘 2026-05-15 写入的代码。目标不是记住每一行，而是理解背后的架构思想：为什么要把搜索结果变短、为什么要保留证据、为什么 lifecycle 不应该只是几个随便能改的字段，以及为什么 CLI/MCP 入口要共享同一层操作语义。
 
 ---

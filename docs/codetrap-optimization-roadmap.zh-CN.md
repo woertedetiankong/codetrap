@@ -1,7 +1,7 @@
 # codetrap 后续优化路线图
 
 Date: 2026-05-16
-Last updated: 2026-05-24
+Last updated: 2026-05-26
 
 本文记录一次真实使用 codetrap 后得到的改进方向，并归并 Claude Code 和 SemTools
 相关参考对产品定位、agent harness、CLI 体验的启发。测试场景来自
@@ -25,6 +25,8 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 - Session files 保存在 `.codetrap/sessions/`，作为 temporary working memory、recap 和 candidate trap 池；默认 search 仍只检索 confirmed traps。
 - Candidate accept 已集中到 `SessionOperations`：接受时先应用 `--edit-json`，再做 possible conflict check、写入 `TrapOperations` / `TrapStore`、自动挂 `source_type=conversation` session evidence，并更新 candidate 状态。
 - Candidate quality scorer 和 possible conflict check 已落地；存在相似 active trap 时会把 edited candidate shape 与 conflict diagnostics 写回 `candidate-traps.json`，并要求 `--accept-anyway` 或 `--supersedes <trap-id>`。
+- 2026-05-26 产品决策：`session-capture.ts` 只从显式 `Title`/`Context`/`Mistake`/`Fix` trap note 生成 candidate；raw failure/test output/review/correction 只进入 notes/recap，不再通过 fallback 模板生成候选。
+- Dogfood Eval Flywheel v1 已新增 maintainer script：deterministic report 用固定 eval embedder，live report 用真实 embedding provider，record 命令把 curated query 追加到 repo fixture。
 - Session command request normalization 已移入 `src/lib/command-requests.ts`，避免 `workflow.ts` 重复解析 session flags。
 
 仍未完成：
@@ -565,6 +567,7 @@ codetrap repair-scope --apply
 - StickS3 8 条真实 traps 和 8 个真实 query 已加入 `src/tests/fixtures/search-eval.json`。
 - `src/tests/search-eval.test.ts` 对这些 query 锁住 `Recall@3 = 100%` 和 `Recall@5 = 100%`。
 - MRR 已在 eval 测试中计算；通用 title/tag/code-identifier/severity/path/module/owner rerank signals 已落地。
+- Dogfood Eval Flywheel v1 已新增：把真实 codetrap 使用查询整理进 repo fixture，并通过 `bun run eval:dogfood -- report` 做稳定回归，通过 `--live` 用真实 embedding provider 验证本机产品体验。
 
 #### 5.1 固化 StickS3 评估集
 
@@ -583,6 +586,20 @@ codetrap repair-scope --apply
 - Recall@3：必须 100%
 - Recall@5：必须 100%
 - MRR：持续观察，不硬性阻塞初期迭代
+
+#### 5.1.1 Dogfood Eval Flywheel v1
+
+第一版保持 maintainer-only，不新增公开 `codetrap eval` 命令。
+
+```bash
+bun run eval:dogfood -- report
+bun run eval:dogfood -- report --live
+bun run eval:dogfood -- record --json '{"query":"...","mode":"hybrid","goldTrapIds":[1],"judgment":"useful_hit"}'
+```
+
+- deterministic report 使用固定 eval embedder，适合 CI 和回归。
+- live report 使用当前真实 embedding provider；没有 provider 时明确显示 semantic unavailable / hybrid fallback。
+- record 只追加 curated dogfood query，不自动挖本地 `.codetrap` 或 telemetry。
 
 #### 5.2 排序改进
 

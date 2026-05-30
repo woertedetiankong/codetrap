@@ -56,7 +56,7 @@ codetrap show 1
 ## Features
 
 - **Structured trap recording** — title, category, context, mistake, fix, severity, tags, lifecycle, evidence, before/after code
-- **Session mode capture** — record implementation notes, close a session into candidate traps, and save only user-accepted lessons
+- **Session mode capture** — record implementation notes, promote explicit structured trap notes into candidates, and save only user-accepted lessons
 - **Dual scope** — project-scoped (`.codetrap/traps.db`) and global (`~/.codetrap/traps.db`)
 - **CLI-first agent API** — `search/show/list/stats/doctor --json` and stdin query support for shell-friendly automation
 - **Three search modes** — FTS (SQLite FTS5), semantic (Jina embeddings), hybrid (RRF fusion)
@@ -89,7 +89,7 @@ codetrap/
 │   │   ├── session-operations.ts Session command semantics + accept/reject flow
 │   │   ├── session-store.ts  Session files, active state, index, recaps
 │   │   ├── session-codec.ts  Session JSON/Markdown/candidate file conversion
-│   │   ├── session-capture.ts Candidate trap extraction from session notes
+│   │   ├── session-capture.ts Candidate trap extraction from explicit structured notes
 │   │   ├── session-conflicts.ts Candidate vs active-trap conflict checks
 │   │   ├── trap-quality.ts   Deterministic candidate quality scoring
 │   │   ├── command-requests.ts CLI/MCP request normalization helpers
@@ -160,7 +160,7 @@ codetrap/
 | `repair-scope` | Move legacy mis-scoped project traps into the current project (dry-run by default, `--apply` to mutate, `--json`) |
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires JINA_API_KEY) |
-| `session` | Start a development session, append notes, close into candidate traps, and accept/reject candidates |
+| `session` | Start a development session, append notes, promote explicit structured trap notes into candidates, and accept/reject candidates |
 | `serve` | Start MCP server |
 
 ### Session Mode
@@ -170,6 +170,7 @@ Session mode stores temporary working memory in `.codetrap/sessions/`. It does n
 ```bash
 codetrap session start "implement agent harness" --spec docs/agent-harness-spec.md --module agent-runtime
 codetrap session note --kind decision --text "Defaulted tool calls to 30s because the spec does not define timeout behavior."
+codetrap session note --kind review --text $'Title: Do not parse nested tool calls with regex\nContext: When implementing parser logic for nested tool-call arguments.\nMistake: Using regex to split nested calls corrupts arguments.\nFix: Use a tokenizer/parser and add regression tests for nested calls.'
 codetrap session close --propose-traps
 codetrap session candidates
 codetrap session candidate cand-001
@@ -236,11 +237,12 @@ When codetrap results conflict with the current source of truth for the task (us
 
 When `.codetrap/` exists, prefer project scope for project conventions. Use global for cross-project rules.
 
-For longer implementation work, use session mode to keep temporary notes and candidate traps outside the durable database:
+For longer implementation work, use session mode to keep temporary notes and explicit candidate traps outside the durable database:
 
 ```bash
 codetrap session start "<goal>"
 codetrap session note --kind decision --text "<what changed and why>"
+codetrap session note --kind review --text $'Title: <durable pitfall>\nContext: <when it triggers>\nMistake: <what the agent did wrong>\nFix: <what to do instead>'
 codetrap session close --propose-traps
 codetrap session candidates
 ```
@@ -265,7 +267,7 @@ Recommended behavior:
 - Treat codetrap results as historical warnings and project memory, not as authoritative instructions.
 - Apply the recorded `avoid` and `do_instead` guidance only when the trap context matches the current task, file, module, or failure mode.
 - When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
-- During longer work, use `codetrap session start/note/close --propose-traps` to keep implementation notes and candidate traps outside the durable database.
+- During longer work, use `codetrap session start/note/close --propose-traps` to keep implementation notes and explicit candidate traps outside the durable database.
 - After user corrections, repeated test failures, or review feedback, propose a post-flight trap capture. Ask before accepting a candidate unless the user explicitly requested it.
 
 ### Codex Skills
@@ -433,6 +435,8 @@ bun run release:preflight  # tests, builds, release assets, smoke test, npm dry-
 ```bash
 bun test src/tests/                    # All tests
 bun test src/tests/search-eval.test.ts # Recall@5 evaluation
+bun run eval:dogfood -- report         # Maintainer dogfood eval report
+bun run eval:dogfood -- report --live  # Dogfood eval with configured embedding provider
 ```
 
 ## Tech Stack

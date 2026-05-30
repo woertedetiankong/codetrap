@@ -221,7 +221,7 @@ Trap path 继续进入 SQLite scope/repository/search 层：
 | src/lib/session-operations.ts | session 命令语义、accept/reject、冲突与 supersede |
 | src/lib/session-store.ts     | session 文件、active/index、notes/recap/candidates |
 | src/lib/session-codec.ts     | session JSON/Markdown/candidate 文件转换 |
-| src/lib/session-capture.ts   | 从 session notes 生成 candidate traps   |
+| src/lib/session-capture.ts   | 从显式结构化 trap notes 生成 candidate traps |
 | src/lib/session-conflicts.ts | candidate 与 active traps 的冲突检测    |
 | src/lib/trap-quality.ts      | deterministic candidate quality scorer  |
 | src/lib/trap-mutation-result.ts | mutation 结果与 scope fallback 语义  |
@@ -436,6 +436,7 @@ codetrap session start/note/close
              v
 +--------------------------+
 | session-capture          |
+| explicit trap notes only |
 | trap-quality             |
 | candidate-traps.json     |
 +--------------------------+
@@ -1171,7 +1172,7 @@ schema v5 让一条 trap 可以声明它适用的路径、模块或 owner。搜�
 
 ### 13.11 Session temporary memory
 
-Session mode 把一次协作开发中的过程记录和长期 trap memory 分开。implementation notes、recap 和 candidate traps 都在 `.codetrap/sessions/` 下，默认不会进入 `traps.db`。
+Session mode 把一次协作开发中的过程记录和长期 trap memory 分开。implementation notes、recap 和 candidate traps 都在 `.codetrap/sessions/` 下，默认不会进入 `traps.db`。普通失败日志、test output、review comment 和 raw correction 只作为 notes/recap 证据；只有显式包含 `Title`、`Context`、`Mistake`、`Fix` 的 trap note 才会被 `session close --propose-traps` 提升为 candidate。
 
 ```text
 working session

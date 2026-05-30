@@ -17,12 +17,12 @@ codetrap 当前已经具备稳定的踩坑记忆核心：
 ```text
 开始一个目标
 -> 做事时记录 implementation notes
--> 结束时从 notes / diff / 测试失败 / 用户纠正里提炼 trap 候选
+-> 结束时从明确结构化的 post-flight trap notes 里提炼 trap 候选
 -> quality scorer 判断哪些值得进入 codetrap
 -> 用户确认后保存到 traps.db
 ```
 
-截至 2026-05-24，v1 CLI 闭环已经落地：`session start/note/status/list/show/notes/close/candidates/candidate/accept/reject`、deterministic quality scorer、candidate conflict check、`--accept-anyway`、`--supersedes`、accepted candidate 写入 `traps.db` 并挂 session evidence。MCP session tools、playbook export、review/staleness/prune 仍属于后续阶段。
+截至 2026-05-24，v1 CLI 闭环已经落地：`session start/note/status/list/show/notes/close/candidates/candidate/accept/reject`、explicit candidate note extraction、deterministic quality scorer、candidate conflict check、`--accept-anyway`、`--supersedes`、accepted candidate 写入 `traps.db` 并挂 session evidence。2026-05-26 的产品决策是：普通 failure/test_failure/correction/review notes 不再通过 fallback 模板自动生成候选；需要候选时由用户或 agent 明确写出 `Title/Context/Mistake/Fix` 结构。MCP session tools、playbook export、review/staleness/prune 仍属于后续阶段。
 
 ## 2. 一句话目标
 
@@ -32,7 +32,7 @@ codetrap 当前已经具备稳定的踩坑记忆核心：
 
 ### 3.1 数据库只保存高质量长期经验
 
-`implementation-notes.md` 可以自动写，`recap.md` 可以自动生成，`candidate-traps.json` 可以自动生成。
+`implementation-notes.md` 可以自动写，`recap.md` 可以自动生成，`candidate-traps.json` 可以从明确结构化的候选 note 自动生成。
 
 但真正写入 `.codetrap/traps.db` 必须默认经过用户确认。
 
@@ -179,6 +179,15 @@ observation    普通实现观察
 
 ```bash
 bun test src/tests 2>&1 | codetrap session note --kind test_failure --stdin
+```
+
+原始失败日志、diff、review comment 和用户纠正默认只作为 session 证据和 recap 材料。它们不会被模板自动提升为 candidate trap。若本次经验值得进入候选池，应由用户或 agent 追加明确结构化的 post-flight note：
+
+```text
+Title: Do not parse nested tool calls with regex
+Context: When implementing parser logic for nested tool-call arguments.
+Mistake: Using regex to split nested calls corrupts arguments.
+Fix: Use a tokenizer/parser and add regression tests for nested calls.
 ```
 
 ### 4.3 会话中查看当前记录
@@ -576,7 +585,7 @@ codetrap-session
   用于围绕一个目标维护 implementation notes。
 
 codetrap-capture
-  从失败、纠正、review 中生成 candidate traps。
+  帮助 agent 从失败、纠正、review 中整理明确结构化的 candidate trap notes。
 
 codetrap-quality
   检查候选 trap 是否值得写入数据库。
@@ -585,7 +594,7 @@ codetrap-quality
 skills 的核心规则：
 
 - 可以自动写 session notes。
-- 可以自动提出 candidate traps。
+- 可以在有明确结构化字段时自动提出 candidate traps。
 - 默认不能自动写 confirmed traps。
 - 写入 traps.db 前必须问用户。
 
@@ -611,7 +620,7 @@ src/lib/trap-quality.ts
   deterministic quality scorer。
 
 src/lib/session-capture.ts
-  从 notes、diff、test output、review text 生成候选 trap 的纯逻辑。
+  从包含 Title/Context/Mistake/Fix 的显式 session note 生成候选 trap 的纯逻辑。
 
 src/lib/session-conflicts.ts
   accept 前搜索并标记相似 active traps。
@@ -633,7 +642,7 @@ src/commands/workflow.ts
 
 ## 10. Diff / Test / Review 输入
 
-v1 不需要自动运行 `git diff` 或测试命令。先支持显式输入：
+v1 不需要自动运行 `git diff` 或测试命令。先支持显式输入，并把这些输入作为 session 证据保存：
 
 ```bash
 git diff | codetrap session note --kind observation --stdin --source_ref git-diff
@@ -651,7 +660,8 @@ codetrap session capture --from-review review.md
 原则：
 
 - codetrap 不主动执行破坏性命令。
-- test output 和 diff 默认只进入 session notes，不直接进 traps.db。
+- test output、diff、review text 和 raw correction 默认只进入 session notes/recap，不生成 candidate trap，也不直接进 traps.db。
+- 需要候选时，用户或 agent 应把经验整理成显式 `Title/Context/Mistake/Fix` note；`session close --propose-traps` 只提取这类结构化 note。
 - 涉及 secret 的文本要提醒用户检查，后续可加 redaction。
 
 ## 11. 上下文体量控制
@@ -886,6 +896,7 @@ keep active search clean
 - `session note`
 - `session status/list/show`
 - `session close --propose-traps`
+- explicit candidate note extraction
 - `candidate-traps.json`
 - deterministic quality scorer
 - `session accept/reject`
@@ -898,7 +909,7 @@ keep active search clean
 
 - 能围绕一个目标创建 session。
 - 能追加 decision/failure/correction/test_failure notes。
-- close 后能生成 recap 和 candidate traps。
+- close 后能生成 recap；只有明确结构化 candidate note 才会生成 candidate traps。
 - 候选不会自动写库。
 - 用户 accept 后才写入 traps.db。
 - accept 后 `codetrap search` 能搜到新 trap。
@@ -980,6 +991,9 @@ codetrap session note --kind failure \
 
 bun test src/tests/agent-parser.test.ts 2>&1 | \
   codetrap session note --kind test_failure --stdin
+
+codetrap session note --kind review \
+  --text $'Title: Do not parse nested tool calls with regex\nContext: When implementing agent harness tool-call parsing.\nMistake: Parsing nested tool-call content with regular expressions can truncate or corrupt arguments.\nFix: Use a structured parser or explicit tokenizer with regression tests for nested content.\nTags: agent-harness,parser,tool-calls\nPath globs: src/agent/**'
 ```
 
 结束：
@@ -993,8 +1007,6 @@ codetrap session candidates
 
 ```text
 cand-001  score 0.86  Do not parse nested tool calls with regex
-cand-002  score 0.74  Set explicit timeout policy for each tool call
-cand-003  score 0.52  Remember to write more parser tests
 ```
 
 用户接受：
@@ -1024,7 +1036,7 @@ codetrap search "agent harness tool call parser nested arguments" --mode hybrid 
 已决：
 
 - v1 一个项目只允许一个 active session。
-- candidate trap 由 CLI 根据 session notes 生成 fallback/explicit candidates，并由 deterministic scorer 评分。
+- candidate trap 由 CLI 根据显式 `Title/Context/Mistake/Fix` session notes 生成，并由 deterministic scorer 评分；普通 raw failure/test_failure/correction/review notes 不再通过 fallback 模板生成候选。
 - `recap.md` 由 `session close` 基于 notes 和 candidates 生成。
 - conflict detection 第一版使用轻量检索式相似检查，不引入 LLM 判断；accept-time edits 先参与检测，path scope 检测能识别简单 glob overlap。
 

@@ -57,11 +57,11 @@ A session is one local AI collaboration run around a goal. It records temporary 
 
 Session files include `session.json`, `implementation-notes.md`, optional `recap.md`, and optional `candidate-traps.json`. Session notes may record decisions, deviations, tradeoffs, open questions, failures, test failures, corrections, reviews, and observations.
 
-Session files are a candidate pool and audit trail. Confirmed Trap memory still lives only in `traps.db` after an explicit accept step.
+Session files are a temporary notes store, candidate pool, and audit trail. Raw notes such as failures, test failures, reviews, and corrections stay as session evidence/recap material. Candidate traps are generated only from explicit structured trap notes that provide `Title`/`Context`/`Mistake`/`Fix`. Confirmed Trap memory still lives only in `traps.db` after an explicit accept step.
 
 ### Candidate Trap
 
-A candidate trap is a proposed Trap extracted from a session. It lives in `candidate-traps.json` with a quality score, quality diagnostics, candidate status, Trap-shaped content, and evidence. Accept-time edits update the candidate document so the audit trail matches the Trap that was saved or blocked.
+A candidate trap is a proposed Trap extracted from an explicit structured session note. It lives in `candidate-traps.json` with a quality score, quality diagnostics, candidate status, Trap-shaped content, and evidence. Accept-time edits update the candidate document so the audit trail matches the Trap that was saved or blocked.
 
 Candidate traps can be `proposed`, `accepted`, or `rejected`. Accepting a candidate writes a confirmed Trap through `TrapOperations`, attaches session evidence, and may supersede an older active Trap. Rejected and proposed candidates do not appear in normal Trap search.
 
@@ -165,6 +165,12 @@ Search policy owns retrieval filter planning, applicability filtering, overfetch
 
 `src/lib/search-policy.ts` sits behind `SearchService`. Retrieval Modules fetch FTS or semantic candidates from storage/index adapters, while the policy Module decides storage pushdown filters, path/module/owner applicability, candidate limits, exact title/tag/code identifier boosts, severity boosts, and whether ranking signals or diagnostics are exposed.
 
+### Search Eval
+
+Search eval owns the maintainer-only search evaluation fixture shape, deterministic eval embedder, Recall@3/Recall@5/MRR reporting, dogfood judgment counts, and dogfood record normalization.
+
+`src/lib/search-eval.ts` is the shared Module for search eval behavior. `scripts/dogfood-eval.ts` should stay a thin CLI Adapter, and `src/tests/search-eval.test.ts` should exercise the same Module instead of duplicating fixture types, embedding vectors, or metric calculations.
+
 ### Embedding Index
 
 Embedding index is the Module for semantic trap availability and embedding freshness.
@@ -239,7 +245,7 @@ src/
     trap-operations.ts  -- shared CLI/MCP Trap operation execution
     session-store.ts    -- project-local session file storage
     session-operations.ts -- shared Session operation execution
-    session-capture.ts  -- deterministic candidate extraction from notes
+    session-capture.ts  -- deterministic candidate extraction from explicit trap notes
     session-conflicts.ts -- possible active Trap conflict detection for candidates
     trap-quality.ts     -- deterministic candidate Trap quality scoring
     trap-mutation-result.ts -- shared mutation result and scoped fallback semantics
@@ -253,6 +259,7 @@ src/
     trap-transfer.ts    -- DB-to-DB Trap transfer for scope repair/migration
     trap-json-fields.ts -- JSON string-array codec for tags/path_globs/related_files
     search-policy.ts    -- applicability filtering, rerank, fusion, ranking diagnostics
+    search-eval.ts      -- search eval fixture, deterministic embedder, metrics, dogfood record normalization
     search-result-card.ts -- compact action-card builder
     format.ts           -- CLI formatting helpers
   db/
