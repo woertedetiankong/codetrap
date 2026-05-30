@@ -139,6 +139,16 @@
       "mistake": "Immediately lowering gain and reflashing firmware based only on a saturated peak value.",
       "fix": "Check quality metrics and asr_timing first; only tune VOICE_MIC_GAIN when the end-to-end signal is actually clipped or slow.",
       "severity": "warning"
+    },
+    {
+      "title": "Set SQLite busy_timeout before lock-prone startup pragmas",
+      "category": "database",
+      "tags": ["sqlite", "locking", "busy_timeout", "wal", "concurrency"],
+      "scope": "global",
+      "context": "When changing SQLite connection startup, WAL mode, schema initialization, migrations, or concurrent CLI/agent database access.",
+      "mistake": "Setting PRAGMA busy_timeout after PRAGMA journal_mode=WAL, initSchema, migrations, or other startup database work can fail immediately with database is locked before the timeout is active.",
+      "fix": "Set PRAGMA busy_timeout immediately after creating the Database connection, before journal_mode, foreign_keys, initSchema, migrations, or any other lock-prone operation.",
+      "severity": "error"
     }
   ],
   "queries": [
@@ -164,6 +174,7 @@
     { "query": "VOICE_SERVER_URI=127.0.0.1 StickS3 WebSocket 连不上 Mac", "mode": "hybrid", "goldTrapIds": [11], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
     { "query": "ES8311 probe 到 0x18 7-bit 8-bit 地址区别", "mode": "hybrid", "goldTrapIds": [12], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
     { "query": "WAV 全 0 I2S DIN 写 GPIO14 应为 GPIO16", "mode": "hybrid", "goldTrapIds": [13], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
-    { "query": "peak=32768 是否马上降 VOICE_MIC_GAIN 重刷 quality asr_timing", "mode": "hybrid", "goldTrapIds": [14], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 }
+    { "query": "peak=32768 是否马上降 VOICE_MIC_GAIN 重刷 quality asr_timing", "mode": "hybrid", "goldTrapIds": [14], "phaseGate": "phase4", "minRecallAt3": 1, "minRecallAt5": 1 },
+    { "query": "sqlite busy_timeout journal_mode WAL database locked connection startup", "mode": "hybrid", "goldTrapIds": [15], "phaseGate": "dogfood", "minRecallAt3": 1, "minRecallAt5": 1, "source": "dogfood-log", "judgment": "useful_hit", "observedTopTitles": ["Set SQLite busy_timeout before lock-prone startup pragmas"], "note": "Promoted from the 2026-05-30 SQLite startup lock fix so future connection work must retrieve the lock-ordering trap." }
   ]
 }
