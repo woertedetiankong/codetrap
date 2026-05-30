@@ -72,11 +72,11 @@ Release binaries are built by `.github/workflows/release.yml` when a version tag
 3. Create and push a matching tag:
 
 ```bash
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
-The release tag must match `package.json` exactly. For example, package version `0.1.2` must use tag `v0.1.2`.
+The release tag must match `package.json` exactly. For example, package version `0.1.6` must use tag `v0.1.6`.
 
 The workflow runs:
 

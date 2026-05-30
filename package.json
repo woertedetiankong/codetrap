@@ -1,6 +1,6 @@
 {
   "name": "codetrap",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Capture and retrieve coding pitfalls so AI doesn't repeat mistakes",
   "type": "module",
   "license": "MIT",
