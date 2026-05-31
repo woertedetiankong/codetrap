@@ -186,6 +186,26 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .row.accepted { border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .row.accepted-missing { border-color: color-mix(in srgb, var(--warn), var(--line) 40%); }
     .row.rejected { border-color: color-mix(in srgb, var(--danger), var(--line) 55%); opacity: 0.72; }
+    .row-main {
+      width: 100%;
+      min-height: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      text-align: left;
+      display: grid;
+      gap: 5px;
+      color: inherit;
+    }
+    .row-main:hover { background: transparent; border-color: transparent; }
+    .row-action {
+      justify-self: start;
+      min-height: 28px;
+      font-size: 12px;
+      box-shadow: none;
+    }
     .row-title { overflow-wrap: anywhere; }
     .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
@@ -274,6 +294,49 @@ export const WEB_INDEX_HTML = `<!doctype html>
       color: var(--muted);
       font-size: 11px;
       text-transform: uppercase;
+    }
+
+    .insight-grid {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .insight-block {
+      border-top: 1px solid var(--line-soft);
+      padding-top: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .rank-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .rank-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .rank-label { overflow-wrap: anywhere; }
+    .rank-count { color: var(--muted); font-size: 12px; }
+
+    .bar-track {
+      grid-column: 1 / -1;
+      height: 5px;
+      border-radius: 999px;
+      background: var(--line-soft);
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: var(--accent);
     }
 
     .trap-rows {
@@ -408,6 +471,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
           <div class="segmented" aria-label="Main view">
             <button type="button" class="active" data-main-view="review">Review</button>
             <button type="button" data-main-view="library">Library</button>
+            <button type="button" data-main-view="insights">Insights</button>
           </div>
           <button class="ghost" id="refresh" title="Refresh">Refresh</button>
         </div>
@@ -469,6 +533,9 @@ export const WEB_INDEX_HTML = `<!doctype html>
       trapLoadingKey: null,
       trapSearch: "",
       trapFilters: { scope: "", status: "", category: "", module: "", owner: "" },
+      trapSort: "updated",
+      insightTraps: [],
+      insightFilters: { scope: "", status: "all" },
       projectRoot: null,
       sessionId: null,
       candidateId: null,
@@ -516,6 +583,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
         state.sessions = [];
         state.candidates = [];
         state.traps = [];
+        state.insightTraps = [];
         renderSessions();
         renderActiveView();
         return;
@@ -528,6 +596,8 @@ export const WEB_INDEX_HTML = `<!doctype html>
       renderSessions();
       if (state.mainView === "library") {
         await loadTraps();
+      } else if (state.mainView === "insights") {
+        await loadInsightTraps();
       } else {
         await loadCandidates();
       }
@@ -575,16 +645,47 @@ export const WEB_INDEX_HTML = `<!doctype html>
       }
     }
 
-    function renderActiveView() {
+    async function loadInsightTraps() {
+      if (!state.projectRoot) {
+        state.insightTraps = [];
+        if (state.mainView === "insights") {
+          renderInsightsView();
+          renderInsightDetail();
+        }
+        return;
+      }
+      const params = new URLSearchParams({ project: state.projectRoot });
+      Object.entries(state.insightFilters).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+      });
+      const data = await api("/api/traps?" + params.toString());
+      state.insightTraps = data.traps;
+      if (state.mainView === "insights") {
+        renderInsightsView();
+        renderInsightDetail();
+      }
+    }
+
+    function renderMainViewButtons() {
       document.querySelectorAll("[data-main-view]").forEach((button) => {
         button.classList.toggle("active", button.dataset.mainView === state.mainView);
       });
+    }
+
+    function renderActiveView() {
+      renderMainViewButtons();
       if (state.mainView === "library") {
         el("queue-title").textContent = "trap library";
         el("detail-title").textContent = "trap detail";
         el("candidate-tabs").classList.add("hidden");
         renderLibrary();
         renderTrapDetail();
+      } else if (state.mainView === "insights") {
+        el("queue-title").textContent = "growth insights";
+        el("detail-title").textContent = "insight detail";
+        el("candidate-tabs").classList.add("hidden");
+        renderInsightsView();
+        renderInsightDetail();
       } else {
         el("queue-title").textContent = "candidate inbox";
         el("detail-title").textContent = "candidate detail";
@@ -608,6 +709,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
           state.candidateId = null;
           state.trapKey = null;
           state.trapDetails = {};
+          state.insightTraps = [];
           renderProjects();
           await loadSessions();
         });
@@ -645,14 +747,17 @@ export const WEB_INDEX_HTML = `<!doctype html>
       el("queue-meta").textContent = session ? session.goal + " / " + pendingCount + " pending, " + reviewedCount + " reviewed" : "no session selected";
       renderCandidateViewTabs(pendingCount, reviewedCount);
       el("candidates").innerHTML = sorted.length ? sorted.map((candidate) => \`
-        <button class="row \${candidate.id === state.candidateId ? "active" : ""} \${candidate.status} \${reviewCssClass(candidate)}" data-candidate="\${escapeAttr(candidate.id)}">
-          <span class="row-title">\${escapeHtml(candidate.trap.title)}</span>
-          <span class="meta">
-            <span class="pill \${candidate.status} \${reviewCssClass(candidate)}">\${escapeHtml(reviewLabel(candidate))}</span>
-            <span class="pill">q \${Number(candidate.quality_score).toFixed(2)}</span>
-            \${candidate.quality.warnings.length ? '<span class="pill warn">' + candidate.quality.warnings.length + ' warnings</span>' : ''}
-          </span>
-        </button>
+        <div class="row \${candidate.id === state.candidateId ? "active" : ""} \${candidate.status} \${reviewCssClass(candidate)}">
+          <button type="button" class="row-main" data-candidate="\${escapeAttr(candidate.id)}">
+            <span class="row-title">\${escapeHtml(candidate.trap.title)}</span>
+            <span class="meta">
+              <span class="pill \${candidate.status} \${reviewCssClass(candidate)}">\${escapeHtml(reviewLabel(candidate))}</span>
+              <span class="pill">q \${Number(candidate.quality_score).toFixed(2)}</span>
+              \${candidate.quality.warnings.length ? '<span class="pill warn">' + candidate.quality.warnings.length + ' warnings</span>' : ''}
+            </span>
+          </button>
+          \${renderCandidateRowAction(candidate)}
+        </div>
       \`).join("") : '<div class="empty">' + (state.candidateView === "inbox" ? "No pending candidates" : "No reviewed candidates") + '</div>';
       document.querySelectorAll("[data-candidate]").forEach((button) => {
         button.addEventListener("click", () => {
@@ -662,6 +767,13 @@ export const WEB_INDEX_HTML = `<!doctype html>
           renderDetail();
         });
       });
+      bindTrapJumpButtons();
+    }
+
+    function renderCandidateRowAction(candidate) {
+      const review = candidate.review;
+      if (!review || review.status !== "accepted") return "";
+      return \`<button type="button" class="row-action" data-view-trap-scope="\${escapeAttr(review.scope)}" data-view-trap-id="\${escapeAttr(review.trap_id)}">View trap</button>\`;
     }
 
     function renderLibrary() {
@@ -675,6 +787,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
             \${filterSelect("trap-filter-scope", "Scope", state.trapFilters.scope, [["", "project + global"], ...state.options.scopes.map((scope) => [scope, scope])])}
             \${filterSelect("trap-filter-status", "Status", state.trapFilters.status, [["", "active"], ["all", "all"], ["archived", "archived"], ["superseded", "superseded"]])}
             \${filterSelect("trap-filter-category", "Category", state.trapFilters.category, [["", "all categories"], ...state.options.categories.map((category) => [category, category])])}
+            \${filterSelect("trap-sort", "Sort", state.trapSort, [["updated", "recently updated"], ["severity", "severity"], ["hits", "hit count"], ["category", "category"], ["title", "title"]])}
             <div class="field"><label for="trap-filter-module">Module</label><input id="trap-filter-module" value="\${escapeAttr(state.trapFilters.module)}" placeholder="any module"></div>
             <div class="field"><label for="trap-filter-owner">Owner</label><input id="trap-filter-owner" value="\${escapeAttr(state.trapFilters.owner)}" placeholder="any owner"></div>
             <button type="button" id="trap-filter-clear" class="ghost">Clear filters</button>
@@ -706,6 +819,15 @@ export const WEB_INDEX_HTML = `<!doctype html>
       bindTrapFilter("trap-filter-category", "category");
       bindTrapFilter("trap-filter-module", "module");
       bindTrapFilter("trap-filter-owner", "owner");
+      const sort = el("trap-sort");
+      if (sort) {
+        sort.addEventListener("change", () => {
+          state.trapSort = sort.value;
+          state.trapKey = null;
+          renderTrapResults();
+          renderTrapDetail();
+        });
+      }
       const clear = el("trap-filter-clear");
       if (clear) {
         clear.addEventListener("click", async () => {
@@ -741,7 +863,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
       const visible = visibleTraps();
       selectVisibleTrap(visible);
       el("queue-meta").textContent = state.projectRoot
-        ? visible.length + " shown / " + state.traps.length + " loaded"
+        ? visible.length + " shown / " + state.traps.length + " loaded / " + sortLabel(state.trapSort)
         : "no project selected";
       insights.innerHTML = renderInsights(visible);
       rows.innerHTML = visible.length ? visible.map((trap) => \`
@@ -781,6 +903,121 @@ export const WEB_INDEX_HTML = `<!doctype html>
       </div>\`;
     }
 
+    function renderInsightsView() {
+      if (state.mainView !== "insights") return;
+      const traps = state.insightTraps;
+      const serious = traps.filter((trap) => trap.severity === "error" || trap.severity === "critical").length;
+      const topCategory = topValue(traps.map((trap) => trap.category));
+      const topModule = topValue(traps.map((trap) => trap.module).filter(Boolean));
+      const topTag = topValue(traps.flatMap((trap) => trap.tags || []));
+      const mostViewed = sortTraps(traps, "hits")[0];
+      el("queue-title").textContent = "growth insights";
+      el("candidate-tabs").classList.add("hidden");
+      el("queue-meta").textContent = state.projectRoot
+        ? traps.length + " traps / " + (state.insightFilters.status || "all") + " status"
+        : "no project selected";
+      el("candidates").innerHTML = \`
+        <div class="library-tools">
+          <div class="filter-grid">
+            \${filterSelect("insight-filter-scope", "Scope", state.insightFilters.scope, [["", "project + global"], ...state.options.scopes.map((scope) => [scope, scope])])}
+            \${filterSelect("insight-filter-status", "Status", state.insightFilters.status, [["all", "all"], ["active", "active"], ["archived", "archived"], ["superseded", "superseded"]])}
+          </div>
+        </div>
+        <div class="summary-grid">
+          \${metric("Confirmed traps", traps.length || "0", "selected scope")}
+          \${metric("High severity", serious || "0", "error + critical")}
+          \${metric("Top category", topCategory || "-", "largest pattern")}
+          \${metric("Focus area", topModule || topTag || "-", topModule ? "module" : "tag")}
+          \${metric("Most viewed", mostViewed ? "#" + mostViewed.id : "-", mostViewed ? mostViewed.title : "no hits yet")}
+        </div>
+        <div class="insight-grid">
+          \${renderInsightRankBlock("categories", topValues(traps.map((trap) => trap.category), 6), traps.length)}
+          \${renderInsightRankBlock("modules", topValues(traps.map((trap) => trap.module).filter(Boolean), 6), traps.length)}
+          \${renderInsightRankBlock("tags", topValues(traps.flatMap((trap) => trap.tags || []), 8), traps.length)}
+          \${renderInsightRankBlock("severity mix", topValues(traps.map((trap) => trap.severity), 5), traps.length)}
+        </div>
+      \`;
+      bindInsightControls();
+    }
+
+    function renderInsightDetail() {
+      if (state.mainView !== "insights") return;
+      const traps = state.insightTraps;
+      const recent = sortTraps(traps, "updated").slice(0, 8);
+      const mostViewed = sortTraps(traps, "hits").filter((trap) => Number(trap.hit_count || 0) > 0).slice(0, 8);
+      const seriousRecent = sortTraps(traps.filter((trap) => trap.severity === "error" || trap.severity === "critical"), "updated").slice(0, 8);
+      el("detail-title").textContent = "insight detail";
+      el("detail-meta").textContent = state.projectRoot ? state.insightFilters.scope || "project + global" : "select a project";
+      el("detail").innerHTML = \`
+        <div class="scroll">
+          <div class="section">
+            <div class="title">recent traps</div>
+            \${renderInsightTrapRows(recent)}
+          </div>
+          <div class="section">
+            <div class="title">most viewed</div>
+            \${renderInsightTrapRows(mostViewed)}
+          </div>
+          <div class="section">
+            <div class="title">recent high severity</div>
+            \${renderInsightTrapRows(seriousRecent)}
+          </div>
+        </div>
+      \`;
+      bindTrapJumpButtons();
+    }
+
+    function bindInsightControls() {
+      const scope = el("insight-filter-scope");
+      if (scope) {
+        scope.addEventListener("change", async () => {
+          state.insightFilters.scope = scope.value;
+          await loadInsightTraps();
+        });
+      }
+      const status = el("insight-filter-status");
+      if (status) {
+        status.addEventListener("change", async () => {
+          state.insightFilters.status = status.value;
+          await loadInsightTraps();
+        });
+      }
+    }
+
+    function renderInsightRankBlock(label, items, total) {
+      return \`<div class="insight-block">
+        <div class="title">\${escapeHtml(label)}</div>
+        <div class="rank-list">
+          \${items.length ? items.map((item) => renderRankRow(item, total)).join("") : '<div class="empty">No data</div>'}
+        </div>
+      </div>\`;
+    }
+
+    function renderRankRow(item, total) {
+      const width = total > 0 ? Math.max(6, Math.round((item.count / total) * 100)) : 0;
+      return \`<div class="rank-row">
+        <div class="rank-label">\${escapeHtml(item.label)}</div>
+        <div class="rank-count">\${item.count}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:\${width}%"></div></div>
+      </div>\`;
+    }
+
+    function renderInsightTrapRows(traps) {
+      return traps.length ? traps.map((trap) => \`
+        <button type="button" class="row" data-view-trap-scope="\${escapeAttr(trap.scope)}" data-view-trap-id="\${escapeAttr(trap.id)}">
+          <span class="row-title">\${escapeHtml(trap.title)}</span>
+          <span class="meta">
+            <span class="pill \${escapeAttr(trap.severity)}">\${escapeHtml(trap.severity)}</span>
+            <span class="pill">\${escapeHtml(trap.category)}</span>
+            <span class="pill scope">\${escapeHtml(trap.scope)}</span>
+            <span class="pill \${escapeAttr(trap.status)}">\${escapeHtml(trap.status)}</span>
+            <span class="pill">\${Number(trap.hit_count || 0)} hits</span>
+          </span>
+          <span class="subtle">\${escapeHtml(trap.updated_at || trap.created_at || "")}</span>
+        </button>
+      \`).join("") : '<div class="empty">No traps</div>';
+    }
+
     function metric(label, value, detail) {
       return \`<div class="metric"><div class="metric-label">\${escapeHtml(label)}</div><div class="metric-value">\${escapeHtml(value)}</div><div class="subtle">\${escapeHtml(detail)}</div></div>\`;
     }
@@ -794,10 +1031,58 @@ export const WEB_INDEX_HTML = `<!doctype html>
       return [...counts.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0]?.[0] || "";
     }
 
+    function topValues(values, limit) {
+      const counts = new Map();
+      values.forEach((value) => {
+        if (!value) return;
+        counts.set(value, (counts.get(value) || 0) + 1);
+      });
+      return [...counts.entries()]
+        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+        .slice(0, limit)
+        .map(([label, count]) => ({ label, count }));
+    }
+
     function visibleTraps() {
       const query = state.trapSearch.trim().toLowerCase();
-      if (!query) return state.traps;
-      return state.traps.filter((trap) => trapSearchText(trap).includes(query));
+      const traps = query ? state.traps.filter((trap) => trapSearchText(trap).includes(query)) : state.traps;
+      return sortTraps(traps, state.trapSort);
+    }
+
+    function sortTraps(traps, sortKey) {
+      const sorted = [...traps];
+      sorted.sort((a, b) => {
+        if (sortKey === "severity") return severityRank(b.severity) - severityRank(a.severity) || byUpdatedDesc(a, b) || byTitle(a, b);
+        if (sortKey === "hits") return Number(b.hit_count || 0) - Number(a.hit_count || 0) || byUpdatedDesc(a, b) || byTitle(a, b);
+        if (sortKey === "category") return byText(a.category, b.category) || byTitle(a, b);
+        if (sortKey === "title") return byTitle(a, b);
+        return byUpdatedDesc(a, b) || byTitle(a, b);
+      });
+      return sorted;
+    }
+
+    function sortLabel(sortKey) {
+      return sortKey === "severity" ? "severity first"
+        : sortKey === "hits" ? "hits first"
+        : sortKey === "category" ? "category sort"
+        : sortKey === "title" ? "title sort"
+        : "recent first";
+    }
+
+    function byUpdatedDesc(a, b) {
+      return byText(b.updated_at || b.created_at || "", a.updated_at || a.created_at || "");
+    }
+
+    function byTitle(a, b) {
+      return byText(a.title, b.title);
+    }
+
+    function byText(a, b) {
+      return String(a || "").localeCompare(String(b || ""));
+    }
+
+    function severityRank(severity) {
+      return severity === "critical" ? 4 : severity === "error" ? 3 : severity === "warning" ? 2 : severity === "info" ? 1 : 0;
     }
 
     function trapSearchText(trap) {
@@ -829,6 +1114,38 @@ export const WEB_INDEX_HTML = `<!doctype html>
 
     function trapKey(trap) {
       return trap.scope + ":" + trap.id;
+    }
+
+    function bindTrapJumpButtons() {
+      document.querySelectorAll("[data-view-trap-scope][data-view-trap-id]").forEach((button) => {
+        if (button.dataset.jumpBound === "true") return;
+        button.dataset.jumpBound = "true";
+        button.addEventListener("click", async (event) => {
+          event.stopPropagation();
+          const id = Number.parseInt(button.dataset.viewTrapId, 10);
+          if (!button.dataset.viewTrapScope || !Number.isInteger(id)) return;
+          await jumpToTrap(button.dataset.viewTrapScope, id);
+        });
+      });
+    }
+
+    async function jumpToTrap(scope, id) {
+      const key = scope + ":" + id;
+      state.mainView = "library";
+      state.candidateId = null;
+      state.trapSearch = "";
+      state.trapFilters = { scope, status: "all", category: "", module: "", owner: "" };
+      state.trapKey = key;
+      renderMainViewButtons();
+      await loadTraps();
+      if (state.traps.some((trap) => trapKey(trap) === key)) {
+        state.trapKey = key;
+        renderTrapResults();
+        renderTrapDetail();
+        showStatus("Opened trap #" + id);
+      } else {
+        showStatus("Trap #" + id + " is not in the current library", true);
+      }
     }
 
     function renderCandidateViewTabs(pendingCount, reviewedCount) {
@@ -992,6 +1309,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
         \${renderDetailActions(candidate, disabled)}
       \`;
       bindDetailActions(candidate);
+      bindTrapJumpButtons();
     }
 
     function renderReviewNotice(candidate) {
@@ -1005,6 +1323,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
           <div class="meta">
             <span class="pill accepted">\${escapeHtml(review.label)}</span>
             <span class="pill">\${escapeHtml(review.trap_status)}</span>
+            <button type="button" class="ghost" data-view-trap-scope="\${escapeAttr(review.scope)}" data-view-trap-id="\${escapeAttr(review.trap_id)}">View trap</button>
           </div>
           <div class="subtle">\${escapeHtml(review.trap_title)}</div>
         </div></div>\`;
@@ -1020,7 +1339,11 @@ export const WEB_INDEX_HTML = `<!doctype html>
 
     function renderDetailActions(candidate, disabled) {
       if (candidate.status !== "proposed") {
-        return \`<div class="actions"><span class="pill \${reviewCssClass(candidate)}">\${escapeHtml(reviewLabel(candidate))}</span></div>\`;
+        const review = candidate.review;
+        const viewTrap = review?.status === "accepted"
+          ? \`<button type="button" data-view-trap-scope="\${escapeAttr(review.scope)}" data-view-trap-id="\${escapeAttr(review.trap_id)}">View trap</button>\`
+          : "";
+        return \`<div class="actions"><span class="pill \${reviewCssClass(candidate)}">\${escapeHtml(reviewLabel(candidate))}</span>\${viewTrap}</div>\`;
       }
       return \`<div class="actions">
         <button id="save" class="primary" \${disabled}>Save</button>
@@ -1142,6 +1465,8 @@ export const WEB_INDEX_HTML = `<!doctype html>
         renderActiveView();
         if (state.mainView === "library") {
           await loadTraps();
+        } else if (state.mainView === "insights") {
+          await loadInsightTraps();
         } else {
           await loadCandidates();
         }
@@ -1168,6 +1493,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
         state.candidateId = null;
         state.trapKey = null;
         state.trapDetails = {};
+        state.insightTraps = [];
         el("project-path").value = "";
         renderProjects();
         await loadSessions();

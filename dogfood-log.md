@@ -31,6 +31,22 @@ Note:
 
 ## Observations
 
+## 2026-05-31 - Web Library follow-ups
+
+Task: Add Review-to-Library trap navigation, Library sorting, and a standalone Insights view.
+Query: web review library view trap sorting insights
+Mode: hybrid
+
+Top results:
+1. #2 Legacy home-scoped project trap - partially applicable reminder to keep frontend requests centralized through the existing web `api()` helper.
+2. #3 Applicability filters must normalize absolute paths and empty scope fields - relevant warning not to duplicate or weaken module/owner filtering while adding Library sorting and Insights aggregation.
+3. No third result.
+
+Judgment: useful_hit
+Action changed: yes
+Promote: no
+Note: Keep this iteration on top of the existing web API helper and returned trap JSON; defer backend search/pagination rather than adding a second filtering path.
+
 ## 2026-05-30 - Web Trap Library MVP
 
 Task: Add a read-only web Trap Library view with filters, full trap details, and lightweight growth insight summaries.
