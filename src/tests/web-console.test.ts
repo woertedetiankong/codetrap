@@ -261,6 +261,40 @@ describe("web API", () => {
       trap_id: acceptedPayload.trap_id,
       trap_present: false,
     });
+
+    const cleaned = await api(handler, "/api/session/cleanup", {
+      method: "POST",
+      body: { projectRoot: project, sessionId },
+    });
+    expect(cleaned.status).toBe(200);
+    const cleanedPayload = await cleaned.json();
+    expect(cleanedPayload).toMatchObject({
+      removed_count: 1,
+      removed_candidate_ids: ["cand-001"],
+      candidates: [],
+    });
+  });
+
+  test("deletes sessions through the web API", async () => {
+    const home = tempHome();
+    const project = tempProjectDir("codetrap-web-session-delete-");
+    addWebProject(project, home);
+    const { sessionId } = seedCandidateSession(project, 1, home);
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+
+    const deleted = await api(handler, "/api/session/delete", {
+      method: "POST",
+      body: { projectRoot: project, sessionId },
+    });
+    expect(deleted.status).toBe(200);
+    expect(await deleted.json()).toMatchObject({
+      success: true,
+      session_id: sessionId,
+      deleted: true,
+    });
+
+    const list = await api(handler, `/api/sessions?project=${encodeURIComponent(project)}`);
+    expect((await list.json()).sessions).toEqual([]);
   });
 });
 

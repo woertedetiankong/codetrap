@@ -63,6 +63,11 @@ export type SessionRejectRequest = SessionCandidateRequest & {
   reason?: string;
 };
 
+export type SessionPruneRequest = {
+  olderThanDays: number;
+  apply: boolean;
+};
+
 export type SessionNoteStdin = {
   isTTY: boolean;
   read: () => string;
@@ -205,6 +210,15 @@ export function sessionRejectRequestFromArgs(positionals: string[], args: RawArg
   };
 }
 
+export function sessionPruneRequestFromArgs(args: RawArgs): SessionPruneRequest {
+  const olderThan = stringOption(args, "older_than", "older-than");
+  if (!olderThan) throw new Error("--older-than is required.");
+  return {
+    olderThanDays: parseDurationDays(olderThan),
+    apply: flagPresent(args, "apply"),
+  };
+}
+
 function stringOption(args: RawArgs, ...keys: string[]): string | undefined {
   for (const key of keys) {
     const value = args[key];
@@ -280,6 +294,14 @@ function jsonObjectOption(args: RawArgs, key: string): Record<string, unknown> |
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Invalid --${key}: ${message}`);
   }
+}
+
+function parseDurationDays(value: string): number {
+  const match = value.trim().match(/^(\d+)\s*(d|day|days)?$/i);
+  if (!match) throw new Error(`Invalid duration: ${value}. Use a value like 90d.`);
+  const days = Number.parseInt(match[1], 10);
+  if (!Number.isInteger(days) || days <= 0) throw new Error(`Invalid duration: ${value}. Use a positive day count.`);
+  return days;
 }
 
 function requiredPositional(positionals: string[], index: number, name: string): string {

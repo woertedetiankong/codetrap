@@ -22,7 +22,7 @@ codetrap 当前已经具备稳定的踩坑记忆核心：
 -> 用户确认后保存到 traps.db
 ```
 
-截至 2026-05-24，v1 CLI 闭环已经落地：`session start/note/status/list/show/notes/close/candidates/candidate/accept/reject`、explicit candidate note extraction、deterministic quality scorer、candidate conflict check、`--accept-anyway`、`--supersedes`、accepted candidate 写入 `traps.db` 并挂 session evidence。2026-05-26 的产品决策是：普通 failure/test_failure/correction/review notes 不再通过 fallback 模板自动生成候选；需要候选时由用户或 agent 明确写出 `Title/Context/Mistake/Fix` 结构。MCP session tools、playbook export、review/staleness/prune 仍属于后续阶段。
+截至 2026-05-31，v1 CLI 闭环已经落地：`session start/note/status/list/show/notes/close/candidates/candidate/accept/reject/delete/prune/cleanup`、explicit candidate note extraction、deterministic quality scorer、candidate conflict check、`--accept-anyway`、`--supersedes`、accepted candidate 写入 `traps.db` 并挂 session evidence。2026-05-26 的产品决策是：普通 failure/test_failure/correction/review notes 不再通过 fallback 模板自动生成候选；需要候选时由用户或 agent 明确写出 `Title/Context/Mistake/Fix` 结构。MCP session tools、playbook export、review/staleness 仍属于后续阶段。
 
 ## 2. 一句话目标
 
@@ -537,6 +537,9 @@ codetrap session candidates [<id>] [--json]
 codetrap session candidate <candidate-id> [--session id] [--json]
 codetrap session accept <candidate-id> [--session id] [--edit-json json] [--accept-anyway] [--supersedes id] [--json]
 codetrap session reject <candidate-id> [--session id] [--reason text] [--json]
+codetrap session cleanup [<id>] --deleted-trap-candidates [--json]
+codetrap session delete <id> [--json]
+codetrap session prune --older-than 90d [--apply] [--json]
 ```
 
 ### 7.2 v2 命令
@@ -675,11 +678,12 @@ codetrap session capture --from-review review.md
 - `session show` 默认展示 recap 摘要，不展示完整 notes。
 - `session notes` 才输出完整 implementation notes。
 - `review --since` 默认只读最近 N 个 recap 和 accepted trap metadata。
-- 提供 prune/archive：
+- 提供 delete/prune/cleanup：
 
 ```bash
-codetrap session archive <id>
-codetrap session prune --older-than 90d
+codetrap session delete <id>
+codetrap session prune --older-than 90d --apply
+codetrap session cleanup <id> --deleted-trap-candidates
 ```
 
 ## 12. 安全和隐私

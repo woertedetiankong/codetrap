@@ -1,11 +1,15 @@
 import type { CandidateTrap } from "../domain/session";
 import { buildTrapInput } from "../domain/trap";
+import type { Scope } from "./constants";
 import type { TrapOperations } from "./trap-operations";
 import { findCandidateConflicts, type CandidateConflict } from "./session-conflicts";
 import type {
   AcceptCandidateResult,
   AddSessionNoteArgs,
   CloseSessionResult,
+  DeleteSessionResult,
+  PruneSessionsResult,
+  RemoveSessionCandidatesResult,
   SessionStore,
   StartSessionArgs,
 } from "./session-store";
@@ -28,6 +32,12 @@ export type SessionRejectRequest = {
   candidateId: string;
   sessionId?: string;
   reason?: string | null;
+};
+
+export type SessionPruneRequest = {
+  olderThanDays: number;
+  apply: boolean;
+  now?: Date;
 };
 
 export type SessionConflictResult = {
@@ -155,6 +165,29 @@ export class SessionOperations {
       reason: request.reason,
     });
   }
+
+  deleteSession(sessionId: string): DeleteSessionResult {
+    return this.sessions.deleteSession(sessionId);
+  }
+
+  pruneSessions(request: SessionPruneRequest): PruneSessionsResult {
+    const now = request.now ?? new Date();
+    const cutoff = new Date(now.getTime() - request.olderThanDays * 24 * 60 * 60 * 1000);
+    return this.sessions.pruneSessions({ cutoff, dryRun: !request.apply });
+  }
+
+  cleanupDeletedTrapCandidates(sessionId?: string): RemoveSessionCandidatesResult {
+    const document = this.sessions.candidateDocument(sessionId);
+    const missingCandidateIds = document.candidates
+      .filter((candidate) => candidate.status === "accepted")
+      .filter((candidate) => {
+        const trapId = candidate.accepted_trap_id;
+        if (trapId === undefined) return true;
+        return !this.traps.getTrapDetails(trapId, acceptedScope(candidate));
+      })
+      .map((candidate) => candidate.id);
+    return this.sessions.removeCandidates(sessionId, missingCandidateIds);
+  }
 }
 
 function candidateWithTrapEdits(candidate: CandidateTrap, edit: Record<string, unknown> | undefined): CandidateTrap {
@@ -207,6 +240,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function candidateRelatedFiles(candidate: CandidateTrap): string[] {
   return uniqueStrings(candidate.evidence.flatMap((evidence) => evidence.related_files ?? []));
+}
+
+function acceptedScope(candidate: CandidateTrap): Scope {
+  return candidate.accepted_scope ?? (candidate.trap.scope === "global" ? "global" : "project");
 }
 
 function uniqueStrings(values: string[]): string[] {

@@ -160,7 +160,7 @@ codetrap/
 | `repair-scope` | Move legacy mis-scoped project traps into the current project (dry-run by default, `--apply` to mutate, `--json`) |
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires JINA_API_KEY) |
-| `session` | Start a development session, append notes, promote explicit structured trap notes into candidates, and accept/reject candidates |
+| `session` | Start a development session, append notes, promote explicit structured trap notes into candidates, accept/reject candidates, and clean up session files |
 | `web` | Start the local review and trap library console |
 | `serve` | Start MCP server |
 
@@ -179,6 +179,14 @@ codetrap session accept cand-001
 ```
 
 `session accept` writes the confirmed lesson through `TrapOperations`, attaches session evidence, and checks similar active traps before saving. `--edit-json` is applied before the conflict check, so edits to scope/module/title/tags/path globs affect both the saved trap and conflict detection. If a possible conflict is found, the candidate keeps its edited trap shape and conflict diagnostics; use `--accept-anyway` to keep both traps or `--supersedes <trap-id>` to preserve lifecycle history.
+
+Session maintenance commands keep temporary files from becoming stale context:
+
+```bash
+codetrap session cleanup <session-id> --deleted-trap-candidates
+codetrap session delete <session-id>
+codetrap session prune --older-than 90d --apply
+```
 
 ## Agent Integration
 

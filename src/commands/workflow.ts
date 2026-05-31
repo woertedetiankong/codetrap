@@ -45,6 +45,7 @@ import {
   sessionIdRequestFromArgs,
   sessionListRequestFromArgs,
   sessionNoteRequestFromArgs,
+  sessionPruneRequestFromArgs,
   sessionRejectRequestFromArgs,
   sessionShowRequestFromArgs,
   sessionStartRequestFromArgs,
@@ -420,8 +421,14 @@ async function cmdSession(args: string[], store: TrapStore, trapOperations: Trap
         return cmdSessionAccept(rest, sessions);
       case "reject":
         return cmdSessionReject(rest, sessions);
+      case "delete":
+        return cmdSessionDelete(rest, sessions);
+      case "prune":
+        return cmdSessionPrune(rest, sessions);
+      case "cleanup":
+        return cmdSessionCleanup(rest, sessions);
       default:
-        return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|candidates|candidate|accept|reject>");
+        return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|candidates|candidate|accept|reject|delete|prune|cleanup>");
     }
   } catch (error) {
     return errorFrom(error);
@@ -583,6 +590,45 @@ function cmdSessionReject(args: string[], sessions: SessionOperations): CommandR
   };
   if (opts.json !== undefined) return jsonResult(payload);
   return textResult(`Rejected ${rejected.candidate.id}.`);
+}
+
+function cmdSessionDelete(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const request = sessionShowRequestFromArgs(positionals);
+  const result = sessions.deleteSession(request.sessionId);
+  const payload = { success: result.deleted, ...result };
+  if (opts.json !== undefined) return jsonResult(payload);
+  return textResult(`Deleted session ${result.session_id}.`);
+}
+
+function cmdSessionPrune(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts } = parseArgs(args);
+  const result = sessions.pruneSessions(sessionPruneRequestFromArgs(opts));
+  if (opts.json !== undefined) return jsonResult(result);
+  const verb = result.dry_run ? "Would delete" : "Deleted";
+  const lines = [`${verb} ${result.dry_run ? result.sessions.length : result.deleted_count} session(s) older than ${result.cutoff}.`];
+  if (result.dry_run && result.sessions.length > 0) {
+    lines.push("Run with --apply to delete them.");
+  }
+  lines.push(...result.sessions.map((session) => `- ${session.id} [${session.status}] ${session.goal}`));
+  return textResult(lines.join("\n"));
+}
+
+function cmdSessionCleanup(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  if (opts["deleted-trap-candidates"] === undefined && opts.deleted_trap_candidates === undefined) {
+    return errorResult("Usage: codetrap session cleanup [session-id] --deleted-trap-candidates [--json]");
+  }
+  const request = sessionIdRequestFromArgs(positionals);
+  const result = sessions.cleanupDeletedTrapCandidates(request.sessionId);
+  const payload = {
+    success: true,
+    session_id: result.session.id,
+    removed_count: result.removed_count,
+    removed_candidate_ids: result.removed_candidate_ids,
+  };
+  if (opts.json !== undefined) return jsonResult(payload);
+  return textResult(`Removed ${result.removed_count} deleted-trap candidate(s) from session ${result.session.id}.`);
 }
 
 function formatStatsText(stats: ReturnType<TrapOperations["getStats"]>): string {

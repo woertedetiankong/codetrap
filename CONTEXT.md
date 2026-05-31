@@ -85,6 +85,12 @@ Session store owns session file layout and project-local session state under `.c
 
 `src/lib/session-store.ts` reads and writes active session state, session index entries, session metadata, implementation notes, recaps, and candidate documents. It does not write confirmed Traps; that behavior belongs to Session Operations through Trap Operations.
 
+### Session Maintenance
+
+Session maintenance is the cleanup path for temporary Session files after their durable Trap value has been accepted, rejected, deleted, or aged out.
+
+`SessionOperations` owns the public maintenance semantics for deleting a Session, pruning old closed Sessions, and cleaning accepted Candidate Traps whose confirmed Trap was later deleted. `SessionStore` owns the file-layout changes: removing session directories, updating `index.json`, clearing `active.json`, rewriting candidate documents, and regenerating recaps. CLI and web adapters should call these operations instead of editing `.codetrap/sessions/` directly.
+
 ### Command Request
 
 Command request is the normalized input shape shared by CLI and MCP before calling Trap Operations.
@@ -212,6 +218,12 @@ The MCP server is optimized for AI tool use.
 - Tool calls may pass `cwd` so project scope resolves from the target workspace; without `cwd`, the server falls back to its startup cwd.
 - MCP `get_trap` does not increment `hit_count`; the counter currently reflects CLI `show` usage.
 - `TrapStore.hit(id)` follows the same project-first fallback as `get(id)` when no scope is provided. Passing an explicit scope restricts the hit update to that scope.
+
+### Web Console
+
+The web console is a local review surface for Projects, Sessions, Candidate Traps, the Trap Library, and Growth Insights. It is not the canonical agent interface; CLI JSON remains the primary Agent API.
+
+`src/web/static.ts` owns the HTML/CSS shell. Browser behavior lives in `src/web/client-script.ts`, and display strings live in `src/web/client-text.ts` so locale coverage and UI shell generation can be tested without reading the full static artifact. Server routes in `src/web/server.ts` should stay thin adapters over `TrapOperations` and `SessionOperations`.
 
 ## Design Direction
 

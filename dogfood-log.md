@@ -31,6 +31,22 @@ Note:
 
 ## Observations
 
+## 2026-05-31 - Architecture deepening
+
+Task: Deepen the web console UI module and add session maintenance operations.
+Query: web console UI module locale library insights static.ts architecture refactor; session maintenance archive prune delete candidate cleanup index active recap
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - relevant only as a reminder to preserve module/owner filtering behavior while touching web trap filters.
+2. #5 Set SQLite busy_timeout before lock-prone startup pragmas - not applicable; this work does not change SQLite connection startup.
+3. No third result.
+
+Judgment: useful_hit
+Action changed: yes
+Promote: no
+Note: Keep search/list applicability untouched except through existing web trap filter calls; focus session cleanup in `SessionOperations`/`SessionStore` rather than manual `.codetrap/sessions` edits.
+
 ## 2026-05-31 - Web locale toggle
 
 Task: Add a Chinese/English language toggle to the web console.

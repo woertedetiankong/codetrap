@@ -233,6 +233,31 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     return jsonResponse({ success: true, session: result.session, candidate: result.candidate });
   }
 
+  if (request.method === "POST" && url.pathname === "/api/session/delete") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const result = sessionOperations(projectRoot, context.home).sessions.deleteSession(
+      stringBodyField(body, "sessionId")
+    );
+    return jsonResponse({ success: true, ...result });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/session/cleanup") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const ops = sessionOperations(projectRoot, context.home);
+    const result = ops.sessions.cleanupDeletedTrapCandidates(
+      optionalStringBodyField(body, "sessionId")
+    );
+    return jsonResponse({
+      success: true,
+      session: result.session,
+      removed_count: result.removed_count,
+      removed_candidate_ids: result.removed_candidate_ids,
+      candidates: webCandidates(result.candidates, ops.traps),
+    });
+  }
+
   throw new WebHttpError(404, "Not found");
 }
 

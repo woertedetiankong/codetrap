@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -22,6 +23,7 @@ import {
   recapSummary,
   RECAP_FILE,
   sessionIndexEntry,
+  sessionRelativeDir,
   SESSION_FILE,
   SESSION_INDEX_FILE,
   sessionRelativeFile,
@@ -58,6 +60,33 @@ export interface AcceptCandidateResult {
   scope: string;
   evidence_id: number | null;
   superseded_id: number | null;
+}
+
+export interface DeleteSessionResult {
+  session_id: string;
+  deleted: boolean;
+  active_cleared: boolean;
+  session_dir: string;
+}
+
+export interface PruneSessionsResult {
+  cutoff: string;
+  dry_run: boolean;
+  deleted_count: number;
+  sessions: {
+    id: string;
+    goal: string;
+    status: string;
+    created_at: string;
+    closed_at: string | null;
+  }[];
+}
+
+export interface RemoveSessionCandidatesResult {
+  session: SessionMetadata;
+  removed_count: number;
+  removed_candidate_ids: string[];
+  candidates: CandidateTrap[];
 }
 
 export class SessionStore {
@@ -335,6 +364,78 @@ export class SessionStore {
     return { session, candidate };
   }
 
+  removeCandidates(sessionId: string | undefined, candidateIds: string[]): RemoveSessionCandidatesResult {
+    const resolvedSessionId = this.resolveSessionId(sessionId);
+    const session = this.requireSession(resolvedSessionId);
+    const removeIds = new Set(uniqueStrings(candidateIds));
+    if (removeIds.size === 0) {
+      return {
+        session,
+        removed_count: 0,
+        removed_candidate_ids: [],
+        candidates: this.readCandidateDocument(session.id).candidates,
+      };
+    }
+
+    const document = this.readCandidateDocument(session.id);
+    const removed = document.candidates.filter((candidate) => removeIds.has(candidate.id));
+    const candidates = document.candidates.filter((candidate) => !removeIds.has(candidate.id));
+    if (removed.length > 0) {
+      this.writeCandidateDocument(session.id, candidates);
+      this.refreshSessionSummaries(session.id);
+    }
+
+    return {
+      session,
+      removed_count: removed.length,
+      removed_candidate_ids: removed.map((candidate) => candidate.id),
+      candidates,
+    };
+  }
+
+  deleteSession(id: string): DeleteSessionResult {
+    this.requireSession(id);
+    const active_cleared = this.readActive()?.active_session_id === id;
+    rmSync(this.sessionDir(id), { recursive: true, force: true });
+    this.removeIndexEntry(id);
+    if (active_cleared) this.clearActive();
+    return {
+      session_id: id,
+      deleted: true,
+      active_cleared,
+      session_dir: sessionRelativeDir(id),
+    };
+  }
+
+  pruneSessions(args: { cutoff: Date; dryRun?: boolean }): PruneSessionsResult {
+    const cutoffTime = args.cutoff.getTime();
+    const candidates = this.readIndex().sessions
+      .filter((entry) => entry.status === "closed")
+      .filter((entry) => {
+        const closedAt = entry.closed_at ? Date.parse(entry.closed_at) : Date.parse(entry.created_at);
+        return Number.isFinite(closedAt) && closedAt < cutoffTime;
+      });
+
+    if (!args.dryRun) {
+      for (const session of candidates) {
+        this.deleteSession(session.id);
+      }
+    }
+
+    return {
+      cutoff: args.cutoff.toISOString(),
+      dry_run: args.dryRun ?? false,
+      deleted_count: args.dryRun ? 0 : candidates.length,
+      sessions: candidates.map((session) => ({
+        id: session.id,
+        goal: session.goal,
+        status: session.status,
+        created_at: session.created_at,
+        closed_at: session.closed_at,
+      })),
+    };
+  }
+
   readNotes(id: string): SessionNote[] {
     return parseSessionNotes(this.readOptionalText(this.notesPath(id)) ?? "");
   }
@@ -433,6 +534,13 @@ export class SessionStore {
     const entry = sessionIndexEntry(session, notes, candidates, summary ?? existing?.summary ?? null);
     const sessions = [entry, ...index.sessions.filter((item) => item.id !== session.id)]
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    writeFileSync(this.indexPath(), `${JSON.stringify({ version: SESSION_VERSION, sessions } satisfies SessionIndexDocument, null, 2)}\n`);
+  }
+
+  private removeIndexEntry(id: string): void {
+    this.ensureSessionsDir();
+    const index = this.readIndex();
+    const sessions = index.sessions.filter((entry) => entry.id !== id);
     writeFileSync(this.indexPath(), `${JSON.stringify({ version: SESSION_VERSION, sessions } satisfies SessionIndexDocument, null, 2)}\n`);
   }
 
