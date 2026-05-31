@@ -38,9 +38,13 @@ export class TrapStore {
   private readonly scopes: ScopedRepositoryContext;
   private readonly embedder?: EmbeddingProvider;
 
-  constructor(cwd: string, embedder: EmbeddingProvider | undefined = createDefaultEmbeddingProvider()) {
+  constructor(
+    cwd: string,
+    embedder: EmbeddingProvider | undefined = createDefaultEmbeddingProvider(),
+    private readonly home?: string
+  ) {
     this.embedder = embedder;
-    this.scopes = new ScopedRepositoryContext(cwd, embedder);
+    this.scopes = new ScopedRepositoryContext(cwd, embedder, home);
   }
 
   add(input: TrapInput): { id: number; scope: string } {
@@ -247,7 +251,7 @@ export class TrapStore {
   }
 
   forCwd(cwd: string): TrapStore {
-    return new TrapStore(cwd, this.embedder);
+    return new TrapStore(cwd, this.embedder, this.home);
   }
 
   async ensureEmbeddings(opts: { scope?: string; category?: string; limit?: number; force?: boolean; batchSize?: number } = {}): Promise<{

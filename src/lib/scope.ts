@@ -5,14 +5,14 @@ import { defaultScopePathResolver, resolveScopePath, ScopePathResolver } from ".
 
 export { resolveScopePath, ScopePathResolver } from "./scope-path";
 
-export function getGlobalDir(): string {
-  const dir = defaultScopePathResolver.join(homedir(), CODETRAP_DIR);
+export function getGlobalDir(homeDir = homedir()): string {
+  const dir = defaultScopePathResolver.join(homeDir, CODETRAP_DIR);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-export function getGlobalDB(): string {
-  return defaultScopePathResolver.join(getGlobalDir(), TRAPS_DB_FILE);
+export function getGlobalDB(homeDir = homedir()): string {
+  return defaultScopePathResolver.join(getGlobalDir(homeDir), TRAPS_DB_FILE);
 }
 
 export function findProjectRoot(

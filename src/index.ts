@@ -47,7 +47,7 @@ function showHelp(): void {
   console.log("  supersede_trap        Mark one trap as superseded by another");
   console.log("  embed                 Generate embeddings for semantic search");
   console.log("  session               Record implementation notes and capture candidate traps");
-  console.log("  web                   Start local candidate review console");
+  console.log("  web                   Start local review and trap library console");
   console.log("  export                Export traps as JSON");
   console.log("  import <file.json>    Import traps from JSON");
   console.log("  stats                 Show statistics");
@@ -68,9 +68,9 @@ function showHelp(): void {
   console.log("  --no-rerank             Disable query-aware search reranking");
   console.log("  --ranking-signals       Include search ranking diagnostics in JSON cards");
   console.log("  --batch-size <n>        Embedding generation batch size");
-  console.log("  --project <path>        Project path for web review console");
-  console.log("  --host <host>           Host for web review console (default 127.0.0.1)");
-  console.log("  --port <n>              Port for web review console (default 4737)");
+  console.log("  --project <path>        Project path for web console");
+  console.log("  --host <host>           Host for web console (default 127.0.0.1)");
+  console.log("  --port <n>              Port for web console (default 4737)");
   console.log("  --json                  JSON output for search/show/list/stats/doctor; JSON input for add/edit");
   console.log("  --output-json           JSON output for add/edit when --json is used as input");
   console.log("  --from-project-path <path>  Source project path for scope repair/migration");

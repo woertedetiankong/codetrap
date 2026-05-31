@@ -7,23 +7,26 @@ export const WEB_INDEX_HTML = `<!doctype html>
   <style>
     :root {
       color-scheme: light;
-      --bg: #f7f3ea;
-      --panel: #fbfaf6;
-      --panel-2: #fffdf8;
+      --bg: #f3f6f2;
+      --panel: #f8faf7;
+      --panel-2: #fcfdfb;
       --surface: #ffffff;
-      --surface-hover: #f1eee6;
-      --line: #ded8cc;
-      --line-soft: #e9e4da;
-      --text: #20201d;
-      --muted: #716b62;
-      --faint: #9c9488;
+      --surface-hover: #edf3ef;
+      --line: #d6dfd9;
+      --line-soft: #e5ebe6;
+      --text: #20231f;
+      --muted: #657069;
+      --faint: #8b968e;
       --accent: #0f766e;
       --accent-soft: #d9f1eb;
       --accent-strong: #064e46;
+      --ink: #1f2937;
+      --violet: #4f46e5;
+      --violet-soft: #e6e8ff;
       --danger: #b42318;
       --warn: #9a6700;
       --ok: #18794e;
-      --shadow: rgba(36, 31, 24, 0.08);
+      --shadow: rgba(28, 39, 32, 0.08);
     }
 
     * { box-sizing: border-box; }
@@ -31,8 +34,8 @@ export const WEB_INDEX_HTML = `<!doctype html>
     body {
       margin: 0;
       background:
-        radial-gradient(circle at 18% 0%, rgba(13, 148, 136, 0.08), transparent 32%),
-        linear-gradient(180deg, #fbf8f1 0%, var(--bg) 44%, #f3eee4 100%);
+        linear-gradient(120deg, rgba(15, 118, 110, 0.08), transparent 34%),
+        linear-gradient(180deg, #fbfcf8 0%, var(--bg) 48%, #eef3ef 100%);
       color: var(--text);
       font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
       letter-spacing: 0;
@@ -56,7 +59,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     }
 
     button:hover { background: var(--surface-hover); border-color: #c9c1b4; }
-    button.primary { background: #20201d; color: #fffdf8; border-color: #20201d; }
+    button.primary { background: var(--ink); color: #fffdf8; border-color: var(--ink); }
     button.danger { border-color: color-mix(in srgb, var(--danger), var(--line) 35%); color: var(--danger); }
     button.ghost { background: transparent; }
     button:disabled { color: var(--faint); border-color: var(--line); cursor: not-allowed; opacity: 0.62; }
@@ -138,6 +141,14 @@ export const WEB_INDEX_HTML = `<!doctype html>
       gap: 10px;
     }
 
+    .rail-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     .title {
       font-weight: 650;
       text-transform: none;
@@ -195,6 +206,9 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .pill.accepted-missing { color: var(--warn); border-color: color-mix(in srgb, var(--warn), var(--line) 55%); }
     .pill.rejected { color: var(--danger); border-color: color-mix(in srgb, var(--danger), var(--line) 55%); }
     .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn), var(--line) 55%); }
+    .pill.scope { color: var(--violet); background: var(--violet-soft); border-color: color-mix(in srgb, var(--violet), var(--line) 55%); }
+    .pill.critical { color: var(--danger); border-color: color-mix(in srgb, var(--danger), var(--line) 42%); }
+    .pill.error { color: var(--warn); border-color: color-mix(in srgb, var(--warn), var(--line) 42%); }
 
     .detail-body {
       display: grid;
@@ -212,6 +226,110 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .field { display: grid; gap: 5px; }
     .field.full { grid-column: 1 / -1; }
     label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+
+    .library-tools {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(255, 255, 255, 0.54);
+    }
+
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .filter-grid .wide { grid-column: 1 / -1; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.72);
+      min-height: 74px;
+      display: grid;
+      align-content: space-between;
+      gap: 6px;
+    }
+
+    .metric-value {
+      font-size: 21px;
+      line-height: 1;
+      font-weight: 720;
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    .trap-rows {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .text-block {
+      display: grid;
+      gap: 6px;
+    }
+
+    .text-block .content {
+      white-space: pre-wrap;
+      line-height: 1.48;
+      overflow-wrap: anywhere;
+    }
+
+    .code-block {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #17201d;
+      color: #eef6f0;
+      overflow: auto;
+      line-height: 1.45;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .detail-kv {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .kv {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px;
+      background: rgba(255, 255, 255, 0.62);
+      overflow-wrap: anywhere;
+    }
+
+    .kv-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .kv-value { font-size: 13px; }
+
+    .hidden { display: none !important; }
 
     .section {
       border-top: 1px solid var(--line-soft);
@@ -266,7 +384,15 @@ export const WEB_INDEX_HTML = `<!doctype html>
 
     @media (max-width: 1060px) {
       .shell { grid-template-columns: 1fr; overflow: auto; }
-      .rail, .queue, .detail { min-height: 520px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .rail { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .queue, .detail { min-height: 520px; border-right: 0; border-bottom: 1px solid var(--line); }
+    }
+
+    @media (max-width: 520px) {
+      .bar { align-items: flex-start; flex-direction: column; }
+      .rail-actions { justify-content: flex-start; }
+      .filter-grid, .summary-grid, .detail-kv { grid-template-columns: 1fr; }
+      .project-form { grid-template-columns: 1fr auto; }
     }
   </style>
 </head>
@@ -278,7 +404,13 @@ export const WEB_INDEX_HTML = `<!doctype html>
           <div class="title">codetrap</div>
           <div class="subtle">review console</div>
         </div>
-        <button class="ghost" id="refresh" title="Refresh">Refresh</button>
+        <div class="rail-actions">
+          <div class="segmented" aria-label="Main view">
+            <button type="button" class="active" data-main-view="review">Review</button>
+            <button type="button" data-main-view="library">Library</button>
+          </div>
+          <button class="ghost" id="refresh" title="Refresh">Refresh</button>
+        </div>
       </div>
       <form class="project-form" id="project-form">
         <input id="project-path" placeholder="/path/to/project">
@@ -296,10 +428,10 @@ export const WEB_INDEX_HTML = `<!doctype html>
     <section class="queue">
       <div class="bar">
         <div>
-          <div class="title">candidate inbox</div>
+          <div class="title" id="queue-title">candidate inbox</div>
           <div class="subtle" id="queue-meta">no project selected</div>
         </div>
-        <div class="segmented" aria-label="Candidate view">
+        <div class="segmented" id="candidate-tabs" aria-label="Candidate view">
           <button type="button" class="active" data-candidate-view="inbox">Inbox</button>
           <button type="button" data-candidate-view="reviewed">Reviewed</button>
         </div>
@@ -312,7 +444,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     <section class="detail">
       <div class="bar">
         <div>
-          <div class="title">candidate detail</div>
+          <div class="title" id="detail-title">candidate detail</div>
           <div class="subtle" id="detail-meta">select a candidate</div>
         </div>
       </div>
@@ -327,9 +459,16 @@ export const WEB_INDEX_HTML = `<!doctype html>
     if (token) sessionStorage.setItem("codetrap-token", token);
 
     const state = {
+      mainView: "review",
       projects: [],
       sessions: [],
       candidates: [],
+      traps: [],
+      trapKey: null,
+      trapDetails: {},
+      trapLoadingKey: null,
+      trapSearch: "",
+      trapFilters: { scope: "", status: "", category: "", module: "", owner: "" },
       projectRoot: null,
       sessionId: null,
       candidateId: null,
@@ -369,15 +508,16 @@ export const WEB_INDEX_HTML = `<!doctype html>
       state.options = data.options;
       renderProjects();
       await loadSessions();
+      renderActiveView();
     }
 
     async function loadSessions() {
       if (!state.projectRoot) {
         state.sessions = [];
         state.candidates = [];
+        state.traps = [];
         renderSessions();
-        renderCandidates();
-        renderDetail();
+        renderActiveView();
         return;
       }
       const data = await api("/api/sessions?project=" + encodeURIComponent(state.projectRoot));
@@ -386,21 +526,72 @@ export const WEB_INDEX_HTML = `<!doctype html>
         state.sessionId = state.sessions[0]?.id || null;
       }
       renderSessions();
-      await loadCandidates();
+      if (state.mainView === "library") {
+        await loadTraps();
+      } else {
+        await loadCandidates();
+      }
     }
 
     async function loadCandidates() {
       if (!state.projectRoot || !state.sessionId) {
         state.candidates = [];
-        renderCandidates();
-        renderDetail();
+        if (state.mainView === "review") {
+          renderCandidates();
+          renderDetail();
+        }
         return;
       }
       const data = await api("/api/candidates?project=" + encodeURIComponent(state.projectRoot) + "&session=" + encodeURIComponent(state.sessionId));
       state.candidates = data.candidates;
       selectVisibleCandidate();
-      renderCandidates();
-      renderDetail();
+      if (state.mainView === "review") {
+        renderCandidates();
+        renderDetail();
+      }
+    }
+
+    async function loadTraps() {
+      if (!state.projectRoot) {
+        state.traps = [];
+        state.trapKey = null;
+        if (state.mainView === "library") {
+          renderLibrary();
+          renderTrapDetail();
+        }
+        return;
+      }
+      const params = new URLSearchParams({ project: state.projectRoot });
+      Object.entries(state.trapFilters).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+      });
+      const data = await api("/api/traps?" + params.toString());
+      state.traps = data.traps;
+      state.trapDetails = {};
+      selectVisibleTrap();
+      if (state.mainView === "library") {
+        renderLibrary();
+        renderTrapDetail();
+      }
+    }
+
+    function renderActiveView() {
+      document.querySelectorAll("[data-main-view]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.mainView === state.mainView);
+      });
+      if (state.mainView === "library") {
+        el("queue-title").textContent = "trap library";
+        el("detail-title").textContent = "trap detail";
+        el("candidate-tabs").classList.add("hidden");
+        renderLibrary();
+        renderTrapDetail();
+      } else {
+        el("queue-title").textContent = "candidate inbox";
+        el("detail-title").textContent = "candidate detail";
+        el("candidate-tabs").classList.remove("hidden");
+        renderCandidates();
+        renderDetail();
+      }
     }
 
     function renderProjects() {
@@ -415,6 +606,8 @@ export const WEB_INDEX_HTML = `<!doctype html>
           state.projectRoot = button.dataset.project;
           state.sessionId = null;
           state.candidateId = null;
+          state.trapKey = null;
+          state.trapDetails = {};
           renderProjects();
           await loadSessions();
         });
@@ -443,6 +636,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     }
 
     function renderCandidates() {
+      if (state.mainView !== "review") return;
       const pendingCount = state.candidates.filter((candidate) => candidate.status === "proposed").length;
       const reviewedCount = state.candidates.length - pendingCount;
       const sorted = sortedVisibleCandidates();
@@ -470,6 +664,173 @@ export const WEB_INDEX_HTML = `<!doctype html>
       });
     }
 
+    function renderLibrary() {
+      if (state.mainView !== "library") return;
+      el("queue-title").textContent = "trap library";
+      el("candidate-tabs").classList.add("hidden");
+      el("candidates").innerHTML = \`
+        <div class="library-tools">
+          <input id="trap-search" placeholder="Search title, context, mistake, fix, tags" value="\${escapeAttr(state.trapSearch)}">
+          <div class="filter-grid">
+            \${filterSelect("trap-filter-scope", "Scope", state.trapFilters.scope, [["", "project + global"], ...state.options.scopes.map((scope) => [scope, scope])])}
+            \${filterSelect("trap-filter-status", "Status", state.trapFilters.status, [["", "active"], ["all", "all"], ["archived", "archived"], ["superseded", "superseded"]])}
+            \${filterSelect("trap-filter-category", "Category", state.trapFilters.category, [["", "all categories"], ...state.options.categories.map((category) => [category, category])])}
+            <div class="field"><label for="trap-filter-module">Module</label><input id="trap-filter-module" value="\${escapeAttr(state.trapFilters.module)}" placeholder="any module"></div>
+            <div class="field"><label for="trap-filter-owner">Owner</label><input id="trap-filter-owner" value="\${escapeAttr(state.trapFilters.owner)}" placeholder="any owner"></div>
+            <button type="button" id="trap-filter-clear" class="ghost">Clear filters</button>
+          </div>
+        </div>
+        <div id="library-insights"></div>
+        <div id="trap-rows" class="trap-rows"></div>
+      \`;
+      bindLibraryControls();
+      renderTrapResults();
+    }
+
+    function filterSelect(id, label, value, options) {
+      return \`<div class="field"><label for="\${id}">\${label}</label><select id="\${id}">\${options.map(([optionValue, optionLabel]) => \`<option value="\${escapeAttr(optionValue)}" \${optionValue === value ? "selected" : ""}>\${escapeHtml(optionLabel)}</option>\`).join("")}</select></div>\`;
+    }
+
+    function bindLibraryControls() {
+      const search = el("trap-search");
+      if (search) {
+        search.addEventListener("input", () => {
+          state.trapSearch = search.value;
+          state.trapKey = null;
+          renderTrapResults();
+          renderTrapDetail();
+        });
+      }
+      bindTrapFilter("trap-filter-scope", "scope");
+      bindTrapFilter("trap-filter-status", "status");
+      bindTrapFilter("trap-filter-category", "category");
+      bindTrapFilter("trap-filter-module", "module");
+      bindTrapFilter("trap-filter-owner", "owner");
+      const clear = el("trap-filter-clear");
+      if (clear) {
+        clear.addEventListener("click", async () => {
+          state.trapFilters = { scope: "", status: "", category: "", module: "", owner: "" };
+          state.trapSearch = "";
+          state.trapKey = null;
+          await loadTraps();
+        });
+      }
+    }
+
+    function bindTrapFilter(id, key) {
+      const control = el(id);
+      if (!control) return;
+      const apply = async () => {
+        state.trapFilters[key] = control.value.trim();
+        state.trapKey = null;
+        await loadTraps();
+      };
+      control.addEventListener("change", apply);
+      control.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          apply();
+        }
+      });
+    }
+
+    function renderTrapResults() {
+      const rows = el("trap-rows");
+      const insights = el("library-insights");
+      if (!rows || !insights) return;
+      const visible = visibleTraps();
+      selectVisibleTrap(visible);
+      el("queue-meta").textContent = state.projectRoot
+        ? visible.length + " shown / " + state.traps.length + " loaded"
+        : "no project selected";
+      insights.innerHTML = renderInsights(visible);
+      rows.innerHTML = visible.length ? visible.map((trap) => \`
+        <button class="row \${trapKey(trap) === state.trapKey ? "active" : ""}" data-trap-key="\${escapeAttr(trapKey(trap))}">
+          <span class="row-title">\${escapeHtml(trap.title)}</span>
+          <span class="meta">
+            <span class="pill \${escapeAttr(trap.severity)}">\${escapeHtml(trap.severity)}</span>
+            <span class="pill">\${escapeHtml(trap.category)}</span>
+            <span class="pill scope">\${escapeHtml(trap.scope)}</span>
+            <span class="pill \${escapeAttr(trap.status)}">\${escapeHtml(trap.status)}</span>
+            <span class="pill">\${Number(trap.hit_count || 0)} hits</span>
+          </span>
+          <span class="subtle">\${escapeHtml(trap.updated_at || trap.created_at || "")}</span>
+        </button>
+      \`).join("") : '<div class="empty">No traps match this view</div>';
+      document.querySelectorAll("[data-trap-key]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.trapKey = button.dataset.trapKey;
+          renderTrapResults();
+          renderTrapDetail();
+        });
+      });
+    }
+
+    function renderInsights(traps) {
+      const serious = traps.filter((trap) => trap.severity === "error" || trap.severity === "critical").length;
+      const topCategory = topValue(traps.map((trap) => trap.category));
+      const topModule = topValue(traps.map((trap) => trap.module).filter(Boolean));
+      const topTag = topValue(traps.flatMap((trap) => trap.tags || []));
+      const mostViewed = [...traps].sort((a, b) => Number(b.hit_count || 0) - Number(a.hit_count || 0))[0];
+      return \`<div class="summary-grid">
+        \${metric("Loaded traps", traps.length || "0", "current filters")}
+        \${metric("High severity", serious || "0", "error + critical")}
+        \${metric("Top category", topCategory || "-", "repeated pattern")}
+        \${metric("Focus area", topModule || topTag || "-", topModule ? "module" : "tag")}
+        \${metric("Most viewed", mostViewed ? "#" + mostViewed.id : "-", mostViewed ? mostViewed.title : "no hits yet")}
+      </div>\`;
+    }
+
+    function metric(label, value, detail) {
+      return \`<div class="metric"><div class="metric-label">\${escapeHtml(label)}</div><div class="metric-value">\${escapeHtml(value)}</div><div class="subtle">\${escapeHtml(detail)}</div></div>\`;
+    }
+
+    function topValue(values) {
+      const counts = new Map();
+      values.forEach((value) => {
+        if (!value) return;
+        counts.set(value, (counts.get(value) || 0) + 1);
+      });
+      return [...counts.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0]?.[0] || "";
+    }
+
+    function visibleTraps() {
+      const query = state.trapSearch.trim().toLowerCase();
+      if (!query) return state.traps;
+      return state.traps.filter((trap) => trapSearchText(trap).includes(query));
+    }
+
+    function trapSearchText(trap) {
+      return [
+        trap.title,
+        trap.category,
+        trap.severity,
+        trap.status,
+        trap.scope,
+        trap.context,
+        trap.mistake,
+        trap.fix,
+        trap.module,
+        trap.owner,
+        ...(trap.tags || []),
+        ...(trap.path_globs || []),
+      ].filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function selectVisibleTrap(traps = visibleTraps()) {
+      if (!traps.some((trap) => trapKey(trap) === state.trapKey)) {
+        state.trapKey = traps[0] ? trapKey(traps[0]) : null;
+      }
+    }
+
+    function currentTrap() {
+      return state.traps.find((trap) => trapKey(trap) === state.trapKey) || null;
+    }
+
+    function trapKey(trap) {
+      return trap.scope + ":" + trap.id;
+    }
+
     function renderCandidateViewTabs(pendingCount, reviewedCount) {
       document.querySelectorAll("[data-candidate-view]").forEach((button) => {
         const view = button.dataset.candidateView;
@@ -495,7 +856,100 @@ export const WEB_INDEX_HTML = `<!doctype html>
       }
     }
 
+    function renderTrapDetail() {
+      if (state.mainView !== "library") return;
+      const trap = currentTrap();
+      el("detail-title").textContent = "trap detail";
+      el("detail-meta").textContent = trap ? "#" + trap.id + " / " + trap.scope : "select a trap";
+      if (!trap) {
+        el("detail").innerHTML = '<div class="empty">No trap selected</div>';
+        return;
+      }
+
+      const key = trapKey(trap);
+      const details = state.trapDetails[key];
+      if (!details) {
+        el("detail").innerHTML = '<div class="empty">Loading trap details</div>';
+        ensureTrapDetail(trap);
+        return;
+      }
+
+      const t = details.trap;
+      el("detail").innerHTML = \`
+        <div class="scroll">
+          <div class="section">
+            <div class="meta">
+              <span class="pill scope">\${escapeHtml(details.scope)}</span>
+              <span class="pill \${escapeAttr(t.severity)}">\${escapeHtml(t.severity)}</span>
+              <span class="pill">\${escapeHtml(t.category)}</span>
+              <span class="pill \${escapeAttr(t.status)}">\${escapeHtml(t.status)}</span>
+              <span class="pill">\${Number(t.hit_count || 0)} hits</span>
+            </div>
+            <div class="title" style="font-size:16px">\${escapeHtml(t.title)}</div>
+          </div>
+          <div class="section">
+            \${textBlock("Context", t.context)}
+            \${textBlock("Mistake", t.mistake)}
+            \${textBlock("Fix", t.fix)}
+          </div>
+          <div class="section">
+            <div class="detail-kv">
+              \${kv("Tags", (t.tags || []).join(", ") || "-")}
+              \${kv("Path globs", (t.path_globs || []).join(", ") || "-")}
+              \${kv("Module", t.module || "-")}
+              \${kv("Owner", t.owner || "-")}
+              \${kv("Created", t.created_at || "-")}
+              \${kv("Updated", t.updated_at || "-")}
+              \${kv("State key", t.state_key || "-")}
+              \${kv("Supersedes", t.supersedes_id ?? "-")}
+              \${kv("Valid from", t.valid_from || "-")}
+              \${kv("Valid until", t.valid_until || "-")}
+            </div>
+          </div>
+          \${renderTrapCode("Before", t.before_code)}
+          \${renderTrapCode("After", t.after_code)}
+          <div class="section">
+            <div class="title">evidence</div>
+            \${details.evidence.length ? details.evidence.map(renderEvidence).join("") : '<div class="empty">No evidence</div>'}
+          </div>
+        </div>
+      \`;
+    }
+
+    async function ensureTrapDetail(trap) {
+      const key = trapKey(trap);
+      if (state.trapDetails[key] || state.trapLoadingKey === key) return;
+      state.trapLoadingKey = key;
+      try {
+        const params = new URLSearchParams({
+          project: state.projectRoot,
+          id: String(trap.id),
+          scope: trap.scope,
+        });
+        state.trapDetails[key] = await api("/api/trap?" + params.toString());
+        if (state.mainView === "library" && state.trapKey === key) renderTrapDetail();
+      } catch (error) {
+        showStatus(error.message, true);
+      } finally {
+        if (state.trapLoadingKey === key) state.trapLoadingKey = null;
+      }
+    }
+
+    function textBlock(label, value) {
+      return \`<div class="text-block"><label>\${escapeHtml(label)}</label><div class="content">\${escapeHtml(value || "-")}</div></div>\`;
+    }
+
+    function kv(label, value) {
+      return \`<div class="kv"><div class="kv-label">\${escapeHtml(label)}</div><div class="kv-value">\${escapeHtml(value)}</div></div>\`;
+    }
+
+    function renderTrapCode(label, value) {
+      if (!value) return "";
+      return \`<div class="section"><div class="title">\${escapeHtml(label)}</div><pre class="code-block"><code>\${escapeHtml(value)}</code></pre></div>\`;
+    }
+
     function renderDetail() {
+      if (state.mainView !== "review") return;
       const candidate = state.candidates.find((item) => item.id === state.candidateId);
       el("detail-meta").textContent = candidate ? candidate.id + " / " + candidate.status : "select a candidate";
       if (!candidate) {
@@ -680,6 +1134,19 @@ export const WEB_INDEX_HTML = `<!doctype html>
     }
 
     el("refresh").addEventListener("click", refreshAll);
+    document.querySelectorAll("[data-main-view]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        state.mainView = button.dataset.mainView;
+        state.candidateId = null;
+        state.trapKey = null;
+        renderActiveView();
+        if (state.mainView === "library") {
+          await loadTraps();
+        } else {
+          await loadCandidates();
+        }
+      });
+    });
     document.querySelectorAll("[data-candidate-view]").forEach((button) => {
       button.addEventListener("click", () => {
         state.candidateView = button.dataset.candidateView;
@@ -699,6 +1166,8 @@ export const WEB_INDEX_HTML = `<!doctype html>
         state.projectRoot = data.project.root;
         state.sessionId = null;
         state.candidateId = null;
+        state.trapKey = null;
+        state.trapDetails = {};
         el("project-path").value = "";
         renderProjects();
         await loadSessions();

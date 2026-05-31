@@ -25,6 +25,14 @@ A trap is one recorded mistake pattern. It has:
 
 The canonical TypeScript definitions and schema metadata live in `src/domain/trap.ts`.
 
+### Trap Library
+
+The trap library is the user-facing collection of confirmed Traps available for review and reflection.
+
+### Growth Insight
+
+A growth insight is a summary derived from confirmed Traps that helps a user notice repeated mistake patterns.
+
 ### Trap Evidence
 
 Trap evidence records where a trap came from. A trap can have multiple evidence entries with `source_type`, optional `source_ref`, `observed_at`, `related_files`, and `note`.

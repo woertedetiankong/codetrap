@@ -15,14 +15,14 @@ export type ScopeContext = {
   global_db: string;
 };
 
-export function createScopeContext(cwd = process.cwd()): ScopeContext {
-  const resolvedCwd = resolveScopePath(cwd);
-  const projectRoot = findProjectRoot(resolvedCwd);
+export function createScopeContext(cwd = process.cwd(), home?: string): ScopeContext {
+  const resolvedCwd = resolveScopePath(cwd, home ?? cwd);
+  const projectRoot = findProjectRoot(resolvedCwd, home);
   return {
     cwd: resolvedCwd,
     project_root: projectRoot,
     project_db: projectRoot ? scopePath.join(projectRoot, CODETRAP_DIR, TRAPS_DB_FILE) : null,
-    global_db: getGlobalDB(),
+    global_db: getGlobalDB(home),
   };
 }
 
@@ -36,8 +36,8 @@ export class ScopedRepositoryContext {
   private globalRepository?: TrapRepository;
   private projectRepository?: TrapRepository;
 
-  constructor(cwd = process.cwd(), private readonly embedder?: EmbeddingProvider) {
-    this.context = createScopeContext(cwd);
+  constructor(cwd = process.cwd(), private readonly embedder?: EmbeddingProvider, private readonly home?: string) {
+    this.context = createScopeContext(cwd, home);
   }
 
   hasProject(): boolean {
@@ -94,7 +94,7 @@ export class ScopedRepositoryContext {
 
   private globalRepo(): TrapRepository {
     if (!this.globalRepository) {
-      this.globalRepository = new TrapRepository(openGlobal(), this.embedder);
+      this.globalRepository = new TrapRepository(openGlobal(this.home), this.embedder);
     }
     return this.globalRepository;
   }

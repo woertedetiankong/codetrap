@@ -31,6 +31,22 @@ Note:
 
 ## Observations
 
+## 2026-05-30 - Web Trap Library MVP
+
+Task: Add a read-only web Trap Library view with filters, full trap details, and lightweight growth insight summaries.
+Query: web trap library readonly list
+Mode: hybrid
+
+Top results:
+1. #2 Legacy home-scoped project trap - partially applicable reminder to keep frontend requests centralized, though this repo uses the local `api()` helper rather than a named fetchWrapper.
+2. #3 Applicability filters must normalize absolute paths and empty scope fields - relevant to `/api/traps` filter behavior and regression coverage for module/owner filters.
+3. No third result.
+
+Judgment: useful_hit
+Action changed: yes
+Promote: no
+Note: The search confirmed that API tests should cover module/owner filters and that new browser calls should use the existing request helper.
+
 ## 2026-05-30 - CLI UX next-action hints
 
 Task: Improve agent-facing UX hints for doctor, embed, and dogfood eval report without changing core search semantics.

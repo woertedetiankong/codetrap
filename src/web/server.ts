@@ -5,6 +5,7 @@ import { TrapStore } from "../lib/store";
 import { TrapOperations } from "../lib/trap-operations";
 import { SessionOperations, type SessionAcceptResult } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
+import { toListJson, toTrapDetailsJson } from "../lib/output-json";
 import { WEB_INDEX_HTML } from "./static";
 import {
   addWebProject,
@@ -89,6 +90,9 @@ export function createWebHandler(context: WebContext): (request: Request) => Pro
       if (url.pathname === "/" || url.pathname === "/index.html") {
         return htmlResponse(WEB_INDEX_HTML);
       }
+      if (url.pathname === "/favicon.ico") {
+        return new Response(null, { status: 204 });
+      }
       return jsonResponse({ error: "Not found" }, 404);
     } catch (error) {
       const status = error instanceof WebHttpError || error instanceof WebPayloadError ? error.status : 500;
@@ -141,14 +145,14 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
 
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const projectRoot = projectRootFromQuery(url, context);
-    const sessions = sessionOperations(projectRoot).sessions.listSessions({ status: "all", limit: 100 });
+    const sessions = sessionOperations(projectRoot, context.home).sessions.listSessions({ status: "all", limit: 100 });
     return jsonResponse({ project_root: projectRoot, sessions });
   }
 
   if (request.method === "GET" && url.pathname === "/api/candidates") {
     const projectRoot = projectRootFromQuery(url, context);
     const sessionId = requiredQuery(url, "session");
-    const ops = sessionOperations(projectRoot);
+    const ops = sessionOperations(projectRoot, context.home);
     const session = ops.sessions.showSession(sessionId).session;
     const document = ops.sessions.candidateDocument(sessionId);
     return jsonResponse({
@@ -158,19 +162,36 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     });
   }
 
+  if (request.method === "GET" && url.pathname === "/api/traps") {
+    const projectRoot = projectRootFromQuery(url, context);
+    const groups = trapOperations(projectRoot, context.home).listTraps({
+      category: optionalQuery(url, "category"),
+      scope: optionalQuery(url, "scope"),
+      status: optionalQuery(url, "status"),
+      module: optionalQuery(url, "module"),
+      owner: optionalQuery(url, "owner"),
+      limit: optionalNumberQuery(url, "limit"),
+      offset: optionalNumberQuery(url, "offset"),
+    });
+    return jsonResponse({
+      project_root: projectRoot,
+      traps: toListJson(groups),
+    });
+  }
+
   if (request.method === "GET" && url.pathname === "/api/trap") {
     const projectRoot = projectRootFromQuery(url, context);
     const id = numberQuery(url, "id");
     const scope = url.searchParams.get("scope") ?? undefined;
-    const details = trapOperations(projectRoot).getTrapDetails(id, scope);
+    const details = trapOperations(projectRoot, context.home).getTrapDetails(id, scope);
     if (!details) throw new WebHttpError(404, `Trap #${id} not found.`);
-    return jsonResponse(details);
+    return jsonResponse(toTrapDetailsJson(details));
   }
 
   if (request.method === "POST" && url.pathname === "/api/candidate/save") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    const result = sessionOperations(projectRoot).sessions.saveCandidate({
+    const result = sessionOperations(projectRoot, context.home).sessions.saveCandidate({
       candidateId: stringBodyField(body, "candidateId"),
       sessionId: optionalStringBodyField(body, "sessionId"),
       edit: recordBodyField(body, "trap"),
@@ -181,7 +202,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
   if (request.method === "POST" && url.pathname === "/api/candidate/accept") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    const result = await sessionOperations(projectRoot).sessions.acceptCandidate({
+    const result = await sessionOperations(projectRoot, context.home).sessions.acceptCandidate({
       candidateId: stringBodyField(body, "candidateId"),
       sessionId: optionalStringBodyField(body, "sessionId"),
       acceptAnyway: booleanBodyField(body, "acceptAnyway"),
@@ -204,7 +225,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
   if (request.method === "POST" && url.pathname === "/api/candidate/reject") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    const result = sessionOperations(projectRoot).sessions.rejectCandidate({
+    const result = sessionOperations(projectRoot, context.home).sessions.rejectCandidate({
       candidateId: stringBodyField(body, "candidateId"),
       sessionId: optionalStringBodyField(body, "sessionId"),
       reason: optionalStringBodyField(body, "reason"),
@@ -215,16 +236,16 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
   throw new WebHttpError(404, "Not found");
 }
 
-function sessionOperations(projectRoot: string): { traps: TrapOperations; sessions: SessionOperations } {
-  const traps = trapOperations(projectRoot);
+function sessionOperations(projectRoot: string, home?: string): { traps: TrapOperations; sessions: SessionOperations } {
+  const traps = trapOperations(projectRoot, home);
   return {
     traps,
     sessions: new SessionOperations(new SessionStore(projectRoot), traps),
   };
 }
 
-function trapOperations(projectRoot: string): TrapOperations {
-  return new TrapOperations(new TrapStore(projectRoot));
+function trapOperations(projectRoot: string, home?: string): TrapOperations {
+  return new TrapOperations(new TrapStore(projectRoot, undefined, home));
 }
 
 function webCandidates(candidates: CandidateTrap[], traps: TrapOperations): WebCandidate[] {
@@ -351,6 +372,19 @@ function numberQuery(url: URL, key: string): number {
   const value = Number.parseInt(requiredQuery(url, key), 10);
   if (Number.isNaN(value)) throw new WebHttpError(400, `${key} must be a number.`);
   return value;
+}
+
+function optionalQuery(url: URL, key: string): string | undefined {
+  const value = url.searchParams.get(key)?.trim();
+  return value || undefined;
+}
+
+function optionalNumberQuery(url: URL, key: string): number | undefined {
+  const value = optionalQuery(url, key);
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new WebHttpError(400, `${key} must be a positive integer.`);
+  return parsed;
 }
 
 function stringBodyField(body: Record<string, unknown>, key: string): string {

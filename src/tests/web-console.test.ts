@@ -51,11 +51,95 @@ describe("web API", () => {
     expect((await ok.json()).projects[0].root).toBe(project);
   });
 
+  test("lists trap library entries across project and global scopes with filters", async () => {
+    const home = tempHome();
+    const project = tempProjectDir("codetrap-web-library-");
+    addWebProject(project, home);
+    const traps = new TrapOperations(new TrapStore(project, undefined, home));
+
+    const projectActive = traps.addTrap({ ...trapInput({
+      title: "Use the shared web API helper",
+      category: "api",
+      scope: "project",
+      context: "When adding browser requests in the web console.",
+      mistake: "Calling fetch directly scatters authorization and error handling.",
+      fix: "Use the console api helper for every request.",
+      tags: ["web", "api"],
+      severity: "error",
+      module: "web",
+      owner: "local",
+      path_globs: ["src/web/**"],
+    }) });
+    traps.addTrapEvidence(projectActive.id, {
+      source_type: "manual",
+      related_files: ["src/web/static.ts"],
+      note: "Seeded from the web library test.",
+    }, "project");
+
+    const archived = traps.addTrap({ ...trapInput({
+      title: "Old review console behavior",
+      category: "api",
+      scope: "project",
+      context: "When reviewing superseded web console behavior.",
+      mistake: "Treating old review-only behavior as current.",
+      fix: "Keep archived behavior out of the default library.",
+      tags: ["web"],
+      severity: "warning",
+      module: "web",
+      owner: "local",
+    }) });
+    traps.archiveTrap(archived.id, "project");
+
+    traps.addTrap({ ...trapInput({
+      title: "Global review habit",
+      category: "convention",
+      scope: "global",
+      context: "When reviewing traps across projects.",
+      mistake: "Assuming only project-local lessons matter.",
+      fix: "Include global lessons in the default library view.",
+      tags: ["review"],
+      severity: "critical",
+      module: "habits",
+      owner: "local",
+    }) });
+
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+
+    const unauthorized = await handler(new Request(`http://codetrap.local/api/traps?project=${encodeURIComponent(project)}`));
+    expect(unauthorized.status).toBe(401);
+
+    const list = await api(handler, `/api/traps?project=${encodeURIComponent(project)}`);
+    expect(list.status).toBe(200);
+    const payload = await list.json();
+    expect(payload.traps.map((trap: any) => [trap.scope, trap.title])).toEqual([
+      ["project", "Use the shared web API helper"],
+      ["global", "Global review habit"],
+    ]);
+    expect(payload.traps[0].tags).toEqual(["web", "api"]);
+    expect(payload.traps.some((trap: any) => trap.title === "Old review console behavior")).toBe(false);
+
+    const projectOnly = await api(handler, `/api/traps?project=${encodeURIComponent(project)}&scope=project`);
+    expect((await projectOnly.json()).traps.map((trap: any) => trap.scope)).toEqual(["project"]);
+
+    const allProject = await api(handler, `/api/traps?project=${encodeURIComponent(project)}&scope=project&status=all`);
+    expect((await allProject.json()).traps.map((trap: any) => trap.status).sort()).toEqual(["active", "archived"]);
+
+    const filtered = await api(handler, `/api/traps?project=${encodeURIComponent(project)}&category=api&module=web&owner=local`);
+    expect((await filtered.json()).traps.map((trap: any) => trap.title)).toEqual(["Use the shared web API helper"]);
+
+    const detail = await api(handler, `/api/trap?project=${encodeURIComponent(project)}&id=${projectActive.id}&scope=project`);
+    expect(detail.status).toBe(200);
+    const detailPayload = await detail.json();
+    expect(detailPayload.trap.tags).toEqual(["web", "api"]);
+    expect(detailPayload.trap.path_globs).toEqual(["src/web/**"]);
+    expect(detailPayload.evidence[0].related_files).toEqual(["src/web/static.ts"]);
+  });
+
   test("saves candidate drafts and resets conflict diagnostics", async () => {
     const home = tempHome();
     const project = tempProjectDir("codetrap-web-save-");
     addWebProject(project, home);
-    const { sessionId, traps } = seedCandidateSession(project, 1);
+    const { sessionId, traps } = seedCandidateSession(project, 1, home);
     traps.addTrap({ ...existingProjectTrap() });
 
     const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
@@ -107,7 +191,7 @@ describe("web API", () => {
     const home = tempHome();
     const project = tempProjectDir("codetrap-web-actions-");
     addWebProject(project, home);
-    const { sessionId, traps } = seedCandidateSession(project, 3);
+    const { sessionId, traps } = seedCandidateSession(project, 3, home);
     traps.addTrap({ ...existingProjectTrap() });
     const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
 
@@ -153,7 +237,7 @@ describe("web API", () => {
     const home = tempHome();
     const project = tempProjectDir("codetrap-web-reviewed-");
     addWebProject(project, home);
-    const { sessionId, traps } = seedCandidateSession(project, 1);
+    const { sessionId, traps } = seedCandidateSession(project, 1, home);
     const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
 
     const initial = await api(handler, `/api/candidates?project=${encodeURIComponent(project)}&session=${encodeURIComponent(sessionId)}`);
@@ -180,8 +264,8 @@ describe("web API", () => {
   });
 });
 
-function seedCandidateSession(project: string, count: number): { sessionId: string; traps: TrapOperations } {
-  const traps = new TrapOperations(new TrapStore(project));
+function seedCandidateSession(project: string, count: number, home: string): { sessionId: string; traps: TrapOperations } {
+  const traps = new TrapOperations(new TrapStore(project, undefined, home));
   const sessions = new SessionOperations(new SessionStore(project), traps);
   const session = sessions.startSession({
     goal: "review web candidates",
@@ -208,7 +292,7 @@ function seedCandidateSession(project: string, count: number): { sessionId: stri
 }
 
 function existingProjectTrap() {
-  return buildTrapInput({
+  return trapInput({
     title: "Use stable API client",
     category: "api",
     scope: "project",
@@ -219,6 +303,10 @@ function existingProjectTrap() {
     severity: "error",
     module: "api",
   });
+}
+
+function trapInput(args: Record<string, unknown>) {
+  return buildTrapInput(args);
 }
 
 function api(

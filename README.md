@@ -161,6 +161,7 @@ codetrap/
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires JINA_API_KEY) |
 | `session` | Start a development session, append notes, promote explicit structured trap notes into candidates, and accept/reject candidates |
+| `web` | Start the local review and trap library console |
 | `serve` | Start MCP server |
 
 ### Session Mode

@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { getGlobalDB, getProjectDB } from "../lib/scope";
 import { initSchema } from "./schema";
 
-let globalDB: Database | null = null;
+const globalDBs = new Map<string, Database>();
 const projectDBs = new Map<string, Database>();
 
 export function openDatabase(path = ":memory:"): Database {
@@ -11,12 +11,12 @@ export function openDatabase(path = ":memory:"): Database {
   return db;
 }
 
-export function openGlobal(): Database {
-  if (!globalDB) {
-    const path = getGlobalDB();
-    globalDB = openDatabase(path);
+export function openGlobal(home?: string): Database {
+  const path = getGlobalDB(home);
+  if (!globalDBs.has(path)) {
+    globalDBs.set(path, openDatabase(path));
   }
-  return globalDB;
+  return globalDBs.get(path)!;
 }
 
 export function openProject(root: string): Database {
