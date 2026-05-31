@@ -31,6 +31,22 @@ Note:
 
 ## Observations
 
+## 2026-05-31 - Web locale toggle
+
+Task: Add a Chinese/English language toggle to the web console.
+Query: web language toggle chinese english i18n static ui text
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: Implement as browser-only UI localization in `src/web/static.ts`; do not translate stored trap content or change CLI/MCP contracts.
+
 ## 2026-05-31 - Web Library follow-ups
 
 Task: Add Review-to-Library trap navigation, Library sorting, and a standalone Insights view.
