@@ -1,4 +1,5 @@
 import { WEB_TEXT_JSON } from "./client-text";
+import { WEB_SHELL_CLIENT_SCRIPT } from "./client-shell";
 
 export function webClientScript(textJson = WEB_TEXT_JSON): string {
   return `    const qs = new URLSearchParams(location.search);
@@ -6,6 +7,8 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
     if (token) sessionStorage.setItem("codetrap-token", token);
     const savedLocale = localStorage.getItem("codetrap-locale");
     const initialLocale = savedLocale === "zh" ? "zh" : "en";
+    const savedSidebarCollapsed = localStorage.getItem("codetrap-sidebar-collapsed") === "true";
+    const savedQueueCollapsed = localStorage.getItem("codetrap-queue-collapsed") === "true";
 
     const TEXT = ${textJson};
 
@@ -28,12 +31,14 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       sessionId: null,
       candidateId: null,
       candidateView: "inbox",
+      sidebarCollapsed: savedSidebarCollapsed,
+      queueCollapsed: savedQueueCollapsed,
       options: { categories: [], severities: [], scopes: [] },
       conflicts: []
     };
 
     const el = (id) => document.getElementById(id);
-
+${WEB_SHELL_CLIENT_SCRIPT}
     function t(key, params = {}) {
       const text = TEXT[state.locale]?.[key] ?? TEXT.en[key] ?? key;
       return Object.entries(params).reduce((value, [name, replacement]) =>
@@ -65,6 +70,7 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       document.querySelectorAll("[data-locale]").forEach((button) => {
         button.classList.toggle("active", button.dataset.locale === state.locale);
       });
+      renderSidebarToggle();
     }
 
     function setLocale(locale) {
@@ -1046,6 +1052,12 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
     }
 
     el("refresh").addEventListener("click", refreshAll);
+    el("sidebar-toggle").addEventListener("click", () => {
+      setSidebarCollapsed(!state.sidebarCollapsed);
+    });
+    el("queue-toggle").addEventListener("click", () => {
+      setQueueCollapsed(!state.queueCollapsed);
+    });
     document.querySelectorAll("[data-locale]").forEach((button) => {
       button.addEventListener("click", () => setLocale(button.dataset.locale));
     });
@@ -1164,5 +1176,6 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       return escapeHtml(value);
     }
 
+    initShellResizers();
     refreshAll();`;
 }

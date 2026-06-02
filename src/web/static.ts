@@ -117,9 +117,10 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .shell {
       height: 100%;
       display: grid;
-      grid-template-columns: minmax(250px, 0.82fr) minmax(320px, 1fr) minmax(460px, 1.48fr);
+      grid-template-columns: minmax(250px, 0.82fr) 8px minmax(460px, 1.48fr) 8px minmax(320px, 1fr);
       gap: 0;
       overflow: hidden;
+      position: relative;
     }
 
     .rail, .queue, .detail {
@@ -129,9 +130,136 @@ export const WEB_INDEX_HTML = `<!doctype html>
       display: flex;
       flex-direction: column;
       backdrop-filter: blur(12px);
+      transition: box-shadow 140ms ease, transform 140ms ease, opacity 140ms ease;
     }
 
-    .detail { border-right: 0; background: var(--panel-2); }
+    .detail { background: var(--panel-2); }
+    .queue { border-right: 0; }
+
+    .shell.rail-collapsed .rail,
+    .shell.rail-collapsed [data-splitter="left"] {
+      display: none;
+    }
+
+    .shell.queue-collapsed .queue,
+    .shell.queue-collapsed [data-splitter="right"] {
+      display: none;
+    }
+
+    .shell.rail-collapsed {
+      grid-template-columns: minmax(460px, 1.48fr) 8px minmax(320px, 1fr);
+    }
+
+    .shell.queue-collapsed {
+      grid-template-columns: minmax(250px, 0.82fr) 8px minmax(460px, 1fr);
+    }
+
+    .shell.rail-collapsed.queue-collapsed {
+      grid-template-columns: minmax(460px, 1fr);
+    }
+
+    .shell.rail-collapsed.rail-peeking .rail,
+    .shell.queue-collapsed.queue-peeking .queue {
+      display: flex;
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      z-index: 11;
+      border: 1px solid var(--line-soft);
+      background: color-mix(in srgb, var(--panel), transparent 4%);
+      box-shadow: 0 18px 54px rgba(31, 43, 36, 0.18);
+    }
+
+    .shell.rail-collapsed.rail-peeking .rail {
+      left: 0;
+      width: min(330px, calc(100% - 72px));
+      animation: rail-peek-in 140ms ease-out;
+    }
+
+    .shell.queue-collapsed.queue-peeking .queue {
+      right: 0;
+      width: min(390px, calc(100% - 72px));
+      animation: queue-peek-in 140ms ease-out;
+    }
+
+    @keyframes rail-peek-in {
+      from { opacity: 0.72; transform: translateX(-18px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes queue-peek-in {
+      from { opacity: 0.72; transform: translateX(18px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .edge-reveal {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      z-index: 9;
+      width: 18px;
+      display: none;
+      pointer-events: none;
+    }
+
+    .edge-reveal-left { left: 0; }
+    .edge-reveal-right { right: 0; }
+
+    .shell.rail-collapsed .edge-reveal-left,
+    .shell.queue-collapsed .edge-reveal-right {
+      display: block;
+    }
+
+    .edge-reveal::after {
+      content: "";
+      position: absolute;
+      top: 14px;
+      bottom: 14px;
+      width: 2px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent), transparent 45%);
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+
+    .edge-reveal-left::after { left: 3px; }
+    .edge-reveal-right::after { right: 3px; }
+    .shell.rail-peeking .edge-reveal-left::after,
+    .shell.queue-peeking .edge-reveal-right::after,
+    .shell.rail-collapse-target [data-splitter="left"]::before,
+    .shell.queue-collapse-target [data-splitter="right"]::before {
+      opacity: 1;
+      background: color-mix(in srgb, var(--accent), transparent 70%);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent), transparent 40%);
+    }
+
+    .splitter {
+      min-height: 0;
+      position: relative;
+      background:
+        linear-gradient(90deg, transparent 0, transparent 3px, var(--line-soft) 3px, var(--line-soft) 4px, transparent 4px);
+      cursor: col-resize;
+      touch-action: none;
+    }
+
+    .splitter::before {
+      content: "";
+      position: absolute;
+      inset: 0 2px;
+      border-radius: 999px;
+      background: transparent;
+      transition: background 120ms ease, box-shadow 120ms ease;
+    }
+
+    .splitter:hover::before,
+    .splitter:focus-visible::before,
+    .splitter.dragging::before {
+      background: color-mix(in srgb, var(--accent), transparent 82%);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent), transparent 54%);
+    }
+
+    .splitter:focus-visible { outline: none; }
+    body.resizing-panes { cursor: col-resize; user-select: none; }
 
     .bar {
       min-height: 56px;
@@ -141,6 +269,98 @@ export const WEB_INDEX_HTML = `<!doctype html>
       align-items: center;
       justify-content: space-between;
       gap: 10px;
+    }
+
+    .bar-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .icon-button {
+      width: 34px;
+      min-width: 34px;
+      height: 34px;
+      min-height: 34px;
+      display: inline-grid;
+      place-items: center;
+      padding: 0;
+      border-radius: 8px;
+      color: var(--muted);
+    }
+
+    .shell-toggle {
+      position: absolute;
+      top: 12px;
+      z-index: 12;
+      width: 36px;
+      min-width: 36px;
+      height: 36px;
+      min-height: 36px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.82);
+      border-color: color-mix(in srgb, var(--line), var(--accent) 16%);
+      box-shadow: 0 1px 2px var(--shadow), 0 10px 28px rgba(31, 43, 36, 0.08);
+      backdrop-filter: blur(14px);
+    }
+
+    .shell-toggle-left { left: 12px; }
+    .shell-toggle-right { right: 12px; }
+
+    .shell-toggle:hover,
+    .shell-toggle.active {
+      background: #fffdf8;
+      border-color: color-mix(in srgb, var(--accent), var(--line) 34%);
+      box-shadow: 0 1px 2px var(--shadow), 0 12px 30px rgba(15, 118, 110, 0.12);
+    }
+
+    .rail > .bar { padding-left: 58px; }
+    .queue > .bar { padding-right: 58px; }
+    .shell.rail-collapsed .detail > .bar { padding-left: 58px; }
+    .shell.queue-collapsed .detail > .bar { padding-right: 58px; }
+
+    .icon-button:hover,
+    .icon-button.active {
+      color: var(--text);
+      border-color: color-mix(in srgb, var(--accent), var(--line) 45%);
+      background: #fffdf8;
+    }
+
+    .sidebar-toggle-icon {
+      width: 18px;
+      height: 16px;
+      position: relative;
+      border: 2px solid currentColor;
+      border-radius: 5px;
+    }
+
+    .sidebar-toggle-icon::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 6px;
+      width: 2px;
+      background: currentColor;
+      opacity: 0.72;
+    }
+
+    .sidebar-toggle.active .sidebar-toggle-icon::before {
+      opacity: 0.18;
+    }
+
+    .queue-toggle .sidebar-toggle-icon::before {
+      left: auto;
+      right: 6px;
+    }
+
+    .queue-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     .rail-actions {
@@ -449,6 +669,8 @@ export const WEB_INDEX_HTML = `<!doctype html>
 
     @media (max-width: 1060px) {
       .shell { grid-template-columns: 1fr; overflow: auto; }
+      .splitter { display: none; }
+      .sidebar-toggle { display: none; }
       .rail { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
       .queue, .detail { min-height: 520px; border-right: 0; border-bottom: 1px solid var(--line); }
     }
@@ -463,6 +685,14 @@ export const WEB_INDEX_HTML = `<!doctype html>
 </head>
 <body>
   <main class="shell">
+    <button type="button" class="icon-button sidebar-toggle shell-toggle shell-toggle-left" id="sidebar-toggle" aria-pressed="false" aria-label="Hide sidebar" title="Hide sidebar">
+      <span class="sidebar-toggle-icon" aria-hidden="true"></span>
+    </button>
+    <button type="button" class="icon-button sidebar-toggle queue-toggle shell-toggle shell-toggle-right" id="queue-toggle" aria-pressed="false" aria-label="Hide queue pane" title="Hide queue pane">
+      <span class="sidebar-toggle-icon" aria-hidden="true"></span>
+    </button>
+    <div class="edge-reveal edge-reveal-left" aria-hidden="true"></div>
+    <div class="edge-reveal edge-reveal-right" aria-hidden="true"></div>
     <aside class="rail">
       <div class="bar">
         <div>
@@ -495,21 +725,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
       </div>
     </aside>
 
-    <section class="queue">
-      <div class="bar">
-        <div>
-          <div class="title" id="queue-title">candidate inbox</div>
-          <div class="subtle" id="queue-meta">no project selected</div>
-        </div>
-        <div class="segmented" id="candidate-tabs" aria-label="Candidate view">
-          <button type="button" class="active" data-candidate-view="inbox">Inbox</button>
-          <button type="button" data-candidate-view="reviewed">Reviewed</button>
-        </div>
-      </div>
-      <div class="scroll">
-        <div class="stack" id="candidates"></div>
-      </div>
-    </section>
+    <div class="splitter" data-splitter="left" role="separator" aria-orientation="vertical" aria-label="Resize project and detail panes" tabindex="0"></div>
 
     <section class="detail">
       <div class="bar">
@@ -519,6 +735,28 @@ export const WEB_INDEX_HTML = `<!doctype html>
         </div>
       </div>
       <div class="detail-body" id="detail"></div>
+    </section>
+
+    <div class="splitter" data-splitter="right" role="separator" aria-orientation="vertical" aria-label="Resize detail and queue panes" tabindex="0"></div>
+
+    <section class="queue">
+      <div class="bar">
+        <div class="bar-title-group">
+          <div>
+            <div class="title" id="queue-title">candidate inbox</div>
+            <div class="subtle" id="queue-meta">no project selected</div>
+          </div>
+        </div>
+        <div class="queue-actions">
+          <div class="segmented" id="candidate-tabs" aria-label="Candidate view">
+            <button type="button" class="active" data-candidate-view="inbox">Inbox</button>
+            <button type="button" data-candidate-view="reviewed">Reviewed</button>
+          </div>
+        </div>
+      </div>
+      <div class="scroll">
+        <div class="stack" id="candidates"></div>
+      </div>
     </section>
   </main>
   <div class="status" id="status"></div>

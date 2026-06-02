@@ -31,6 +31,118 @@ Note:
 
 ## Observations
 
+## 2026-06-02 - Web drag-collapse edge reveal
+
+Task: Make the web console side panes feel Codex-like: drag to collapse at a threshold and hover the shell edge to reveal collapsed panes.
+Query: web pane drag collapse edge hover reveal sidebar queue splitter
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: Treat this as browser-only shell interaction behavior; keep web APIs and session/trap rendering untouched.
+
+## 2026-06-02 - Web right queue collapse after pane swap
+
+Task: Fix the right edge pane toggle after swapping the web console detail and queue panes.
+Query: web right pane collapse queue detail swapped layout
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: The bug was stale shell UI semantics after the pane order changed: the right edge toggle still collapsed the detail pane instead of the rightmost queue pane.
+
+## 2026-06-02 - Web middle/right pane swap
+
+Task: Swap the web console middle queue pane and right detail pane positions.
+Query: web layout middle right panel swap
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: Treat this as a shell layout change only; keep web API, Trap Library filtering, and session review behavior unchanged.
+
+## 2026-06-01 - Web edge pane toggles
+
+Task: Move the side-pane show/hide controls to Codex-style outer shell edges.
+Query: web sidebar toggle edge aligned codex style pane collapse button
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: Treat this as a visual refinement of the existing collapse behavior; keep storage keys and API behavior unchanged.
+
+## 2026-06-01 - Web right detail collapse
+
+Task: Add a Codex-style show/hide control for the right detail pane.
+Query: web right sidebar collapse detail pane hide show splitter localStorage
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: Extend the existing pane controls with a separate detail-pane collapsed state; keep right-pane hiding desktop-only.
+
+## 2026-06-01 - Web sidebar collapse
+
+Task: Add a Codex-style show/hide sidebar toggle to the web console.
+Query: web sidebar collapse hide show pane splitter localStorage
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: Implement as local browser UI state next to the existing pane layout state; keep API behavior unchanged.
+
+## 2026-06-01 - Web resizable panes
+
+Task: Add Codex-style horizontal resizing to the three-column web console.
+Query: web resizable grid splitter pointer drag localStorage
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: Implement as local browser UI state only; keep the existing web API and framework-free shell unchanged.
+
 ## 2026-05-31 - Architecture deepening
 
 Task: Deepen the web console UI module and add session maintenance operations.
@@ -62,6 +174,22 @@ Judgment: no_relevant_trap
 Action changed: no
 Promote: no
 Note: Implement as browser-only UI localization in `src/web/static.ts`; do not translate stored trap content or change CLI/MCP contracts.
+
+## 2026-06-01 - Architecture deepening refactor
+
+Task: Refactor Embedding runtime, Session review contract, and Web Console browser shell Modules after architecture review.
+Query: embedding provider session review web console refactor
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: The check did not surface prior traps for this architecture-deepening pass; proceed with source, tests, and CONTEXT.md as the authoritative guides.
 
 ## 2026-05-31 - Web Library follow-ups
 
