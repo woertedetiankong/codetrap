@@ -1,3 +1,4 @@
+import type { EmbeddingProfileSummary } from "../db/embedding-queries";
 import type { TrapStats } from "../db/repository";
 import {
   type Trap,
@@ -18,7 +19,12 @@ import {
   type EmbeddingRuntimeInput,
   type EmbeddingRuntimeStatus,
 } from "./embedding-runtime";
-import { loadCodetrapConfig } from "./config";
+import {
+  type ConfigWriteResult,
+  type EmbeddingSettings,
+  loadCodetrapConfig,
+  setCodetrapEmbeddingSettings,
+} from "./config";
 import { summarizeEmbeddingState, type EmbeddingStateSummary, type EmbeddingStatsResult } from "./embedding-health";
 import { normalizeScope, ScopedRepositoryContext, type ScopedRepository } from "./scope-context";
 import { importTrapArchive } from "./trap-archive";
@@ -41,6 +47,18 @@ export {
 
 export type { EmbeddingStateSummary };
 export type TrapEmbeddingStats = EmbeddingStatsResult;
+export type TrapEmbeddingProfiles = {
+  project: EmbeddingProfileSummary[] | null;
+  global: EmbeddingProfileSummary[] | null;
+};
+export type EmbeddingScopeStatus = EmbeddingStateSummary & {
+  profiles: EmbeddingProfileSummary[];
+};
+export type TrapEmbeddingStatus = {
+  runtime: EmbeddingRuntimeStatus;
+  project: EmbeddingScopeStatus | null;
+  global: EmbeddingScopeStatus | null;
+};
 
 export class TrapStore {
   private readonly scopes: ScopedRepositoryContext;
@@ -209,6 +227,34 @@ export class TrapStore {
     };
   }
 
+  embeddingProfiles(opts: { scope?: string } = {}): TrapEmbeddingProfiles {
+    const scope = opts.scope ? normalizeScope(opts.scope) : null;
+    const project = scope === "global"
+      ? null
+      : this.scopes.repositoryEntry("project")
+      ? this.scopes.repositoryFor("project").embeddingProfiles({ scope: "project" })
+      : null;
+    const global = scope === "project"
+      ? null
+      : this.scopes.repositoryFor("global").embeddingProfiles({ scope: "global" });
+    return { project, global };
+  }
+
+  async embeddingStatus(opts: { scope?: string } = {}): Promise<TrapEmbeddingStatus> {
+    const runtime = await this.embeddingRuntimeHealth();
+    const stats = this.embeddingStats(opts);
+    const profiles = this.embeddingProfiles(opts);
+    return {
+      runtime,
+      project: stats.project
+        ? { ...stats.project, profiles: profiles.project ?? [] }
+        : null,
+      global: stats.global
+        ? { ...stats.global, profiles: profiles.global ?? [] }
+        : null,
+    };
+  }
+
   diagnostics(): {
     mis_scoped_traps: {
       global_db_project_traps: Pick<Trap, "id" | "title" | "scope" | "project_path" | "status">[];
@@ -262,6 +308,10 @@ export class TrapStore {
 
   embeddingRuntimeHealth(): Promise<EmbeddingRuntimeStatus> {
     return this.embeddings.health();
+  }
+
+  configureEmbeddings(settings: EmbeddingSettings): ConfigWriteResult {
+    return setCodetrapEmbeddingSettings(settings, this.home);
   }
 
   forCwd(cwd: string): TrapStore {

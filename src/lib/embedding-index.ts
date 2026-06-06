@@ -8,6 +8,7 @@ import type {
   StoredEmbedding,
 } from "./embedder";
 import type { EmbeddingStateCounts } from "./embedding-health";
+import type { EmbeddingProfileSummary } from "../db/embedding-queries";
 
 export type EmbeddingIndexFilter = {
   scope?: string;
@@ -23,8 +24,8 @@ export type EmbeddingRefreshFilter = EmbeddingIndexFilter & {
 export class DatabaseEmbeddingIndex {
   constructor(private readonly db: Database) {}
 
-  get(trapId: number): StoredEmbedding | null {
-    return embeddingQueries.getEmbedding(this.db, trapId);
+  get(trapId: number, config?: EmbeddingConfig): StoredEmbedding | null {
+    return embeddingQueries.getEmbedding(this.db, trapId, config);
   }
 
   save(record: StoredEmbedding): void {
@@ -49,5 +50,9 @@ export class DatabaseEmbeddingIndex {
 
   stateCounts(config: EmbeddingConfig | null, filter: EmbeddingIndexFilter = {}): EmbeddingStateCounts {
     return embeddingQueries.getEmbeddingStateCounts(this.db, config, filter);
+  }
+
+  profiles(filter: EmbeddingIndexFilter = {}): EmbeddingProfileSummary[] {
+    return embeddingQueries.listEmbeddingProfiles(this.db, filter);
   }
 }

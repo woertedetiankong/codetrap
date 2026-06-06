@@ -168,16 +168,20 @@ function tempFixture(): string {
 }
 
 function runDogfood(args: string[], env: Record<string, string> = {}) {
+  const home = env.HOME ?? mkdtempSync(join(tmpdir(), "codetrap-dogfood-home-"));
   const proc = Bun.spawnSync({
     cmd: ["bun", "run", "scripts/dogfood-eval.ts", ...args],
     cwd: process.cwd(),
     env: {
       ...process.env,
+      HOME: home,
+      USERPROFILE: home,
       CODETRAP_EMBEDDING_PROVIDER: "",
       CODETRAP_OLLAMA_MODEL: "",
       CODETRAP_OLLAMA_ENDPOINT: "",
       CODETRAP_OLLAMA_DIMENSIONS: "",
       OLLAMA_HOST: "",
+      JINA_API_KEY: "",
       ...env,
     },
     stdout: "pipe",

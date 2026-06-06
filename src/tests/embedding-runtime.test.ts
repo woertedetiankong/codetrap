@@ -41,7 +41,7 @@ describe("embedding runtime", () => {
   });
 
   test("creates the default Jina adapter from environment", () => {
-    const runtime = defaultEmbeddingRuntime({ JINA_API_KEY: "test-key" } as NodeJS.ProcessEnv);
+    const runtime = defaultEmbeddingRuntime({ JINA_API_KEY: "test-key" } as NodeJS.ProcessEnv, {});
 
     expect(runtime.status()).toMatchObject({
       available: true,
@@ -56,7 +56,7 @@ describe("embedding runtime", () => {
       CODETRAP_EMBEDDING_PROVIDER: "ollama",
       CODETRAP_OLLAMA_MODEL: "qwen3-embedding:0.6b",
       CODETRAP_OLLAMA_DIMENSIONS: "1024",
-    } as NodeJS.ProcessEnv);
+    } as NodeJS.ProcessEnv, {});
 
     expect(runtime.status()).toMatchObject({
       available: true,
@@ -85,7 +85,7 @@ describe("embedding runtime", () => {
   });
 
   test("keeps Jina setup guidance when Jina is explicitly configured without a key", () => {
-    const runtime = defaultEmbeddingRuntime({ CODETRAP_EMBEDDING_PROVIDER: "jina" } as NodeJS.ProcessEnv);
+    const runtime = defaultEmbeddingRuntime({ CODETRAP_EMBEDDING_PROVIDER: "jina" } as NodeJS.ProcessEnv, {});
 
     expect(runtime.available()).toBe(false);
     expect(runtime.setupAction()).toMatchObject({

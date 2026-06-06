@@ -301,30 +301,12 @@ Do not omit `:0.6b`; `qwen3-embedding:latest` is much larger.
 
 Configure codetrap to use Ollama:
 
-macOS or Linux with zsh:
-
 ```bash
-echo 'export CODETRAP_EMBEDDING_PROVIDER=ollama' >> ~/.zshrc
-echo 'export CODETRAP_OLLAMA_MODEL=qwen3-embedding:0.6b' >> ~/.zshrc
-source ~/.zshrc
+codetrap embeddings use ollama
+codetrap embeddings status
 ```
 
-macOS or Linux with bash:
-
-```bash
-echo 'export CODETRAP_EMBEDDING_PROVIDER=ollama' >> ~/.bashrc
-echo 'export CODETRAP_OLLAMA_MODEL=qwen3-embedding:0.6b' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Windows PowerShell:
-
-```powershell
-setx CODETRAP_EMBEDDING_PROVIDER "ollama"
-setx CODETRAP_OLLAMA_MODEL "qwen3-embedding:0.6b"
-```
-
-After `setx`, open a new PowerShell window.
+This writes `~/.codetrap/config.json`. Environment variables such as `CODETRAP_EMBEDDING_PROVIDER` and `CODETRAP_OLLAMA_MODEL` are still supported for temporary shell or CI overrides.
 
 Verify Ollama embedding generation:
 
@@ -336,9 +318,11 @@ Generate embeddings for the traps you want semantic search to use:
 
 ```bash
 cd /path/to/your/project
-codetrap embed --scope project
-codetrap embed --scope global
+codetrap embeddings reindex --scope project
+codetrap embeddings reindex --scope global
 ```
+
+`codetrap embed` remains as a short alias for reindexing. codetrap stores embeddings by profile, so switching between Jina and Ollama does not overwrite existing vectors; it creates or refreshes the selected profile.
 
 Then search:
 
@@ -346,7 +330,7 @@ Then search:
 codetrap search "HTTP request timeout" --mode hybrid
 ```
 
-Optional cloud provider: set `CODETRAP_EMBEDDING_PROVIDER=jina` and `JINA_API_KEY` to use Jina instead of Ollama. Privacy note: codetrap does not collect telemetry. FTS and Ollama search are local-only. When Jina is configured, `codetrap embed` sends trap passages to Jina, and semantic or hybrid search may send query text to Jina to compute embeddings.
+Optional cloud provider: run `codetrap embeddings use jina` and set `JINA_API_KEY` to use Jina instead of Ollama. Privacy note: codetrap does not collect telemetry. FTS and Ollama search are local-only. When Jina is configured, reindexing sends trap passages to Jina, and semantic or hybrid search may send query text to Jina to compute embeddings.
 
 If no embedding provider is configured:
 

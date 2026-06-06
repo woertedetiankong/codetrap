@@ -509,3 +509,19 @@ Judgment: no_relevant_trap
 Action changed: no
 Promote: no
 Note: No existing trap covered local embedding provider integration. Keep the work scoped to `EmbeddingProvider` / `EmbeddingRuntime`, preserve provider/model/dimension freshness metadata, and do not introduce sqlite-vec or ONNX in this pass.
+
+## 2026-06-06 - Multi-profile embedding storage
+
+Task: Add multi-profile embedding storage and product-facing `codetrap embeddings` management commands.
+Query: embedding profiles multiple provider storage switch embeddings command migration
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - only loosely related to repository/search storage behavior, not directly applicable to embedding profile schema or provider switching.
+2. No second result.
+3. No third result.
+
+Judgment: noisy_hit
+Action changed: no
+Promote: no
+Note: The returned trap was about path/module applicability filtering rather than embedding profile storage. Proceeded with a schema v6 migration, profile-aware freshness checks, and CLI management commands while leaving search applicability policy unchanged.

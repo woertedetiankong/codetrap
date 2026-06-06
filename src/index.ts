@@ -54,6 +54,7 @@ function showHelp(): void {
   console.log("  archive_trap          Archive a trap");
   console.log("  supersede_trap        Mark one trap as superseded by another");
   console.log("  embed                 Generate embeddings for semantic search (Ollama or Jina)");
+  console.log("  embeddings            Manage embedding profiles, provider config, and reindexing");
   console.log("  session               Record implementation notes and capture candidate traps");
   console.log("  web                   Start local review and trap library console");
   console.log("  export                Export traps as JSON");

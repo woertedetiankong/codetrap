@@ -31,7 +31,7 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 - Candidate Review Visibility + Workbench 已落地：CLI status/list、doctor、`/api/sessions` 和 Web Review 都能看到 pending candidates；Web Review 的 Accept / Accept anyway / Supersede 使用当前可见候选表单作为 accept-time edit。
 - `src/lib/session-review.ts` 成为 CLI/Web 共享的 session review contract，统一 accept/reject/cleanup payload、accepted-missing trap review shape 和 transport-neutral conflict payload；CLI `next_actions` 由 `sessionCliConflictPayload` 单独添加。
 - `src/web/client-review.ts` 负责 Review queue state 和 candidate draft/request normalization；`src/web/client-script.ts` 只组合 Web modules 与 DOM event wiring。
-- `src/lib/embedding-runtime.ts` 已抽出 embedding provider runtime：provider selection、config/status、setup action 和 unavailable error 由一个模块负责，Jina 仍是当前唯一实际 provider。
+- `src/lib/embedding-runtime.ts` 已抽出 embedding provider runtime：provider selection、config/status、setup action 和 unavailable error 由一个模块负责，Jina 与 Ollama 都是实际 provider。
 - Agent guidance、README、install docs、release playbook、skills/plugin templates 已改成 post-flight 候选先走 `session capture`，confirmed trap 仍需要显式 accept 或用户确认后的外部来源写入。
 
 2026-06-03 增量：
@@ -50,11 +50,11 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 
 仍未完成：
 
-- 本地 embedding provider、模型缓存、ONNX/local model path。
+- ONNX/local model path、sqlite-vec 性能后端。
 - Playbook export、learning review、staleness review、session archive/export。
 - MCP session tools；当前 session mode 是 CLI-first。
 
-截至 2026-05-17，roadmap 里的 v0.2 主线已经完成，并顺手做完除本地 embedding provider 之外的大部分 v0.3 / v0.4 架构硬化。
+截至 2026-06-06，roadmap 里的 v0.2 主线已经完成，并顺手做完大部分 v0.3 / v0.4 架构硬化；本地 Ollama embedding provider 与 multi-profile storage 也已落地。
 
 已完成：
 
@@ -63,20 +63,20 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 - Phase 3 主要项：MCP tool 已支持可选 `cwd`；CLI/MCP 共用 `src/lib/output-json.ts`；MCP tools/resources 通过 `TrapOperations` 和共享 presenter 输出 JSON。
 - Phase 4：home/global `.codetrap` 不再被误判为 project root；新增 `codetrap doctor` 与 `doctor --json`；scope 回归测试覆盖 home/global、nested project、home 外项目；`repair-scope` / `migrate-project` 已支持 dry-run、`--apply`、backup 与 JSON 输出；迁移实现已收敛到 `scope-migration` + `trap-transfer` 两个深模块。
 - Phase 5 部分：StickS3 8 条真实 traps/queries 已加入 `src/tests/fixtures/search-eval.json`，并在测试里锁住 Recall@3 / Recall@5。
-- Phase 6 部分：embedding freshness 已产品化为 fresh/stale/missing 计数，并出现在 `stats --json` 和 `doctor --json`。
+- Phase 6 部分：embedding freshness 已产品化为 fresh/stale/missing 计数，并出现在 `stats --json` 和 `doctor --json`；Ollama provider、multi-profile storage、`codetrap embeddings` 管理命令已完成。
 - Mutation JSON：`delete/archive/supersede/import --json` 与 `add_trap_evidence --output-json` 已提供机器可读结果。
 - Ranking/MRR：测试已计算 MRR，并加入通用 title/tag/code-identifier/severity/path/module/owner rerank signals；未内置 ESP32/StickS3 专用词库。
 - Path/module scoped traps：schema v5 已加入 `path_globs`、`module`、`owner`，CLI/MCP search/list 可用 `--path`、`--module`、`--owner` 过滤与加权。
 - 配置文件：`~/.codetrap/config.json` 已支持 search mode/limit/scope/rerank，优先级为 CLI args > config file > env vars > built-in defaults。
 - Agent harness：post-flight capture 规则已写入文档/skills，`session capture --trap-markdown -` 优先提供 candidate-inbox path，`--trap-json` 保留结构化兼容入口，`plugins/codetrap-agent` 提供 Codex plugin/bundle 示例，`release:preflight` 串联发布前 dry-run 检查。
 - Session architecture：candidate draft normalization/merge、candidate document mutation、session review payload contract 已分别收敛到 `session-capture`、`session-candidate-document`、`session-review`；Web Review draft/request normalization 已收敛到 `client-review`，CLI conflict next actions 与 Web/API neutral payload 已分离。
-- Embedding architecture：provider selection/status/setup action 已收敛到 `embedding-runtime`，为后续 local provider 留出接口。
+- Embedding architecture：provider selection/status/setup action 已收敛到 `embedding-runtime`，Ollama/Jina provider 与 profile-aware storage 已落地。
 - MCP resources：resource URI 已支持 `?cwd=`，静态 URI 仍兼容 server 启动 cwd。
 
 仍未完成：
 
-- 本地 embedding provider 尚未做；当前仍是 Jina 可选 provider + 无 key 时 hybrid fallback 到 FTS。
-- 本地模型缓存、ONNX/local model path、离线默认 embedding provider 尚未做。
+- Ollama 本地 embedding provider 已完成；当前仍保留 Jina 可选 provider + 无 provider 时 hybrid fallback 到 FTS。
+- ONNX/local model path、sqlite-vec 性能后端尚未做。
 
 ## 0. 参考来源与定位修正
 
@@ -664,7 +664,7 @@ StickS3 语音输入慢 peak=32768 VOICE_MIC_GAIN
 - 常见同义词。
 - error code / symbol exact match。
 
-### Phase 6: 本地 embedding 与离线体验（Ollama provider 已完成，ONNX provider 未开始）
+### Phase 6: 本地 embedding 与离线体验（Ollama provider + multi-profile storage 已完成，ONNX provider 未开始）
 
 目标：让 hybrid search 不依赖远程 API。
 
@@ -672,10 +672,12 @@ StickS3 语音输入慢 peak=32768 VOICE_MIC_GAIN
 
 - 已抽出 `src/lib/embedding-health.ts`。
 - 已抽出 `src/lib/embedding-runtime.ts`，集中 provider selection、provider config/status、setup action 和 provider-required error。
-- `stats --json` 和 `doctor --json` 已展示 fresh/stale/missing、provider、model、dimensions、passage_version。
+- `stats --json` 和 `doctor --json` 已展示 fresh/stale/missing、provider、model、dimensions、passage_version、profile_id。
 - `doctor` 已展示 hybrid fallback reason：`semantic_unavailable` 或 `semantic_no_candidates`。
-- 已新增本地 Ollama provider，推荐 `qwen3-embedding:0.6b`；继续复用当前 SQLite BLOB exact-scan 向量存储。
-- 未完成：ONNX/gte 自包含 provider、模型缓存、sqlite-vec 性能后端。
+- 已新增本地 Ollama provider，推荐 `qwen3-embedding:0.6b`。
+- 已新增 multi-profile embedding storage：同一条 trap 可以按 `provider/model/dimensions/passage_version` 保存多份向量，Jina 与 Ollama 切换不会互相覆盖。
+- 已新增 `codetrap embeddings status/list/use/reindex` 管理命令。
+- 未完成：ONNX/gte 自包含 provider、sqlite-vec 性能后端。
 
 当前 Jina API 方案仍可用，但有明显限制：
 
@@ -707,7 +709,7 @@ High-quality optional providers:
 
 #### 6.2 Embedding 健康度显式化
 
-SemTools workspace 用文件状态和 embedding version 判断是否需要重新嵌入。codetrap 已经有类似基础：`passage_hash`、provider、model、dimensions、passage_version 可以判断 embedding 是否 fresh。
+SemTools workspace 用文件状态和 embedding version 判断是否需要重新嵌入。codetrap 已经有类似基础：`passage_hash`、provider、model、dimensions、passage_version、profile_id 可以判断 embedding 是否 fresh。
 
 建议把状态产品化：
 
@@ -724,9 +726,10 @@ Embeddings:
   missing: 12
   provider: jina
   model: jina-embeddings-v5-text-small
+  profile_id: jina:jina-embeddings-v5-text-small:1024:p1
 ```
 
-这样用户能理解 hybrid search 为什么有时降级，也方便比较本地 provider 和 Jina provider。
+这样用户能理解 hybrid search 为什么有时降级，也方便比较本地 provider 和 Jina provider。当前已通过 `codetrap embeddings status` 和 `codetrap embeddings list` 产品化。
 
 ### Phase 7: 数据模型与证据链
 
@@ -851,13 +854,13 @@ API key 仍应放 env var，行为偏好可以放 config file。
 9. [done] repair-scope / migrate-project + Trap Transfer 架构收敛
 10. [done] embedding 健康度显式化
 11. [done] ranking/MRR + 通用 identifier boost
-12. [todo] 本地 embedding provider
+12. [done] 本地 Ollama embedding provider + multi-profile storage
 13. [done] post-flight capture workflow
 14. [done] path/module scoped traps
 15. [done] npm/plugin/onboarding
 ```
 
-除本地 embedding provider 外，上述收尾项已完成。下一步如果继续推进，应聚焦本地/离线 embedding provider。
+上述收尾项已完成。下一步如果继续推进，应聚焦 ONNX/gte 自包含 provider 或 sqlite-vec 性能后端。
 
 ## 5. 最小可交付版本
 

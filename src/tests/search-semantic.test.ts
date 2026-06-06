@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../db/connection";
 import { TrapRepository } from "../db/repository";
-import type { EmbeddingProvider, EmbeddingTask } from "../lib/embedder";
+import { embeddingConfig, type EmbeddingProvider, type EmbeddingTask } from "../lib/embedder";
 import { trap } from "./helpers";
 
 class MockEmbedder implements EmbeddingProvider {
@@ -128,20 +128,29 @@ describe("semantic and hybrid search", () => {
     expect(repo.getEmbedding(id)).toBeNull();
   });
 
-  test("changing embedding provider metadata requires fresh embeddings", async () => {
+  test("changing embedding provider metadata stores a second profile", async () => {
     const db = openDatabase(":memory:");
-    const repo = new TrapRepository(db, new MockEmbedder());
+    const mockEmbedder = new MockEmbedder();
+    const alternateEmbedder = new AlternateMockEmbedder();
+    const mockConfig = embeddingConfig(mockEmbedder);
+    const alternateConfig = embeddingConfig(alternateEmbedder);
+    const repo = new TrapRepository(db, mockEmbedder);
     const id = repo.add(trap());
     await repo.ensureEmbeddings();
 
-    expect(repo.getEmbedding(id)?.provider).toBe("mock");
+    expect(repo.getEmbedding(id, mockConfig)?.provider).toBe("mock");
 
-    const alternateRepo = new TrapRepository(db, new AlternateMockEmbedder());
+    const alternateRepo = new TrapRepository(db, alternateEmbedder);
     expect(await alternateRepo.search("remote API calls", { mode: "semantic" })).toEqual([]);
 
     const refresh = await alternateRepo.ensureEmbeddings();
     expect(refresh.generated).toBe(1);
-    expect(alternateRepo.getEmbedding(id)?.provider).toBe("alternate-mock");
+    expect(alternateRepo.getEmbedding(id, alternateConfig)?.provider).toBe("alternate-mock");
+    expect(alternateRepo.getEmbedding(id, mockConfig)?.provider).toBe("mock");
+    expect(alternateRepo.embeddingProfiles({ scope: "global" }).map((profile) => profile.id).sort()).toEqual([
+      "alternate-mock:alternate-mock-embedding:6:p1",
+      "mock:mock-embedding:6:p1",
+    ]);
   });
 });
 

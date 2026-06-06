@@ -6,6 +6,7 @@ import {
   JinaEmbedder,
   OllamaEmbedder,
   embeddingConfig,
+  embeddingProfileId,
   type EmbeddingConfig,
   type EmbeddingProvider,
 } from "./embedder";
@@ -24,6 +25,7 @@ export type EmbeddingRuntimeStatus = {
   model: string | null;
   dimensions: number | null;
   passage_version: number | null;
+  profile_id: string | null;
   setup_action: EmbeddingRuntimeAction | null;
 };
 
@@ -96,6 +98,7 @@ export class EmbeddingRuntime {
       model: config?.model ?? null,
       dimensions: config?.dimensions ?? null,
       passage_version: config?.passageVersion ?? null,
+      profile_id: config ? embeddingProfileId(config) : null,
       setup_action: this.setupAction(),
     };
   }

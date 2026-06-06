@@ -5,6 +5,7 @@ import {
   decodeEmbedding,
   encodeEmbedding,
   type EmbeddingConfig,
+  embeddingProfileId,
   type FreshEmbedding,
   type StoredEmbedding,
 } from "../lib/embedder";
@@ -14,6 +15,7 @@ import { countTraps, listTraps } from "./queries";
 
 type TrapEmbeddingRow = {
   trap_id: number;
+  profile_id: string;
   provider: string;
   model: string;
   dimensions: number;
@@ -23,33 +25,90 @@ type TrapEmbeddingRow = {
   updated_at: string;
 };
 
-export function getEmbedding(db: Database, trapId: number): StoredEmbedding | null {
+export type EmbeddingProfileSummary = {
+  id: string;
+  provider: string;
+  model: string;
+  dimensions: number;
+  passage_version: number;
+  embedding_count: number;
+  updated_at: string | null;
+};
+
+type EmbeddingProfileRow = Omit<EmbeddingProfileSummary, "embedding_count"> & {
+  embedding_count: number;
+};
+
+export function getEmbedding(
+  db: Database,
+  trapId: number,
+  config?: EmbeddingConfig
+): StoredEmbedding | null {
+  const profileClause = config ? "AND e.profile_id = ?" : "";
+  const params: SQLQueryBindings[] = [trapId];
+  if (config) params.push(embeddingProfileId(config));
+
   const row = db
-    .query("SELECT * FROM trap_embeddings WHERE trap_id = ?")
-    .get(trapId) as TrapEmbeddingRow | null;
+    .query(`
+      SELECT
+        e.trap_id,
+        e.profile_id,
+        p.provider,
+        p.model,
+        p.dimensions,
+        p.passage_version,
+        e.passage_hash,
+        e.embedding,
+        e.updated_at
+      FROM trap_embeddings e
+      JOIN embedding_profiles p ON p.id = e.profile_id
+      WHERE e.trap_id = ? ${profileClause}
+      ORDER BY e.updated_at DESC
+      LIMIT 1
+    `)
+    .get(...params) as TrapEmbeddingRow | null;
   return row ? rowToStoredEmbedding(row) : null;
 }
 
 export function upsertEmbedding(db: Database, record: StoredEmbedding): void {
+  const profileId = record.profile_id || embeddingProfileId({
+    provider: record.provider,
+    model: record.model,
+    dimensions: record.dimensions,
+    passageVersion: record.passage_version,
+  });
+
   db.prepare(`
-    INSERT INTO trap_embeddings (
-      trap_id, provider, model, dimensions, passage_version, passage_hash, embedding, updated_at
+    INSERT INTO embedding_profiles (
+      id, provider, model, dimensions, passage_version, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(trap_id) DO UPDATE SET
+    VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
       provider = excluded.provider,
       model = excluded.model,
       dimensions = excluded.dimensions,
       passage_version = excluded.passage_version,
+      updated_at = datetime('now')
+  `).run(
+    profileId,
+    record.provider,
+    record.model,
+    record.dimensions,
+    record.passage_version
+  );
+
+  db.prepare(`
+    INSERT INTO trap_embeddings (
+      trap_id, profile_id, passage_hash, embedding, updated_at
+    )
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(trap_id, profile_id) DO UPDATE SET
       passage_hash = excluded.passage_hash,
       embedding = excluded.embedding,
       updated_at = datetime('now')
   `).run(
     record.trap_id,
-    record.provider,
-    record.model,
-    record.dimensions,
-    record.passage_version,
+    profileId,
     record.passage_hash,
     encodeEmbedding(record.embedding)
   );
@@ -65,16 +124,10 @@ export function getAllFreshEmbeddings(
   opts: { category?: string; scope?: string; status?: TrapStatus | "all" } = {}
 ): FreshEmbedding[] {
   const conditions = [
-    "e.provider = ?",
-    "e.model = ?",
-    "e.dimensions = ?",
-    "e.passage_version = ?",
+    "e.profile_id = ?",
   ];
   const params: SQLQueryBindings[] = [
-    config.provider,
-    config.model,
-    config.dimensions,
-    config.passageVersion,
+    embeddingProfileId(config),
   ];
 
   if (opts.category) {
@@ -125,7 +178,7 @@ export function getTrapsNeedingEmbeddings(
   const needed: Trap[] = [];
 
   for (const trap of traps) {
-    const embedding = getEmbedding(db, trap.id);
+    const embedding = getEmbedding(db, trap.id, config);
     if (opts.force || !embeddingIsFresh(trap, embedding, config)) {
       needed.push(trap);
     }
@@ -160,7 +213,7 @@ export function getEmbeddingStateCounts(
   };
 
   for (const trap of traps) {
-    const embedding = getEmbedding(db, trap.id);
+    const embedding = getEmbedding(db, trap.id, config ?? undefined);
     if (!embedding) {
       counts.missing++;
     } else if (config && embeddingIsFresh(trap, embedding, config)) {
@@ -173,9 +226,56 @@ export function getEmbeddingStateCounts(
   return counts;
 }
 
+export function listEmbeddingProfiles(
+  db: Database,
+  opts: { scope?: string; category?: string; status?: TrapStatus | "all" } = {}
+): EmbeddingProfileSummary[] {
+  const conditions: string[] = [];
+  const params: SQLQueryBindings[] = [];
+
+  if (opts.category) {
+    conditions.push("t.category = ?");
+    params.push(opts.category);
+  }
+  if (opts.scope) {
+    conditions.push("t.scope = ?");
+    params.push(opts.scope);
+  }
+  if (opts.status !== "all") {
+    conditions.push("t.status = ?");
+    params.push(opts.status ?? DEFAULT_TRAP_STATUS);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const rows = db
+    .query(`
+      SELECT
+        p.id,
+        p.provider,
+        p.model,
+        p.dimensions,
+        p.passage_version,
+        COUNT(e.trap_id) AS embedding_count,
+        MAX(e.updated_at) AS updated_at
+      FROM embedding_profiles p
+      JOIN trap_embeddings e ON e.profile_id = p.id
+      JOIN traps t ON t.id = e.trap_id
+      ${where}
+      GROUP BY p.id, p.provider, p.model, p.dimensions, p.passage_version
+      ORDER BY updated_at DESC, p.provider ASC, p.model ASC
+    `)
+    .all(...params) as EmbeddingProfileRow[];
+
+  return rows.map((row) => ({
+    ...row,
+    embedding_count: Number(row.embedding_count),
+  }));
+}
+
 function rowToStoredEmbedding(row: TrapEmbeddingRow): StoredEmbedding {
   return {
     trap_id: row.trap_id,
+    profile_id: row.profile_id,
     provider: row.provider,
     model: row.model,
     dimensions: row.dimensions,

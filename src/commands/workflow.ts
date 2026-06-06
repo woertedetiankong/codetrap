@@ -10,6 +10,12 @@ import {
 import { TrapOperations } from "../lib/trap-operations";
 import { buildDoctorReport, formatDoctorText } from "../lib/doctor";
 import { formatEmbedText } from "../lib/embed-output";
+import {
+  formatEmbeddingProfilesText,
+  formatEmbeddingStatusText,
+  formatEmbeddingsUseText,
+  type EmbeddingsUseResult,
+} from "../lib/embedding-management";
 import { searchDefaultsFromConfig } from "../lib/config";
 import { SessionStore } from "../lib/session-store";
 import { SessionOperations, type SessionConflictResult } from "../lib/session-operations";
@@ -43,6 +49,7 @@ import {
 import { mutationJsonPayload } from "../lib/trap-mutation-result";
 import {
   embedRequestFromArgs,
+  embeddingsUseRequestFromArgs,
   evidenceRequestFromArgs,
   listRequestFromArgs,
   searchRequestFromArgs,
@@ -109,12 +116,14 @@ export async function executeCommand(strip: string[], store: TrapStore): Promise
       return cmdScopeMigration("migrate-project", args, operations);
     case "embed":
       return cmdEmbed(args, store);
+    case "embeddings":
+      return cmdEmbeddings(args, store);
     case "session":
       return cmdSession(args, store, operations);
     default:
       return errorResult([
         `Unknown command: ${sub}`,
-        "Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, repair-scope, migrate-project, embed, session",
+        "Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, repair-scope, migrate-project, embed, embeddings, session",
       ].join("\n"));
   }
 }
@@ -395,6 +404,59 @@ async function cmdEmbed(args: string[], store: TrapStore): Promise<CommandResult
   try {
     const result = await store.ensureEmbeddings(embedRequestFromArgs(opts));
     return textResult(formatEmbedText(result));
+  } catch (error) {
+    return errorFrom(error);
+  }
+}
+
+async function cmdEmbeddings(args: string[], store: TrapStore): Promise<CommandResult> {
+  const sub = args[0] ?? "status";
+  const rest = args.length === 0 ? [] : args.slice(1);
+
+  try {
+    switch (sub) {
+      case "status": {
+        const { opts } = parseArgs(rest);
+        const status = await store.embeddingStatus({ scope: opts.scope });
+        return opts.json !== undefined
+          ? jsonResult(status)
+          : textResult(formatEmbeddingStatusText(status));
+      }
+      case "list":
+      case "profiles": {
+        const { opts } = parseArgs(rest);
+        const profiles = store.embeddingProfiles({ scope: opts.scope });
+        const payload = {
+          active_profile_id: store.embeddingRuntimeStatus().profile_id,
+          ...profiles,
+        };
+        return opts.json !== undefined
+          ? jsonResult(payload)
+          : textResult(formatEmbeddingProfilesText(profiles));
+      }
+      case "use": {
+        const { opts, positionals } = parseArgs(rest);
+        const request = embeddingsUseRequestFromArgs(positionals, opts);
+        const written = store.configureEmbeddings(request.embeddings);
+        const scope = store.hasProject() ? "project" : "global";
+        const result: EmbeddingsUseResult = {
+          ...written,
+          embeddings: written.config.embeddings ?? request.embeddings,
+          next_action: {
+            command: `codetrap embeddings reindex --scope ${scope}`,
+            reason: "Generate embeddings for the selected profile.",
+          },
+        };
+        return opts.json !== undefined
+          ? jsonResult(result)
+          : textResult(formatEmbeddingsUseText(result));
+      }
+      case "reindex":
+      case "embed":
+        return cmdEmbed(rest, store);
+      default:
+        return errorResult("Usage: codetrap embeddings <status|list|profiles|use|reindex> [--json]");
+    }
   } catch (error) {
     return errorFrom(error);
   }

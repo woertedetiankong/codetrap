@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../db/connection";
@@ -232,6 +232,64 @@ describe("CLI JSON contract", () => {
         command: "codetrap web",
       }),
     ]));
+  });
+
+  test("embeddings management commands expose config and profile status JSON", () => {
+    const cwd = tempProjectDir("codetrap-cli-embeddings-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const use = runCli([
+      "embeddings",
+      "use",
+      "ollama",
+      "--endpoint",
+      "http://127.0.0.1:1",
+      "--json",
+    ], cwd, home);
+    expect(use.exitCode).toBe(0);
+
+    const configured = JSON.parse(use.stdout);
+    expect(configured).toMatchObject({
+      embeddings: {
+        provider: "ollama",
+        endpoint: "http://127.0.0.1:1",
+        model: "qwen3-embedding:0.6b",
+        dimensions: 1024,
+      },
+      next_action: {
+        command: "codetrap embeddings reindex --scope project",
+      },
+    });
+    expect(JSON.parse(readFileSync(join(home, ".codetrap", "config.json"), "utf-8"))).toMatchObject({
+      embeddings: {
+        provider: "ollama",
+        endpoint: "http://127.0.0.1:1",
+      },
+    });
+
+    const status = runCli(["embeddings", "status", "--scope", "project", "--json"], cwd, home);
+    expect(status.exitCode).toBe(0);
+    const statusJson = JSON.parse(status.stdout);
+    expect(statusJson.runtime).toMatchObject({
+      available: false,
+      provider: "ollama",
+      model: "qwen3-embedding:0.6b",
+      profile_id: "ollama:qwen3-embedding:0.6b:1024:p1",
+    });
+    expect(statusJson.project).toMatchObject({
+      total: 0,
+      fresh: 0,
+      stale: 0,
+      missing: 0,
+      profiles: [],
+    });
+
+    const list = runCli(["embeddings", "list", "--json"], cwd, home);
+    expect(list.exitCode).toBe(0);
+    expect(JSON.parse(list.stdout)).toMatchObject({
+      active_profile_id: "ollama:qwen3-embedding:0.6b:1024:p1",
+      project: [],
+      global: [],
+    });
   });
 
   test("doctor --json reports project-scoped traps stranded in the global database", () => {

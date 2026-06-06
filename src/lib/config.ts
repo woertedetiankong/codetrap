@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { CODETRAP_DIR, SCOPES, SEARCH_MODES, type Scope, type SearchMode } from "./constants";
@@ -29,6 +29,11 @@ export type SearchDefaults = {
   rerank: boolean;
 };
 
+export type ConfigWriteResult = {
+  path: string;
+  config: CodetrapConfig;
+};
+
 const BUILT_IN_SEARCH_DEFAULTS: SearchDefaults = {
   mode: "hybrid",
   limit: 20,
@@ -36,7 +41,7 @@ const BUILT_IN_SEARCH_DEFAULTS: SearchDefaults = {
 };
 
 export function loadCodetrapConfig(home = homedir()): CodetrapConfig {
-  const path = join(home, CODETRAP_DIR, "config.json");
+  const path = codetrapConfigPath(home);
   if (!existsSync(path)) return {};
 
   try {
@@ -46,6 +51,26 @@ export function loadCodetrapConfig(home = homedir()): CodetrapConfig {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Invalid codetrap config at ${path}: ${message}`);
   }
+}
+
+export function codetrapConfigPath(home = homedir()): string {
+  return join(home, CODETRAP_DIR, "config.json");
+}
+
+export function writeCodetrapConfig(config: CodetrapConfig, home = homedir()): ConfigWriteResult {
+  const path = codetrapConfigPath(home);
+  mkdirSync(join(home, CODETRAP_DIR), { recursive: true });
+  const normalized = normalizeConfig(config);
+  writeFileSync(path, `${JSON.stringify(normalized, null, 2)}\n`);
+  return { path, config: normalized };
+}
+
+export function setCodetrapEmbeddingSettings(
+  embeddings: EmbeddingSettings,
+  home = homedir()
+): ConfigWriteResult {
+  const current = loadCodetrapConfig(home);
+  return writeCodetrapConfig({ ...current, embeddings }, home);
 }
 
 export function searchDefaultsFromConfig(config = loadCodetrapConfig(), env = process.env): SearchDefaults {

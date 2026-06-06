@@ -1,6 +1,7 @@
 import type { Trap } from "../domain/trap";
 import {
   embeddingConfig,
+  embeddingProfileId,
   type EmbeddingConfig,
   type EmbeddingProvider,
   type StoredEmbedding,
@@ -35,6 +36,7 @@ export async function runEmbeddingJob(
   opts: EmbeddingJobOptions = {}
 ): Promise<EmbeddingJobResult> {
   const config = embeddingConfig(provider);
+  const profileId = embeddingProfileId(config);
   const total = adapter.countEmbeddable({ scope: opts.scope, category: opts.category });
   const traps = adapter.trapsNeedingEmbeddings(config, opts);
   if (traps.length === 0) return { generated: 0, skipped: total, batches: 0 };
@@ -53,6 +55,7 @@ export async function runEmbeddingJob(
     for (let i = 0; i < batch.length; i++) {
       adapter.saveEmbedding({
         trap_id: batch[i].id,
+        profile_id: profileId,
         provider: config.provider,
         model: config.model,
         dimensions: config.dimensions,

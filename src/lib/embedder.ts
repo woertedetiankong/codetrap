@@ -17,8 +17,13 @@ export interface EmbeddingConfig {
   passageVersion: number;
 }
 
+export interface EmbeddingProfile extends EmbeddingConfig {
+  id: string;
+}
+
 export interface StoredEmbedding {
   trap_id: number;
+  profile_id: string;
   provider: string;
   model: string;
   dimensions: number;
@@ -212,6 +217,17 @@ export function embeddingConfig(provider: EmbeddingProvider): EmbeddingConfig {
     model: provider.model,
     dimensions: provider.dimensions,
     passageVersion: PASSAGE_VERSION,
+  };
+}
+
+export function embeddingProfileId(config: EmbeddingConfig): string {
+  return `${config.provider}:${config.model}:${config.dimensions}:p${config.passageVersion}`;
+}
+
+export function embeddingProfile(config: EmbeddingConfig): EmbeddingProfile {
+  return {
+    ...config,
+    id: embeddingProfileId(config),
   };
 }
 

@@ -1,4 +1,4 @@
-import type { EmbeddingConfig } from "./embedder";
+import { embeddingProfileId, type EmbeddingConfig } from "./embedder";
 
 export type EmbeddingStateCounts = {
   total: number;
@@ -13,6 +13,7 @@ export type EmbeddingStateSummary = EmbeddingStateCounts & {
   model: string | null;
   dimensions: number | null;
   passage_version: number | null;
+  profile_id: string | null;
 };
 
 export type EmbeddingStatsResult = {
@@ -33,6 +34,7 @@ export function summarizeEmbeddingState(
     model: config?.model ?? null,
     dimensions: config?.dimensions ?? null,
     passage_version: config?.passageVersion ?? null,
+    profile_id: config ? embeddingProfileId(config) : null,
   };
 }
 

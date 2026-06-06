@@ -1,5 +1,10 @@
 import { SEARCH_MODES, type SearchMode } from "./constants";
-import type { SearchDefaults } from "./config";
+import type { EmbeddingProviderSetting, EmbeddingSettings, SearchDefaults } from "./config";
+import {
+  DEFAULT_OLLAMA_DIMENSIONS,
+  DEFAULT_OLLAMA_ENDPOINT,
+  DEFAULT_OLLAMA_MODEL,
+} from "./embedder";
 import { capturedTrapMarkdownInput } from "./session-capture";
 import type { SearchTrapsArgs, ListTrapsArgs } from "./trap-operations";
 
@@ -11,6 +16,10 @@ export type EmbedRequest = {
   limit?: number;
   force?: boolean;
   batchSize?: number;
+};
+
+export type EmbeddingsUseRequest = {
+  embeddings: EmbeddingSettings;
 };
 
 export type StatsRequest = {
@@ -130,6 +139,27 @@ export function embedRequestFromArgs(args: RawArgs): EmbedRequest {
     limit: optionalIntOption(args, "limit"),
     force: booleanOption(args, "force") === true,
     batchSize: optionalIntOption(args, "batch_size", "batch-size"),
+  };
+}
+
+export function embeddingsUseRequestFromArgs(
+  positionals: string[],
+  args: RawArgs
+): EmbeddingsUseRequest {
+  const provider = embeddingProviderOption(requiredPositional(positionals, 0, "provider"));
+  if (provider === "jina") {
+    return {
+      embeddings: { provider },
+    };
+  }
+
+  return {
+    embeddings: {
+      provider,
+      endpoint: stringOption(args, "endpoint") ?? DEFAULT_OLLAMA_ENDPOINT,
+      model: stringOption(args, "model") ?? DEFAULT_OLLAMA_MODEL,
+      dimensions: optionalIntOption(args, "dimensions") ?? DEFAULT_OLLAMA_DIMENSIONS,
+    },
   };
 }
 
@@ -292,6 +322,11 @@ function searchModeOption(args: RawArgs, key: string): SearchMode | undefined {
   if (!value) return undefined;
   if ((SEARCH_MODES as readonly string[]).includes(value)) return value as SearchMode;
   throw new Error(`Invalid search mode: ${value}. Expected one of: ${SEARCH_MODES.join(", ")}`);
+}
+
+function embeddingProviderOption(value: string): EmbeddingProviderSetting {
+  if (value === "ollama" || value === "jina") return value;
+  throw new Error(`Invalid embedding provider: ${value}. Expected ollama or jina.`);
 }
 
 function booleanOption(args: RawArgs, ...keys: string[]): boolean | undefined {

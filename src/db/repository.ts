@@ -25,6 +25,7 @@ import type { TrapStatus } from "../lib/constants";
 import { TrapSearchPolicy } from "../lib/search-policy";
 import { DatabaseEmbeddingIndex } from "../lib/embedding-index";
 import { archiveTrapLifecycle, supersedeTrapLifecycle } from "../lib/trap-lifecycle";
+import type { EmbeddingProfileSummary } from "./embedding-queries";
 
 export type TrapStats = ReturnType<typeof queries.getStats>;
 export type EmbeddingStateCounts = ReturnType<DatabaseEmbeddingIndex["stateCounts"]>;
@@ -123,6 +124,10 @@ export class TrapRepository {
     return this.embeddingIndex.stateCounts(config, opts);
   }
 
+  embeddingProfiles(opts: { scope?: string; status?: TrapStatus | "all" } = {}): EmbeddingProfileSummary[] {
+    return this.embeddingIndex.profiles(opts);
+  }
+
   exportAll(): TrapExportRecord[] {
     return queries.exportTraps(this.db);
   }
@@ -151,8 +156,8 @@ export class TrapRepository {
     return this.db.transaction(callback)();
   }
 
-  getEmbedding(trapId: number): StoredEmbedding | null {
-    return this.embeddingIndex.get(trapId);
+  getEmbedding(trapId: number, config?: EmbeddingConfig): StoredEmbedding | null {
+    return this.embeddingIndex.get(trapId, config);
   }
 
   upsertEmbedding(record: StoredEmbedding): void {

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Trap, TrapInput, TrapUpdate } from "../domain/trap";
-import type { EmbeddingConfig, StoredEmbedding } from "./embedder";
+import { embeddingProfileId, type EmbeddingConfig, type StoredEmbedding } from "./embedder";
 import { buildSearchText, SEARCH_TEXT_FIELD_NAMES, type SearchTextFields } from "./search-normalizer";
 import { parseTrapPathGlobs, parseTrapTags } from "./trap-json-fields";
 
@@ -74,6 +74,7 @@ export function embeddingIsFresh(trap: Trap, embedding: StoredEmbedding | null, 
       embedding.provider === config.provider &&
       embedding.model === config.model &&
       embedding.dimensions === config.dimensions &&
+      embedding.profile_id === embeddingProfileId(config) &&
       embedding.passage_version === config.passageVersion &&
       embedding.passage_hash === passageHashForTrap(trap)
   );

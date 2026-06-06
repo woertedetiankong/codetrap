@@ -175,6 +175,90 @@ function applyMigrations(db: Database, from: number): void {
 
     db.prepare("UPDATE schema_version SET version = ?").run(5);
   }
+
+  if (from < 6) {
+    migrateEmbeddingProfiles(db);
+    db.prepare("UPDATE schema_version SET version = ?").run(6);
+  }
+}
+
+function migrateEmbeddingProfiles(db: Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS embedding_profiles (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      dimensions INTEGER NOT NULL,
+      passage_version INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  if (!tableExists(db, "trap_embeddings")) {
+    createProfileAwareEmbeddingsTable(db);
+    return;
+  }
+
+  if (columnExists(db, "trap_embeddings", "profile_id")) {
+    createProfileAwareEmbeddingsTable(db);
+    return;
+  }
+
+  db.exec("ALTER TABLE trap_embeddings RENAME TO trap_embeddings_legacy_v5");
+  createProfileAwareEmbeddingsTable(db);
+
+  db.exec(`
+    INSERT OR IGNORE INTO embedding_profiles (
+      id, provider, model, dimensions, passage_version, created_at, updated_at
+    )
+    SELECT
+      provider || ':' || model || ':' || dimensions || ':p' || passage_version,
+      provider,
+      model,
+      dimensions,
+      passage_version,
+      MIN(updated_at),
+      MAX(updated_at)
+    FROM trap_embeddings_legacy_v5
+    GROUP BY provider, model, dimensions, passage_version;
+
+    INSERT OR REPLACE INTO trap_embeddings (
+      trap_id, profile_id, passage_hash, embedding, updated_at
+    )
+    SELECT
+      trap_id,
+      provider || ':' || model || ':' || dimensions || ':p' || passage_version,
+      passage_hash,
+      embedding,
+      updated_at
+    FROM trap_embeddings_legacy_v5;
+
+    DROP TABLE trap_embeddings_legacy_v5;
+  `);
+}
+
+function createProfileAwareEmbeddingsTable(db: Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS trap_embeddings (
+      trap_id INTEGER NOT NULL REFERENCES traps(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL REFERENCES embedding_profiles(id) ON DELETE CASCADE,
+      passage_hash TEXT NOT NULL,
+      embedding BLOB NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (trap_id, profile_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_trap_embeddings_profile
+      ON trap_embeddings(profile_id);
+  `);
+}
+
+function tableExists(db: Database, table: string): boolean {
+  const row = db
+    .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(table) as { name: string } | null;
+  return row !== null;
 }
 
 function columnExists(db: Database, table: string, column: string): boolean {
