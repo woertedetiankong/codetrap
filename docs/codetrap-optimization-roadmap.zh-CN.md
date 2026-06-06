@@ -664,19 +664,20 @@ StickS3 语音输入慢 peak=32768 VOICE_MIC_GAIN
 - 常见同义词。
 - error code / symbol exact match。
 
-### Phase 6: 本地 embedding 与离线体验（embedding health 已完成，本地 provider 未开始）
+### Phase 6: 本地 embedding 与离线体验（Ollama provider 已完成，ONNX provider 未开始）
 
 目标：让 hybrid search 不依赖远程 API。
 
-当前状态（2026-06-05）：
+当前状态（2026-06-06）：
 
 - 已抽出 `src/lib/embedding-health.ts`。
 - 已抽出 `src/lib/embedding-runtime.ts`，集中 provider selection、provider config/status、setup action 和 provider-required error。
 - `stats --json` 和 `doctor --json` 已展示 fresh/stale/missing、provider、model、dimensions、passage_version。
 - `doctor` 已展示 hybrid fallback reason：`semantic_unavailable` 或 `semantic_no_candidates`。
-- 未完成：ONNX/local embedding provider、模型缓存、离线默认 provider。
+- 已新增本地 Ollama provider，推荐 `qwen3-embedding:0.6b`；继续复用当前 SQLite BLOB exact-scan 向量存储。
+- 未完成：ONNX/gte 自包含 provider、模型缓存、sqlite-vec 性能后端。
 
-当前 Jina API 方案可用，但有明显限制：
+当前 Jina API 方案仍可用，但有明显限制：
 
 - 需要 `JINA_API_KEY`。
 - 依赖网络。
@@ -688,7 +689,10 @@ StickS3 语音输入慢 peak=32768 VOICE_MIC_GAIN
 可选路线：
 
 ```text
-Default local provider candidate:
+Recommended local provider:
+  Ollama + qwen3-embedding:0.6b
+
+No-daemon fallback candidate:
   onnx-community/gte-multilingual-base
 
 Fast provider candidate:
@@ -699,7 +703,7 @@ High-quality optional providers:
   Qwen/Qwen3-Embedding-0.6B
 ```
 
-短期不必急着做本地模型。更重要的是先把 CLI JSON 和评估集打牢。
+短期不必急着做 ONNX/gte 或 sqlite-vec。更重要的是先用现有 search eval 验证 Ollama + Qwen3 对真实 trap 查询的提升。
 
 #### 6.2 Embedding 健康度显式化
 

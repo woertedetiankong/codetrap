@@ -10,6 +10,16 @@ export type CodetrapConfig = {
     scope?: Scope;
     rerank?: boolean;
   };
+  embeddings?: EmbeddingSettings;
+};
+
+export type EmbeddingProviderSetting = "ollama" | "jina";
+
+export type EmbeddingSettings = {
+  provider?: EmbeddingProviderSetting;
+  endpoint?: string;
+  model?: string;
+  dimensions?: number;
 };
 
 export type SearchDefaults = {
@@ -50,7 +60,11 @@ export function searchDefaultsFromConfig(config = loadCodetrapConfig(), env = pr
 function normalizeConfig(value: unknown): CodetrapConfig {
   if (!isRecord(value)) return {};
   const search = isRecord(value.search) ? normalizeSearchConfig(value.search) : undefined;
-  return search ? { search } : {};
+  const embeddings = isRecord(value.embeddings) ? normalizeEmbeddingSettings(value.embeddings) : undefined;
+  return {
+    ...(search ? { search } : {}),
+    ...(embeddings ? { embeddings } : {}),
+  };
 }
 
 function normalizeSearchConfig(value: Record<string, unknown>): CodetrapConfig["search"] {
@@ -59,6 +73,15 @@ function normalizeSearchConfig(value: Record<string, unknown>): CodetrapConfig["
   if (typeof value.limit === "number") out.limit = parsePositiveInt(value.limit, "search.limit");
   if (typeof value.scope === "string") out.scope = parseScope(value.scope);
   if (typeof value.rerank === "boolean") out.rerank = value.rerank;
+  return out;
+}
+
+function normalizeEmbeddingSettings(value: Record<string, unknown>): EmbeddingSettings {
+  const out: EmbeddingSettings = {};
+  if (typeof value.provider === "string") out.provider = parseEmbeddingProvider(value.provider);
+  if (typeof value.endpoint === "string") out.endpoint = value.endpoint;
+  if (typeof value.model === "string") out.model = value.model;
+  if (typeof value.dimensions === "number") out.dimensions = parsePositiveInt(value.dimensions, "embeddings.dimensions");
   return out;
 }
 
@@ -90,6 +113,11 @@ function parseSearchMode(value: string): SearchMode {
 function parseScope(value: string): Scope {
   if ((SCOPES as readonly string[]).includes(value)) return value as Scope;
   throw new Error(`Invalid scope: ${value}. Expected one of: ${SCOPES.join(", ")}`);
+}
+
+function parseEmbeddingProvider(value: string): EmbeddingProviderSetting {
+  if (value === "ollama" || value === "jina") return value;
+  throw new Error("Invalid embeddings.provider: expected one of: ollama, jina");
 }
 
 function parsePositiveInt(value: number, label: string): number {

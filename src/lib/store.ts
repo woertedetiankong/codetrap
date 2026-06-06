@@ -18,6 +18,7 @@ import {
   type EmbeddingRuntimeInput,
   type EmbeddingRuntimeStatus,
 } from "./embedding-runtime";
+import { loadCodetrapConfig } from "./config";
 import { summarizeEmbeddingState, type EmbeddingStateSummary, type EmbeddingStatsResult } from "./embedding-health";
 import { normalizeScope, ScopedRepositoryContext, type ScopedRepository } from "./scope-context";
 import { importTrapArchive } from "./trap-archive";
@@ -47,10 +48,12 @@ export class TrapStore {
 
   constructor(
     cwd: string,
-    embeddings: EmbeddingRuntimeInput = defaultEmbeddingRuntime(),
+    embeddings?: EmbeddingRuntimeInput,
     private readonly home?: string
   ) {
-    this.embeddings = embeddingRuntimeFrom(embeddings);
+    this.embeddings = embeddings === undefined
+      ? defaultEmbeddingRuntime(process.env, loadCodetrapConfig(home))
+      : embeddingRuntimeFrom(embeddings);
     this.scopes = new ScopedRepositoryContext(cwd, this.embeddings, home);
   }
 
@@ -255,6 +258,10 @@ export class TrapStore {
 
   embeddingRuntimeStatus(): EmbeddingRuntimeStatus {
     return this.embeddings.status();
+  }
+
+  embeddingRuntimeHealth(): Promise<EmbeddingRuntimeStatus> {
+    return this.embeddings.health();
   }
 
   forCwd(cwd: string): TrapStore {

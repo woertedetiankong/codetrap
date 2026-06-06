@@ -35,16 +35,16 @@ export type DoctorReport = {
   mcp_hint: string;
 };
 
-export function buildDoctorReport(
+export async function buildDoctorReport(
   store: TrapStore,
   operations: TrapOperations,
   cwd = process.cwd(),
   candidateReview: ProjectCandidateReviewSummary | null = null
-): DoctorReport {
+): Promise<DoctorReport> {
   const scope = createScopeContext(cwd);
   const stats = operations.getStats();
   const embeddings = operations.getEmbeddingStats();
-  const embeddingRuntime = store.embeddingRuntimeStatus();
+  const embeddingRuntime = await store.embeddingRuntimeHealth();
   const semanticAvailable = embeddingRuntime.available;
   const diagnostics = store.diagnostics();
 

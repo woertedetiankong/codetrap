@@ -24,6 +24,16 @@ class HybridFusionEmbedder implements EmbeddingProvider {
   }
 }
 
+class AlternateMockEmbedder implements EmbeddingProvider {
+  readonly provider = "alternate-mock";
+  readonly model = "alternate-mock-embedding";
+  readonly dimensions = 6;
+
+  async embed(texts: string[], _task: EmbeddingTask): Promise<Float32Array[]> {
+    return texts.map(vectorFor);
+  }
+}
+
 describe("semantic and hybrid search", () => {
   test("semantic search ranks traps with mock embeddings", async () => {
     const embedder = new MockEmbedder();
@@ -116,6 +126,22 @@ describe("semantic and hybrid search", () => {
 
     repo.update(id, { fix: "Use the new fetchWrapper helper." });
     expect(repo.getEmbedding(id)).toBeNull();
+  });
+
+  test("changing embedding provider metadata requires fresh embeddings", async () => {
+    const db = openDatabase(":memory:");
+    const repo = new TrapRepository(db, new MockEmbedder());
+    const id = repo.add(trap());
+    await repo.ensureEmbeddings();
+
+    expect(repo.getEmbedding(id)?.provider).toBe("mock");
+
+    const alternateRepo = new TrapRepository(db, new AlternateMockEmbedder());
+    expect(await alternateRepo.search("remote API calls", { mode: "semantic" })).toEqual([]);
+
+    const refresh = await alternateRepo.ensureEmbeddings();
+    expect(refresh.generated).toBe(1);
+    expect(alternateRepo.getEmbedding(id)?.provider).toBe("alternate-mock");
   });
 });
 

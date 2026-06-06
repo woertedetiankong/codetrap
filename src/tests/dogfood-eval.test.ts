@@ -153,7 +153,7 @@ describe("dogfood eval script", () => {
     expect(payload.next_actions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          command: "export JINA_API_KEY=<your-jina-api-key>",
+          command: "export CODETRAP_EMBEDDING_PROVIDER=ollama",
         }),
       ])
     );
@@ -171,7 +171,15 @@ function runDogfood(args: string[], env: Record<string, string> = {}) {
   const proc = Bun.spawnSync({
     cmd: ["bun", "run", "scripts/dogfood-eval.ts", ...args],
     cwd: process.cwd(),
-    env: { ...process.env, ...env },
+    env: {
+      ...process.env,
+      CODETRAP_EMBEDDING_PROVIDER: "",
+      CODETRAP_OLLAMA_MODEL: "",
+      CODETRAP_OLLAMA_ENDPOINT: "",
+      CODETRAP_OLLAMA_DIMENSIONS: "",
+      OLLAMA_HOST: "",
+      ...env,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });

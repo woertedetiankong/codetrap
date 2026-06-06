@@ -285,40 +285,51 @@ codetrap session accept <candidate-id> --session <session-id>
 codetrap session reject <candidate-id> --session <session-id> --reason "<reason>"
 ```
 
-## Optional: Jina Embeddings
+## Optional: Local Ollama Embeddings
 
-`JINA_API_KEY` is optional. Without it, codetrap still works with SQLite FTS keyword search, and hybrid search falls back to FTS.
+codetrap works with no embedding provider. In that mode, search uses SQLite FTS keyword matching, and hybrid search falls back to FTS.
 
-Privacy note: codetrap does not collect telemetry. FTS search is local-only. When `JINA_API_KEY` is set, `codetrap embed` sends trap passages to Jina, and semantic or hybrid search may send query text to Jina to compute embeddings.
+Recommended local semantic search uses Ollama with `qwen3-embedding:0.6b`. This keeps trap passages and query text on your machine.
 
-Create a key from the [Jina AI dashboard](https://jina.ai/api-dashboard/), then set it globally if you want semantic or hybrid search to work from every directory.
+Install Ollama, then pull the 0.6B embedding model:
+
+```bash
+ollama pull qwen3-embedding:0.6b
+```
+
+Do not omit `:0.6b`; `qwen3-embedding:latest` is much larger.
+
+Configure codetrap to use Ollama:
 
 macOS or Linux with zsh:
 
 ```bash
-echo 'export JINA_API_KEY="your-jina-api-key"' >> ~/.zshrc
+echo 'export CODETRAP_EMBEDDING_PROVIDER=ollama' >> ~/.zshrc
+echo 'export CODETRAP_OLLAMA_MODEL=qwen3-embedding:0.6b' >> ~/.zshrc
 source ~/.zshrc
 ```
 
 macOS or Linux with bash:
 
 ```bash
-echo 'export JINA_API_KEY="your-jina-api-key"' >> ~/.bashrc
+echo 'export CODETRAP_EMBEDDING_PROVIDER=ollama' >> ~/.bashrc
+echo 'export CODETRAP_OLLAMA_MODEL=qwen3-embedding:0.6b' >> ~/.bashrc
 source ~/.bashrc
 ```
 
 Windows PowerShell:
 
 ```powershell
-setx JINA_API_KEY "your-jina-api-key"
+setx CODETRAP_EMBEDDING_PROVIDER "ollama"
+setx CODETRAP_OLLAMA_MODEL "qwen3-embedding:0.6b"
 ```
 
 After `setx`, open a new PowerShell window.
 
-Verify that the key is visible without printing the secret:
+Verify Ollama embedding generation:
 
 ```bash
-bun -e 'console.log(process.env.JINA_API_KEY ? "has-key" : "no-key")'
+curl http://127.0.0.1:11434/api/embed -d '{"model":"qwen3-embedding:0.6b","input":"HTTP request timeout"}'
 ```
 
 Generate embeddings for the traps you want semantic search to use:
@@ -335,11 +346,13 @@ Then search:
 codetrap search "HTTP request timeout" --mode hybrid
 ```
 
-If `JINA_API_KEY` is not set:
+Optional cloud provider: set `CODETRAP_EMBEDDING_PROVIDER=jina` and `JINA_API_KEY` to use Jina instead of Ollama. Privacy note: codetrap does not collect telemetry. FTS and Ollama search are local-only. When Jina is configured, `codetrap embed` sends trap passages to Jina, and semantic or hybrid search may send query text to Jina to compute embeddings.
+
+If no embedding provider is configured:
 
 - `codetrap search "<query>" --mode fts` works normally.
 - `codetrap search "<query>" --mode hybrid` works, but falls back to FTS.
-- `codetrap search "<query>" --mode semantic` and `codetrap embed` require `JINA_API_KEY`.
+- `codetrap search "<query>" --mode semantic` and `codetrap embed` require an embedding provider.
 
 ## Optional: Codex MCP
 

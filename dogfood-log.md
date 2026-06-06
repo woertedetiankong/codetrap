@@ -493,3 +493,19 @@ Judgment: no_relevant_trap
 Action changed: no
 Promote: no
 Note: No project trap covered docs synchronization for module-boundary drift. Update current docs directly and keep historical logs intact where they describe older milestones.
+
+## 2026-06-06 - Local Ollama embedding provider
+
+Task: Add a local Ollama embedding provider for `qwen3-embedding:0.6b` while preserving existing Jina and SQLite BLOB exact-scan behavior.
+Query: local ollama embedding provider qwen3 semantic hybrid
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: No existing trap covered local embedding provider integration. Keep the work scoped to `EmbeddingProvider` / `EmbeddingRuntime`, preserve provider/model/dimension freshness metadata, and do not introduce sqlite-vec or ONNX in this pass.

@@ -349,13 +349,13 @@ function cmdStats(args: string[], operations: TrapOperations): CommandResult {
     : textResult(formatStatsText(stats));
 }
 
-function cmdDoctor(args: string[], store: TrapStore, operations: TrapOperations): CommandResult {
+async function cmdDoctor(args: string[], store: TrapStore, operations: TrapOperations): Promise<CommandResult> {
   const { opts } = parseArgs(args);
   const projectRoot = store.getProjectRoot();
   const candidateReview = projectRoot
     ? new SessionOperations(new SessionStore(projectRoot), operations).candidateReviewSummary()
     : null;
-  const report = buildDoctorReport(store, operations, process.cwd(), candidateReview);
+  const report = await buildDoctorReport(store, operations, process.cwd(), candidateReview);
   return opts.json !== undefined
     ? jsonResult(report)
     : textResult(formatDoctorText(report));

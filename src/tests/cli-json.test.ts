@@ -150,7 +150,42 @@ describe("CLI JSON contract", () => {
     });
     expect(doctor.next_actions).toEqual([
       expect.objectContaining({
-        command: "export JINA_API_KEY=<your-jina-api-key>",
+        command: "export CODETRAP_EMBEDDING_PROVIDER=ollama",
+      }),
+    ]);
+  });
+
+  test("doctor --json reports configured but unreachable Ollama as unavailable", () => {
+    const cwd = tempProjectDir("codetrap-cli-doctor-ollama-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const configDir = join(home, ".codetrap");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config.json"), JSON.stringify({
+      embeddings: {
+        provider: "ollama",
+        endpoint: "http://127.0.0.1:1",
+        model: "qwen3-embedding:0.6b",
+        dimensions: 1024,
+      },
+    }));
+
+    const result = runCli(["doctor", "--json"], cwd, home);
+    expect(result.exitCode).toBe(0);
+
+    const doctor = JSON.parse(result.stdout);
+    expect(doctor.hybrid_search).toMatchObject({
+      semantic_available: false,
+      fallback_reason: "semantic_unavailable",
+    });
+    expect(doctor.embeddings.project).toMatchObject({
+      provider_available: true,
+      provider: "ollama",
+      model: "qwen3-embedding:0.6b",
+      dimensions: 1024,
+    });
+    expect(doctor.next_actions).toEqual([
+      expect.objectContaining({
+        command: "ollama list",
       }),
     ]);
   });
@@ -417,6 +452,11 @@ function runCli(args: string[], cwd: string, home: string, stdin?: string) {
       ...process.env,
       HOME: home,
       USERPROFILE: home,
+      CODETRAP_EMBEDDING_PROVIDER: "",
+      CODETRAP_OLLAMA_MODEL: "",
+      CODETRAP_OLLAMA_ENDPOINT: "",
+      CODETRAP_OLLAMA_DIMENSIONS: "",
+      OLLAMA_HOST: "",
       JINA_API_KEY: "",
       CODETRAP_SEARCH_MODE: "",
       CODETRAP_SEARCH_LIMIT: "",

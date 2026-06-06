@@ -115,7 +115,7 @@ codetrap session reject <candidate-id> --session <session-id> --reason "<reason>
 - **Session mode capture** — record implementation notes, promote explicit structured trap notes into candidates, and save only user-accepted lessons
 - **Dual scope** — project-scoped (`.codetrap/traps.db`) and global (`~/.codetrap/traps.db`)
 - **CLI-first agent API** — `search/show/list/stats/doctor --json` and stdin query support for shell-friendly automation
-- **Three search modes** — FTS (SQLite FTS5), semantic (Jina embeddings), hybrid (RRF fusion)
+- **Three search modes** — FTS (SQLite FTS5), semantic (local Ollama or Jina embeddings), hybrid (RRF fusion)
 - **Chinese + mixed-language search** — CJK bigram tokenizer, synonym map for Chinese-English terms
 - **MCP server** — optional tools + resources for AI agent integration
 - **Embedding cache** with freshness tracking — embeddings are rebuildable, stale ones auto-invalidated
@@ -170,7 +170,7 @@ codetrap/
 │   │   ├── trap-scope-match.ts Path/module/owner applicability matching
 │   │   ├── trap-archive.ts   Import/export compatibility
 │   │   ├── trap-transfer.ts  DB-to-DB transfer for scope migration
-│   │   ├── embedder.ts       Jina Embeddings adapter
+│   │   ├── embedder.ts       Ollama and Jina Embeddings adapters
 │   │   ├── embedding-job.ts  Batch embedding generation
 │   │   ├── format.ts         CLI output formatting
 │   │   ├── scope.ts          Project root detection
@@ -226,7 +226,7 @@ codetrap/
 | `doctor` | Diagnose cwd, scope, database paths, trap counts, and embedding health (--json) |
 | `repair-scope` | Move legacy mis-scoped project traps into the current project (dry-run by default, `--apply` to mutate, `--json`) |
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
-| `embed` | Generate embeddings (requires JINA_API_KEY) |
+| `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
 | `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, accept/reject candidates, and clean up session files |
 | `web` | Start the local review and trap library console |
 | `serve` | Start MCP server |
@@ -424,7 +424,11 @@ codetrap://project/recent?cwd=%2Fpath%2Fto%2Fproject
 
 | Env Variable | Required | Description |
 |---|---|---|
-| `JINA_API_KEY` | No | Jina AI API key for semantic/hybrid search. Without it, hybrid falls back to FTS. Get one at [jina.ai](https://jina.ai/api-dashboard/) |
+| `CODETRAP_EMBEDDING_PROVIDER` | No | Embedding provider for semantic/hybrid search: `ollama` or `jina`. Recommended local value: `ollama` |
+| `CODETRAP_OLLAMA_MODEL` | No | Ollama embedding model. Recommended: `qwen3-embedding:0.6b` |
+| `CODETRAP_OLLAMA_ENDPOINT` | No | Ollama endpoint. Default: `http://127.0.0.1:11434` |
+| `CODETRAP_OLLAMA_DIMENSIONS` | No | Ollama embedding dimensions. Default: `1024` for `qwen3-embedding:0.6b` |
+| `JINA_API_KEY` | No | Jina AI API key for optional cloud semantic/hybrid search. Get one at [jina.ai](https://jina.ai/api-dashboard/) |
 | `CODETRAP_SEARCH_MODE` | No | Default search mode: `fts`, `semantic`, or `hybrid` |
 | `CODETRAP_SEARCH_LIMIT` | No | Default search result limit |
 | `CODETRAP_SEARCH_SCOPE` | No | Default search scope: `project` or `global` |
@@ -439,6 +443,12 @@ Behavior preferences can also live in `~/.codetrap/config.json`; CLI args overri
     "limit": 20,
     "scope": "project",
     "rerank": true
+  },
+  "embeddings": {
+    "provider": "ollama",
+    "endpoint": "http://127.0.0.1:11434",
+    "model": "qwen3-embedding:0.6b",
+    "dimensions": 1024
   }
 }
 ```
@@ -459,44 +469,51 @@ Trap JSON supports optional applicability fields:
 
 Empty applicability fields mean the trap applies everywhere. `search` and `list` can filter with `--path`, `--module`, and `--owner`; matching scoped traps receive a small rerank boost.
 
-### Jina Embeddings Setup
+### Local Ollama Embeddings Setup
 
-codetrap works without a Jina API key. In that mode, search uses SQLite FTS keyword matching.
+codetrap works with no embedding provider. In that mode, search uses local SQLite FTS keyword matching, and hybrid search falls back to FTS.
 
-Privacy note: codetrap does not collect telemetry. FTS search is local-only. When `JINA_API_KEY` is set, `codetrap embed` sends trap passages to Jina, and semantic or hybrid search may send query text to Jina to compute embeddings.
+Recommended local semantic search uses Ollama with `qwen3-embedding:0.6b`. This keeps trap passages and query text on your machine.
 
-If you want semantic search or stronger hybrid search, configure `JINA_API_KEY`.
+1. Install Ollama, then pull the 0.6B embedding model:
 
-1. Create a Jina API key from the [Jina AI dashboard](https://jina.ai/api-dashboard/).
+```bash
+ollama pull qwen3-embedding:0.6b
+```
 
-2. Add it to your shell environment.
+Do not omit `:0.6b`; `qwen3-embedding:latest` is much larger.
+
+2. Configure codetrap to use Ollama:
 
 macOS or Linux with zsh:
 
 ```bash
-echo 'export JINA_API_KEY="your-jina-api-key"' >> ~/.zshrc
+echo 'export CODETRAP_EMBEDDING_PROVIDER=ollama' >> ~/.zshrc
+echo 'export CODETRAP_OLLAMA_MODEL=qwen3-embedding:0.6b' >> ~/.zshrc
 source ~/.zshrc
 ```
 
 macOS or Linux with bash:
 
 ```bash
-echo 'export JINA_API_KEY="your-jina-api-key"' >> ~/.bashrc
+echo 'export CODETRAP_EMBEDDING_PROVIDER=ollama' >> ~/.bashrc
+echo 'export CODETRAP_OLLAMA_MODEL=qwen3-embedding:0.6b' >> ~/.bashrc
 source ~/.bashrc
 ```
 
 Windows PowerShell:
 
 ```powershell
-setx JINA_API_KEY "your-jina-api-key"
+setx CODETRAP_EMBEDDING_PROVIDER "ollama"
+setx CODETRAP_OLLAMA_MODEL "qwen3-embedding:0.6b"
 ```
 
 After `setx`, open a new PowerShell window.
 
-3. Verify that the key is visible without printing the secret:
+3. Verify Ollama embedding generation:
 
 ```bash
-bun -e 'console.log(process.env.JINA_API_KEY ? "has-key" : "no-key")'
+curl http://127.0.0.1:11434/api/embed -d '{"model":"qwen3-embedding:0.6b","input":"HTTP request timeout"}'
 ```
 
 4. Generate embeddings for the traps you want semantic search to use:
@@ -513,11 +530,13 @@ codetrap embed --scope global
 codetrap search "HTTP request timeout" --mode hybrid
 ```
 
-If `JINA_API_KEY` is not set:
+Optional cloud provider: set `CODETRAP_EMBEDDING_PROVIDER=jina` and `JINA_API_KEY` to use Jina instead of Ollama. Privacy note: codetrap does not collect telemetry. FTS and Ollama search are local-only. When Jina is configured, `codetrap embed` sends trap passages to Jina, and semantic or hybrid search may send query text to Jina to compute embeddings.
+
+If no embedding provider is configured:
 
 - `codetrap search "<query>" --mode fts` works normally.
 - `codetrap search "<query>" --mode hybrid` works, but falls back to FTS.
-- `codetrap search "<query>" --mode semantic` and `codetrap embed` require `JINA_API_KEY`.
+- `codetrap search "<query>" --mode semantic` and `codetrap embed` require an embedding provider.
 
 ## Build
 
@@ -544,7 +563,7 @@ bun run eval:dogfood -- report --live  # Dogfood eval with configured embedding 
 |---|---|
 | Runtime | Bun + TypeScript |
 | Database | SQLite (bun:sqlite) + FTS5 |
-| Embeddings | Jina AI (`jina-embeddings-v5-text-small`) |
+| Embeddings | Local Ollama (`qwen3-embedding:0.6b`) or Jina AI (`jina-embeddings-v5-text-small`) |
 | MCP | `@modelcontextprotocol/sdk` |
 | Search | FTS5 + cosine similarity + RRF fusion + generic rerank |
 
