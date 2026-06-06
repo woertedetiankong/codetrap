@@ -91,11 +91,6 @@ export class JinaEmbedder implements EmbeddingProvider {
   }
 }
 
-export function createDefaultEmbeddingProvider(): EmbeddingProvider | undefined {
-  const apiKey = process.env.JINA_API_KEY;
-  return apiKey ? new JinaEmbedder(apiKey) : undefined;
-}
-
 export function embeddingConfig(provider: EmbeddingProvider): EmbeddingConfig {
   return {
     provider: provider.provider,

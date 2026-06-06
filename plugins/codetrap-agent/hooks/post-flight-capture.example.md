@@ -1,25 +1,25 @@
 # Post-flight Codetrap Capture
 
-Use this template after a task reveals a reusable pitfall. Do not write the trap automatically; ask the user to confirm first.
+Use this template after a task reveals a reusable pitfall. Do not write the trap automatically; put it in the session candidate inbox first.
 
-```json
-{
-  "title": "Short pitfall title",
-  "category": "bug",
-  "scope": "project",
-  "context": "When this situation appears...",
-  "mistake": "The agent tends to...",
-  "fix": "Do this instead...",
-  "tags": ["area", "tool"],
-  "severity": "warning",
-  "path_globs": ["src/example/**"],
-  "module": "example",
-  "owner": "platform"
-}
+```markdown
+Title: Short pitfall title
+Category: bug
+Scope: project
+Context: When this situation appears...
+Mistake: The agent tends to...
+Fix: Do this instead...
+Tags: area, tool
+Severity: warning
+Path globs: src/example/**
+Module: example
+Owner: platform
 ```
 
-After confirmation:
+Capture the candidate:
 
 ```bash
-codetrap add --json '<json above>' --output-json
+codetrap session capture --trap-markdown-file candidate.md --kind review --json
 ```
+
+Then review it with `codetrap session candidate <candidate-id> --session <session-id> --json` and accept, edit, reject, or supersede it explicitly.

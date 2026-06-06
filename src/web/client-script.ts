@@ -1,4 +1,5 @@
 import { WEB_TEXT_JSON } from "./client-text";
+import { WEB_REVIEW_CLIENT_SCRIPT } from "./client-review";
 import { WEB_SHELL_CLIENT_SCRIPT } from "./client-shell";
 
 export function webClientScript(textJson = WEB_TEXT_JSON): string {
@@ -17,6 +18,7 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       mainView: "review",
       projects: [],
       sessions: [],
+      candidateReview: null,
       candidates: [],
       traps: [],
       trapKey: null,
@@ -31,6 +33,7 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       sessionId: null,
       candidateId: null,
       candidateView: "inbox",
+      candidateDirty: false,
       sidebarCollapsed: savedSidebarCollapsed,
       queueCollapsed: savedQueueCollapsed,
       options: { categories: [], severities: [], scopes: [] },
@@ -39,6 +42,7 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
 
     const el = (id) => document.getElementById(id);
 ${WEB_SHELL_CLIENT_SCRIPT}
+${WEB_REVIEW_CLIENT_SCRIPT}
     function t(key, params = {}) {
       const text = TEXT[state.locale]?.[key] ?? TEXT.en[key] ?? key;
       return Object.entries(params).reduce((value, [name, replacement]) =>
@@ -119,6 +123,7 @@ ${WEB_SHELL_CLIENT_SCRIPT}
     async function loadSessions() {
       if (!state.projectRoot) {
         state.sessions = [];
+        state.candidateReview = null;
         state.candidates = [];
         state.traps = [];
         state.insightTraps = [];
@@ -128,9 +133,8 @@ ${WEB_SHELL_CLIENT_SCRIPT}
       }
       const data = await api("/api/sessions?project=" + encodeURIComponent(state.projectRoot));
       state.sessions = data.sessions;
-      if (!state.sessionId || !state.sessions.some((s) => s.id === state.sessionId)) {
-        state.sessionId = state.sessions[0]?.id || null;
-      }
+      state.candidateReview = data.candidate_review || null;
+      state.sessionId = selectedReviewSessionId(state.sessions, state.sessionId);
       renderSessions();
       if (state.mainView === "library") {
         await loadTraps();
@@ -152,7 +156,12 @@ ${WEB_SHELL_CLIENT_SCRIPT}
       }
       const data = await api("/api/candidates?project=" + encodeURIComponent(state.projectRoot) + "&session=" + encodeURIComponent(state.sessionId));
       state.candidates = data.candidates;
-      selectVisibleCandidate();
+      state.candidateId = reviewQueueModel({
+        candidates: state.candidates,
+        candidateView: state.candidateView,
+        candidateId: state.candidateId,
+        candidateReview: state.candidateReview
+      }).selectedCandidateId;
       if (state.mainView === "review") {
         renderCandidates();
         renderDetail();
@@ -216,12 +225,14 @@ ${WEB_SHELL_CLIENT_SCRIPT}
         el("queue-title").textContent = t("title.trapLibrary");
         el("detail-title").textContent = t("title.trapDetail");
         el("candidate-tabs").classList.add("hidden");
+        hideReviewSummary();
         renderLibrary();
         renderTrapDetail();
       } else if (state.mainView === "insights") {
         el("queue-title").textContent = t("title.growthInsights");
         el("detail-title").textContent = t("title.insightDetail");
         el("candidate-tabs").classList.add("hidden");
+        hideReviewSummary();
         renderInsightsView();
         renderInsightDetail();
       } else {
@@ -261,6 +272,7 @@ ${WEB_SHELL_CLIENT_SCRIPT}
             <span class="row-title">\${escapeHtml(session.goal)}</span>
             <span class="meta">
               <span class="pill">\${escapeHtml(valueLabel(session.status))}</span>
+              <span class="pill \${session.pending_count ? "warn" : ""}">\${escapeHtml(t("pill.pending", { count: session.pending_count || 0 }))}</span>
               <span class="pill">\${escapeHtml(t("pill.candidates", { count: session.candidate_count || 0 }))}</span>
               <span class="pill accepted">\${escapeHtml(t("pill.accepted", { count: session.accepted_count || 0 }))}</span>
             </span>
@@ -321,14 +333,21 @@ ${WEB_SHELL_CLIENT_SCRIPT}
 
     function renderCandidates() {
       if (state.mainView !== "review") return;
-      const pendingCount = state.candidates.filter((candidate) => candidate.status === "proposed").length;
-      const reviewedCount = state.candidates.length - pendingCount;
-      const sorted = sortedVisibleCandidates();
-      selectVisibleCandidate(sorted);
+      const model = reviewQueueModel({
+        candidates: state.candidates,
+        candidateView: state.candidateView,
+        candidateId: state.candidateId,
+        candidateReview: state.candidateReview
+      });
+      const pendingCount = model.pendingCount;
+      const reviewedCount = model.reviewedCount;
+      const sorted = model.visibleCandidates;
+      state.candidateId = model.selectedCandidateId;
       const session = state.sessions.find((item) => item.id === state.sessionId);
       el("queue-meta").textContent = session
         ? t("meta.sessionCounts", { goal: session.goal, pending: pendingCount, reviewed: reviewedCount })
         : t("meta.noSession");
+      renderReviewSummary(model.summary);
       renderCandidateViewTabs(pendingCount, reviewedCount);
       el("candidates").innerHTML = sorted.length ? sorted.map((candidate) => \`
         <div class="row \${candidate.id === state.candidateId ? "active" : ""} \${candidate.status} \${reviewCssClass(candidate)}">
@@ -741,20 +760,29 @@ ${WEB_SHELL_CLIENT_SCRIPT}
       });
     }
 
-    function sortedVisibleCandidates() {
-      return state.candidates
-        .filter(candidateVisible)
-        .sort((a, b) => statusRank(a.status) - statusRank(b.status) || b.quality_score - a.quality_score);
-    }
-
-    function candidateVisible(candidate) {
-      return state.candidateView === "inbox" ? candidate.status === "proposed" : candidate.status !== "proposed";
-    }
-
-    function selectVisibleCandidate(candidates = sortedVisibleCandidates()) {
-      if (!candidates.some((candidate) => candidate.id === state.candidateId)) {
-        state.candidateId = candidates[0]?.id || null;
+    function renderReviewSummary(summary = visibleReviewSummary(state.candidateReview)) {
+      const target = el("review-summary");
+      if (!target) return;
+      if (!summary) {
+        target.classList.add("hidden");
+        target.innerHTML = "";
+        return;
       }
+      target.classList.remove("hidden");
+      target.innerHTML = \`
+        <div class="review-banner">
+          <strong>\${escapeHtml(t("reviewSummary.pending", { count: summary.pending_count }))}</strong>
+          <span>\${escapeHtml(t("reviewSummary.sessions", { count: summary.pending_session_count }))}</span>
+          <span>\${escapeHtml(t("reviewSummary.quality", { high: summary.high_quality_pending_count, edit: summary.needs_edit_count }))}</span>
+        </div>
+      \`;
+    }
+
+    function hideReviewSummary() {
+      const target = el("review-summary");
+      if (!target) return;
+      target.classList.add("hidden");
+      target.innerHTML = "";
     }
 
     function renderTrapDetail() {
@@ -854,9 +882,11 @@ ${WEB_SHELL_CLIENT_SCRIPT}
       const candidate = state.candidates.find((item) => item.id === state.candidateId);
       el("detail-meta").textContent = candidate ? candidate.id + " / " + valueLabel(candidate.status) : t("meta.selectCandidate");
       if (!candidate) {
+        state.candidateDirty = false;
         el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("empty.noCandidateSelected")) + '</div>';
         return;
       }
+      state.candidateDirty = false;
       const disabled = candidate.status !== "proposed" ? "disabled" : "";
       el("detail").innerHTML = \`
         <div class="scroll">
@@ -893,6 +923,7 @@ ${WEB_SHELL_CLIENT_SCRIPT}
         \${renderDetailActions(candidate, disabled)}
       \`;
       bindDetailActions(candidate);
+      bindCandidateFormDirty(candidate);
       bindTrapJumpButtons();
     }
 
@@ -944,7 +975,27 @@ ${WEB_SHELL_CLIENT_SCRIPT}
         <button id="accept-anyway" \${disabled}>\${escapeHtml(t("action.acceptAnyway"))}</button>
         <input id="supersedes" placeholder="\${escapeAttr(t("placeholder.supersedesId"))}" style="width:150px" \${disabled}>
         <button id="supersede" \${disabled}>\${escapeHtml(t("action.supersede"))}</button>
+        <span id="candidate-draft-state" class="action-hint">\${escapeHtml(t("hint.acceptUsesCurrentDraft"))}</span>
       </div>\`;
+    }
+
+    function bindCandidateFormDirty(candidate) {
+      const form = el("candidate-form");
+      if (!form || candidate.status !== "proposed") return;
+      const markDirty = () => {
+        state.candidateDirty = true;
+        renderCandidateDraftState();
+      };
+      form.addEventListener("input", markDirty);
+      form.addEventListener("change", markDirty);
+      renderCandidateDraftState();
+    }
+
+    function renderCandidateDraftState() {
+      const draft = el("candidate-draft-state");
+      if (!draft) return;
+      draft.textContent = state.candidateDirty ? t("hint.unsavedDraftAccepted") : t("hint.acceptUsesCurrentDraft");
+      draft.classList.toggle("dirty", state.candidateDirty);
     }
 
     function bindDetailActions(candidate) {
@@ -959,6 +1010,7 @@ ${WEB_SHELL_CLIENT_SCRIPT}
             method: "POST",
             body: JSON.stringify(candidatePayload(candidate.id))
           });
+          state.candidateDirty = false;
           await syncAfterMutation(data.candidate.id);
           showStatus(t("status.candidateSaved"));
         } catch (error) {
@@ -989,12 +1041,21 @@ ${WEB_SHELL_CLIENT_SCRIPT}
 
     async function acceptCandidate(extra) {
       try {
+        const payload = el("candidate-form")
+          ? candidatePayload(state.candidateId, extra)
+          : {
+              projectRoot: state.projectRoot,
+              sessionId: state.sessionId,
+              candidateId: state.candidateId,
+              ...extra
+            };
         const data = await api("/api/candidate/accept", {
           method: "POST",
-          body: JSON.stringify({ projectRoot: state.projectRoot, sessionId: state.sessionId, candidateId: state.candidateId, ...extra })
+          body: JSON.stringify(payload)
         });
         await syncAfterMutation(data.candidate.id);
         state.conflicts = [];
+        state.candidateDirty = false;
         showStatus(t("status.candidateAccepted"));
       } catch (error) {
         if (error.payload?.possible_conflicts) {
@@ -1009,25 +1070,30 @@ ${WEB_SHELL_CLIENT_SCRIPT}
       }
     }
 
-    function candidatePayload(candidateId) {
-      const form = new FormData(el("candidate-form"));
-      return {
+    function candidatePayload(candidateId, extra = {}) {
+      return reviewCandidateMutationPayload({
         projectRoot: state.projectRoot,
         sessionId: state.sessionId,
         candidateId,
-        trap: {
-          title: String(form.get("title") || ""),
-          category: String(form.get("category") || ""),
-          scope: String(form.get("scope") || ""),
-          severity: String(form.get("severity") || ""),
-          tags: splitList(form.get("tags")),
-          path_globs: splitList(form.get("path_globs")),
-          module: blankToNull(form.get("module")),
-          owner: blankToNull(form.get("owner")),
-          context: String(form.get("context") || ""),
-          mistake: String(form.get("mistake") || ""),
-          fix: String(form.get("fix") || "")
-        }
+        trap: reviewCandidateTrapDraft(candidateFormFields()),
+        extra
+      });
+    }
+
+    function candidateFormFields() {
+      const form = new FormData(el("candidate-form"));
+      return {
+        title: form.get("title"),
+        category: form.get("category"),
+        scope: form.get("scope"),
+        severity: form.get("severity"),
+        tags: form.get("tags"),
+        path_globs: form.get("path_globs"),
+        module: form.get("module"),
+        owner: form.get("owner"),
+        context: form.get("context"),
+        mistake: form.get("mistake"),
+        fix: form.get("fix")
       };
     }
 
@@ -1140,10 +1206,6 @@ ${WEB_SHELL_CLIENT_SCRIPT}
         </div>\`).join("")}</div>\`;
     }
 
-    function statusRank(status) {
-      return status === "proposed" ? 0 : status === "accepted" ? 1 : 2;
-    }
-
     function reviewLabel(candidate) {
       const review = candidate.review;
       if (!review || review.status === "pending") return t("review.pending");
@@ -1157,15 +1219,6 @@ ${WEB_SHELL_CLIENT_SCRIPT}
 
     function reviewCssClass(candidate) {
       return String(candidate.review?.status || candidate.status).replace(/_/g, "-");
-    }
-
-    function splitList(value) {
-      return String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
-    }
-
-    function blankToNull(value) {
-      const text = String(value || "").trim();
-      return text ? text : null;
     }
 
     function escapeHtml(value) {

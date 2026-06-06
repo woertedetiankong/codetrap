@@ -11,9 +11,13 @@ import type {
 import { SearchService, type SearchOptions } from "../lib/search-service";
 import {
   type EmbeddingConfig,
-  type EmbeddingProvider,
   type StoredEmbedding,
 } from "../lib/embedder";
+import {
+  embeddingRuntimeFrom,
+  type EmbeddingRuntime,
+  type EmbeddingRuntimeInput,
+} from "../lib/embedding-runtime";
 import { runEmbeddingJob } from "../lib/embedding-job";
 import { passageFieldsChanged } from "../lib/trap-search-document";
 import * as queries from "./queries";
@@ -30,12 +34,14 @@ export class TrapRepository {
   private readonly searchService: SearchService;
   private readonly searchPolicy = new TrapSearchPolicy();
   private readonly embeddingIndex: DatabaseEmbeddingIndex;
+  private readonly embeddings: EmbeddingRuntime;
 
   constructor(
     private readonly db: Database,
-    private readonly embedder?: EmbeddingProvider
+    embeddings?: EmbeddingRuntimeInput
   ) {
-    this.searchService = new SearchService(db, embedder);
+    this.embeddings = embeddingRuntimeFrom(embeddings);
+    this.searchService = new SearchService(db, this.embeddings);
     this.embeddingIndex = new DatabaseEmbeddingIndex(db);
   }
 
@@ -169,9 +175,9 @@ export class TrapRepository {
     skipped: number;
     batches: number;
   }> {
-    if (!this.embedder) {
-      throw new Error("Embedding provider is unavailable. Set JINA_API_KEY to generate embeddings.");
-    }
+    const provider = this.embeddings.requireProvider(
+      "Embedding provider is unavailable. Configure an embedding provider to generate embeddings."
+    );
 
     return runEmbeddingJob(
       {
@@ -180,7 +186,7 @@ export class TrapRepository {
           this.embeddingIndex.trapsNeedingEmbeddings(config, jobOpts),
         saveEmbedding: (record) => this.embeddingIndex.save(record),
       },
-      this.embedder,
+      provider,
       opts
     );
   }

@@ -4,12 +4,16 @@ import { TrapRepository } from "../db/repository";
 import type { TrapInput, TrapSearchResult } from "../domain/trap";
 import { SEARCH_MODES, type SearchMode } from "./constants";
 import {
-  createDefaultEmbeddingProvider,
-  embeddingConfig,
   type EmbeddingConfig,
   type EmbeddingProvider,
   type EmbeddingTask,
 } from "./embedder";
+import {
+  EmbeddingRuntime,
+  defaultEmbeddingRuntime,
+  embeddingRuntimeFrom,
+  type EmbeddingRuntimeInput,
+} from "./embedding-runtime";
 
 export type PhaseGate = "phase0" | "phase1" | "phase4" | "dogfood";
 export const DOGFOOD_JUDGMENTS = ["useful_hit", "miss", "noisy_hit", "no_relevant_trap"] as const;
@@ -115,8 +119,8 @@ export function recordDogfoodCase(fixturePath: string, jsonInput: string | undef
 
 export async function reportDogfood(fixturePath: string, live: boolean): Promise<SearchEvalReport> {
   const fixture = readEvalFixture(fixturePath);
-  const provider = live ? createDefaultEmbeddingProvider() : new EvalEmbedder();
-  const evaluated = await evaluateSearchFixture(fixture, provider);
+  const runtime = live ? defaultEmbeddingRuntime() : new EmbeddingRuntime(new EvalEmbedder());
+  const evaluated = await evaluateSearchFixture(fixture, runtime);
   const mode: SearchEvalReport["mode"] = live ? "live" : "deterministic";
   const report: Omit<SearchEvalReport, "next_actions"> = {
     mode,
@@ -131,12 +135,13 @@ export async function reportDogfood(fixturePath: string, live: boolean): Promise
 
 export async function evaluateSearchFixture(
   fixture: EvalFixture,
-  provider: EmbeddingProvider | undefined
+  embeddings: EmbeddingRuntimeInput
 ): Promise<Omit<SearchEvalReport, "mode" | "fixture" | "next_actions">> {
-  const repo = fixtureRepository(fixture, provider);
+  const runtime = embeddingRuntimeFrom(embeddings);
+  const repo = fixtureRepository(fixture, runtime);
 
   let providerError: string | null = null;
-  if (provider) {
+  if (runtime.available()) {
     try {
       await repo.ensureEmbeddings();
     } catch (error) {
@@ -154,7 +159,7 @@ export async function evaluateSearchFixture(
       const results = await searchRepo.search(item.query, { mode: item.mode, limit: 5 });
       const report = caseReport(item, fixture, results);
       cases.push(report);
-      if (item.mode === "hybrid" && (!provider || hasSemanticFallback(results))) {
+      if (item.mode === "hybrid" && (!runtime.available() || hasSemanticFallback(results))) {
         hybridFallbackCount++;
       }
     } catch (error) {
@@ -169,8 +174,8 @@ export async function evaluateSearchFixture(
   const noisyHits = cases.filter((item) => item.judgment === "noisy_hit");
   const metrics = aggregateMetrics(cases);
   return {
-    provider: provider ? embeddingConfig(provider) : null,
-    semantic_available: Boolean(provider && providerError === null),
+    provider: runtime.config(),
+    semantic_available: runtime.available() && providerError === null,
     provider_error: providerError,
     total_cases: cases.length,
     metrics: {
@@ -240,8 +245,9 @@ function buildSearchEvalNextActions(
 ): SearchEvalNextAction[] {
   const actions: SearchEvalNextAction[] = [];
   if (report.mode === "live" && !report.semantic_available) {
-    actions.push({
-      command: "export JINA_API_KEY=<your-jina-api-key>",
+    const action = defaultEmbeddingRuntime().setupAction();
+    if (action) actions.push({
+      command: action.command,
       reason: "Enable live semantic checks, then rerun bun run eval:dogfood -- report --live.",
     });
   }
@@ -309,8 +315,8 @@ function formatNextActions(actions: SearchEvalNextAction[]): string[] {
   return actions.map((action) => `  - ${action.command} # ${action.reason}`);
 }
 
-function fixtureRepository(fixture: EvalFixture, provider: EmbeddingProvider | undefined): TrapRepository {
-  const repo = new TrapRepository(openDatabase(":memory:"), provider);
+function fixtureRepository(fixture: EvalFixture, embeddings: EmbeddingRuntimeInput): TrapRepository {
+  const repo = new TrapRepository(openDatabase(":memory:"), embeddings);
   for (const trap of fixture.traps) repo.add(trap);
   return repo;
 }

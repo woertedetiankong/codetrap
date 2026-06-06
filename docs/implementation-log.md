@@ -2,13 +2,13 @@
 
 ## Task
 
-Implement the web Trap Library MVP: a read-only trap library in the existing web console with filters, complete trap details, and lightweight growth insights.
+Track active codetrap implementation work across web, session, search, and agent-integration milestones.
 
 ## Assumptions
 
-- The first version is read-only; mutation workflows remain in the candidate review UI and CLI.
-- Trap Library defaults to active traps across the selected project and global scope.
-- Growth Insight is derived from currently loaded traps and does not need a new persistence model.
+- Docs and AGENTS guidance should describe the current code shape, not only the feature that was active when this log was created.
+- Confirmed traps still live in `traps.db`; session candidates and implementation notes remain temporary review material until accepted.
+- CLI JSON remains the primary agent API, with MCP and the web console as thin adapters over shared operations.
 
 ## Log
 
@@ -67,3 +67,33 @@ Implement the web Trap Library MVP: a read-only trap library in the existing web
 - Fixed the shell collapse policy so the right edge button collapses the rightmost queue pane. Desktop browser verification with a 1280px viewport showed the click changed the shell to `queue-collapsed`, hid `.queue`, kept `.detail` visible and expanded, hid the right splitter, and changed the right button label to "Show queue pane".
 - Follow-up interaction polish: preflight codetrap search for `web pane drag collapse edge hover reveal sidebar queue splitter` returned no results. I added drag-collapse thresholds in `client-shell.ts` so dragging the left splitter below a 180px rail target collapses the sidebar, and dragging the right splitter until the queue would be below 230px collapses the right queue pane.
 - Added left/right 18px edge reveal zones and transient `rail-peeking` / `queue-peeking` overlay classes. Browser verification at a 1280px viewport passed: left drag produced `rail-collapsed`, left-edge hover produced `rail-peeking` with a 330px overlay, moving away hid it; right drag produced `queue-collapsed`, right-edge hover produced `queue-peeking` with a 390px overlay, moving away hid it.
+
+### 2026-06-03
+
+- Task: finish the session capture candidate inbox flow and reconcile docs after the architecture deepening.
+- `codetrap session capture --trap-json ...` initially wrote agent-drafted post-flight lessons into the session candidate inbox; as of 2026-06-05, `--trap-markdown -` is the preferred agent input and `--trap-json` remains the structured fallback. If no session is active, capture creates a post-flight session, writes the candidate and recap, then closes the session so no active state is left behind.
+- Candidate draft normalization, capture evidence, explicit note extraction, and merge/dedupe policy live in `src/lib/session-capture.ts`; `src/lib/session-candidate-document.ts` owns the pure `candidate-traps.json` state transitions.
+- CLI and web candidate review now share `src/lib/session-review.ts` for session payload paths, accepted-missing review status, conflict payloads/text, and accept/reject/cleanup payloads.
+- Embedding provider availability, provider config, setup next action, and provider-required errors moved behind `src/lib/embedding-runtime.ts`. Jina remains the only implemented provider; the new module is the adapter seam for future local providers.
+- Neat-freak docs sync found stale agent guidance in installation/release snippets and a web-only handoff. Updated AGENTS, README, install/release docs, roadmap, dogfood log, handoff, and OpenSource Explorer progress notes to point at the current session-capture and embedding-runtime shape.
+
+### 2026-06-04
+
+- Task: implement candidate review visibility for pending session candidates.
+- Preflight codetrap search for `candidate review visibility pending session doctor web inbox` returned no relevant traps. I will keep the implementation additive and derived from existing session files, with no database migration, candidate schema change, daemon, batch review, MCP session tools, or embedding work.
+- The main product gap is visibility: `doctor` does not report pending candidates, `session status/list` do not surface pending review counts clearly, and the web review view can show candidates only after selecting a session. The shared solution will compute review counts from session index entries plus `candidate-traps.json`.
+- Implemented shared candidate review summaries in `src/lib/session-review.ts` and wired them through `SessionOperations`, `doctor`, CLI session status/list, `/api/sessions`, and the Web Review view. Counts stay derived from session files and remain additive in JSON output.
+- Web Review now prefers the first session with pending candidates, shows a project-level review summary banner, and leaves existing single-candidate accept/edit/reject/supersede flows unchanged.
+- Updated README, install docs, AGENTS template, and codetrap skills to mention `doctor`, `session status/list`, and `codetrap web` as candidate review entrypoints while preserving CLI-first positioning and explicit accept semantics.
+- Validation passed with targeted candidate visibility tests, full `bun test src/tests`, `bunx tsc --noEmit`, and `bun run eval:dogfood -- report`. ESP32 dogfood confirmed the manufactured session has 3 pending candidates visible in CLI, doctor, API, and Web, while confirmed project trap stats remain 8.
+- Plannotator gates approved `brief.md`, `plan.md`, `verification.md`, `blockers.md`, and `goal-prompt.md` in `goals/candidate-review-visibility/`.
+
+### 2026-06-05
+
+- Task: implement Markdown Trap Capture as the preferred low-friction agent input for post-flight candidate traps.
+- `codetrap session capture --trap-markdown -`, inline Markdown, and `--trap-markdown-file` now parse explicit `Title` / `Context` / `Mistake` / `Fix` drafts while preserving `--trap-json` for structured callers. The parser supports multiline fields, code blocks, comma lists, bullet lists, path globs, related files, and null normalization for empty `Module:` / `Owner:`.
+- Markdown capture reuses existing candidate normalization, deterministic quality scoring, dedupe, and session evidence. It still writes only to the candidate inbox; confirmed traps require explicit accept.
+- Task: implement Candidate Review Workbench v1 with agent-team support after Markdown capture.
+- Web Review Accept, Accept anyway, and Supersede now send the currently visible candidate form as an accept-time edit, so reviewers can polish a candidate and accept it without losing unsaved changes. The action bar shows the draft safety hint.
+- Follow-up TDD architecture pass moved Review queue/draft request modeling into `src/web/client-review.ts` and kept `src/web/client-script.ts` focused on DOM composition. `src/lib/session-review.ts` now keeps the base conflict payload transport-neutral, with CLI `next_actions` added through `sessionCliConflictPayload`.
+- Validation passed with focused Web/Session Review tests, full `bun test src/tests`, `bunx tsc --noEmit`, `bun run eval:dogfood -- report`, and a browser smoke check for the Web Review draft hint.

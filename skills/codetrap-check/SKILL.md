@@ -66,4 +66,19 @@ If no traps found, say nothing — don't waste tokens.
 
 ## Step 5: Record new pitfalls
 
-If while writing code you discover a NEW pitfall that isn't in the database, propose a post-flight trap candidate. Do not write it automatically; ask: "This seems like a recurring pitfall. Want me to record it with `/codetrap-add`?"
+If while writing code you discover a NEW pitfall that isn't in the database, draft a post-flight trap candidate and put it in the session inbox:
+
+```bash
+cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
+Title: <durable pitfall>
+Context: <when it triggers>
+Mistake: <what the agent did wrong>
+Fix: <what to do instead>
+EOF
+```
+
+Use `--trap-json` only when you already have a structured object.
+
+Do not accept it automatically. Tell the user the returned candidate id and session id, then ask whether they want to accept, edit, reject, or supersede it.
+
+If there may be older unreviewed candidates, use `codetrap session status`, `codetrap session list`, `codetrap doctor`, or `codetrap web` to surface the pending review queue.

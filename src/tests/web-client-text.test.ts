@@ -8,6 +8,8 @@ describe("web client text", () => {
     expect(JSON.parse(WEB_TEXT_JSON)).toEqual(WEB_TEXT);
     expect(WEB_INDEX_HTML).toContain("\"action.deleteSession\"");
     expect(WEB_INDEX_HTML).toContain("data-delete-session");
+    expect(WEB_INDEX_HTML).toContain('id="review-summary"');
+    expect(WEB_INDEX_HTML).toContain("reviewSummary.pending");
   });
 
   test("embeds desktop pane splitters in the web shell", () => {

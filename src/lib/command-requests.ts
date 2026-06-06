@@ -1,5 +1,6 @@
 import { SEARCH_MODES, type SearchMode } from "./constants";
 import type { SearchDefaults } from "./config";
+import { capturedTrapMarkdownInput } from "./session-capture";
 import type { SearchTrapsArgs, ListTrapsArgs } from "./trap-operations";
 
 type RawArgs = Record<string, unknown>;
@@ -40,6 +41,15 @@ export type SessionCloseRequest = {
   proposeTraps: boolean;
 };
 
+export type SessionCaptureRequest = {
+  trap: Record<string, unknown>;
+  goal?: string;
+  kind?: string;
+  relatedFiles?: string[];
+  sourceRef?: string;
+  evidenceNote?: string;
+};
+
 export type SessionIdRequest = {
   sessionId?: string;
 };
@@ -71,6 +81,12 @@ export type SessionPruneRequest = {
 export type SessionNoteStdin = {
   isTTY: boolean;
   read: () => string;
+};
+
+export type SessionCaptureInput = {
+  isTTY: boolean;
+  readStdin: () => string;
+  readFile: (path: string) => string;
 };
 
 export function searchRequestFromArgs(query: string, args: RawArgs, defaults: SearchDefaults): SearchTrapsArgs {
@@ -172,6 +188,35 @@ export function sessionCloseRequestFromArgs(positionals: string[], args: RawArgs
   return {
     sessionId: positionals[0],
     proposeTraps: flagPresent(args, "propose-traps"),
+  };
+}
+
+export function sessionCaptureRequestFromArgs(args: RawArgs, input?: SessionCaptureInput): SessionCaptureRequest {
+  const sources = [
+    args["trap-json"] !== undefined,
+    args["trap-markdown"] !== undefined,
+    args["trap-markdown-file"] !== undefined,
+  ].filter(Boolean).length;
+  if (sources === 0) throw new Error("--trap-json, --trap-markdown, or --trap-markdown-file is required.");
+  if (sources > 1) throw new Error("Choose only one of --trap-json, --trap-markdown, or --trap-markdown-file.");
+
+  const markdown = markdownCaptureInput(args, input);
+  const parsedMarkdown = markdown === undefined ? null : capturedTrapMarkdownInput(markdown);
+  const trap: Record<string, unknown> | undefined = parsedMarkdown
+    ? { ...parsedMarkdown.trap }
+    : jsonObjectOption(args, "trap-json");
+  if (!trap) throw new Error("--trap-json, --trap-markdown, or --trap-markdown-file is required.");
+
+  return {
+    trap,
+    goal: stringOption(args, "goal"),
+    kind: stringOption(args, "kind"),
+    relatedFiles: uniqueStrings([
+      ...(csvOrArrayOption(args, "related_files", "related-files") ?? []),
+      ...(parsedMarkdown?.relatedFiles ?? []),
+    ]),
+    sourceRef: stringOption(args, "source_ref", "source-ref"),
+    evidenceNote: parsedMarkdown?.evidenceNote,
   };
 }
 
@@ -294,6 +339,36 @@ function jsonObjectOption(args: RawArgs, key: string): Record<string, unknown> |
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Invalid --${key}: ${message}`);
   }
+}
+
+function markdownCaptureInput(args: RawArgs, input: SessionCaptureInput | undefined): string | undefined {
+  const inline = stringOption(args, "trap-markdown");
+  const file = stringOption(args, "trap-markdown-file");
+  if (inline === undefined && file === undefined) return undefined;
+
+  const text = file !== undefined
+    ? readMarkdownFile(file, input)
+    : inline === "-"
+      ? readMarkdownStdin(input)
+      : inline ?? "";
+  if (text.trim() === "") throw new Error("Markdown trap input is required.");
+  return text;
+}
+
+function readMarkdownStdin(input: SessionCaptureInput | undefined): string {
+  if (!input) throw new Error("--trap-markdown - requires stdin support.");
+  if (input.isTTY) throw new Error("--trap-markdown - requires piped input.");
+  return input.readStdin();
+}
+
+function readMarkdownFile(path: string, input: SessionCaptureInput | undefined): string {
+  if (!input) throw new Error("--trap-markdown-file requires file read support.");
+  return input.readFile(path);
+}
+
+function uniqueStrings(values: string[]): string[] | undefined {
+  const unique = [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  return unique.length > 0 ? unique : undefined;
 }
 
 function parseDurationDays(value: string): number {

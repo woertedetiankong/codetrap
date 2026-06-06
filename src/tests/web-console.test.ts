@@ -135,6 +135,35 @@ describe("web API", () => {
     expect(detailPayload.evidence[0].related_files).toEqual(["src/web/static.ts"]);
   });
 
+  test("session list API exposes pending candidate review counts", async () => {
+    const home = tempHome();
+    const project = tempProjectDir("codetrap-web-session-review-counts-");
+    addWebProject(project, home);
+    const { sessionId } = seedCandidateSession(project, 2, home);
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+
+    const response = await api(handler, `/api/sessions?project=${encodeURIComponent(project)}`);
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.candidate_review).toMatchObject({
+      pending_count: 2,
+      reviewed_count: 0,
+      pending_session_count: 1,
+      next_session_id: sessionId,
+    });
+    expect(payload.sessions[0]).toMatchObject({
+      id: sessionId,
+      pending_count: 2,
+      reviewed_count: 0,
+      high_quality_pending_count: 2,
+      needs_edit_count: 0,
+      candidate_review: {
+        session_id: sessionId,
+        pending_count: 2,
+      },
+    });
+  });
+
   test("saves candidate drafts and resets conflict diagnostics", async () => {
     const home = tempHome();
     const project = tempProjectDir("codetrap-web-save-");
@@ -152,6 +181,8 @@ describe("web API", () => {
       },
     });
     expect(blocked.status).toBe(409);
+    const blockedPayload = await blocked.json();
+    expect(blockedPayload.next_actions).toBeUndefined();
 
     const afterConflict = JSON.parse(readFileSync(join(
       project,
@@ -200,7 +231,9 @@ describe("web API", () => {
       body: { projectRoot: project, sessionId, candidateId: "cand-001" },
     });
     expect(blocked.status).toBe(409);
-    expect((await blocked.json()).possible_conflicts[0]).toMatchObject({
+    const blockedPayload = await blocked.json();
+    expect(blockedPayload.next_actions).toBeUndefined();
+    expect(blockedPayload.possible_conflicts[0]).toMatchObject({
       trap_id: 1,
       scope: "project",
     });
@@ -230,6 +263,50 @@ describe("web API", () => {
       id: "cand-003",
       status: "rejected",
       rejection_reason: "Too broad.",
+    });
+  });
+
+  test("accepts candidate draft edits through the API", async () => {
+    const home = tempHome();
+    const project = tempProjectDir("codetrap-web-accept-edit-");
+    addWebProject(project, home);
+    const { sessionId, traps } = seedCandidateSession(project, 1, home);
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+
+    const accepted = await api(handler, "/api/candidate/accept", {
+      method: "POST",
+      body: {
+        projectRoot: project,
+        sessionId,
+        candidateId: "cand-001",
+        trap: {
+          title: "Accept current web review draft",
+          category: "api",
+          scope: "project",
+          context: "When accepting a polished candidate in the web review console.",
+          mistake: "Accepting only the last saved candidate loses visible form edits.",
+          fix: "Send the current candidate form as an accept-time edit.",
+          severity: "warning",
+          tags: ["web", "review"],
+          path_globs: ["src/web/**"],
+          module: "web",
+          owner: "",
+        },
+      },
+    });
+
+    expect(accepted.status).toBe(200);
+    const payload = await accepted.json();
+    expect(payload.candidate.trap).toMatchObject({
+      title: "Accept current web review draft",
+      module: "web",
+      owner: null,
+    });
+    const details = traps.getTrapDetails(payload.trap_id, "project");
+    expect(details?.trap).toMatchObject({
+      title: "Accept current web review draft",
+      fix: "Send the current candidate form as an accept-time edit.",
+      owner: null,
     });
   });
 

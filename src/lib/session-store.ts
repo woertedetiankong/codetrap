@@ -11,6 +11,15 @@ import type { CandidateTrap, CandidateTrapDocument, SessionIndexDocument, Sessio
 import { parseSessionNoteKind, SESSION_VERSION } from "../domain/session";
 import { CODETRAP_DIR } from "./constants";
 import {
+  acceptCandidateInDocument,
+  addCandidateToDocument,
+  recordCandidateConflictCheckInDocument,
+  rejectCandidateInDocument,
+  removeCandidatesFromDocument,
+  saveCandidateTrapInDocument,
+  type CandidateDocumentUpdateResult,
+} from "./session-candidate-document";
+import {
   ACTIVE_SESSION_FILE,
   CANDIDATES_FILE,
   createSessionId,
@@ -29,8 +38,7 @@ import {
   sessionRelativeFile,
   SESSIONS_DIR,
 } from "./session-codec";
-import { proposeCandidateTraps } from "./session-capture";
-import { scoreCandidateTrap } from "./trap-quality";
+import { mergeCandidateTraps, proposeCandidateTraps, type CandidateDraft } from "./session-capture";
 
 export interface StartSessionArgs {
   goal: string;
@@ -87,6 +95,11 @@ export interface RemoveSessionCandidatesResult {
   removed_count: number;
   removed_candidate_ids: string[];
   candidates: CandidateTrap[];
+}
+
+export interface AddSessionCandidateArgs {
+  sessionId: string;
+  draft: CandidateDraft;
 }
 
 export class SessionStore {
@@ -219,7 +232,10 @@ export class SessionStore {
 
     const closedAt = now.toISOString();
     const notes = this.readNotes(session.id);
-    const candidates = proposeTraps ? proposeCandidateTraps(session, notes) : this.readCandidateDocument(session.id).candidates;
+    const existingCandidates = this.readCandidateDocument(session.id).candidates;
+    const candidates = proposeTraps
+      ? mergeCandidateTraps(existingCandidates, proposeCandidateTraps(session, notes))
+      : existingCandidates;
     if (proposeTraps) this.writeCandidateDocument(session.id, candidates);
 
     const updated = {
@@ -253,6 +269,22 @@ export class SessionStore {
     return { session, candidate };
   }
 
+  addCandidate(args: AddSessionCandidateArgs): { session: SessionMetadata; candidate: CandidateTrap; candidates_path: string; duplicate: boolean } {
+    const session = this.requireSession(args.sessionId);
+    const document = this.readCandidateDocument(session.id);
+    const added = addCandidateToDocument(document.candidates, args.draft);
+    if (!added.duplicate) {
+      this.writeCandidateDocument(session.id, added.candidates);
+      this.refreshSessionSummaries(session.id);
+    }
+    return {
+      session: this.requireSession(session.id),
+      candidate: added.candidate,
+      candidates_path: sessionRelativeFile(session.id, CANDIDATES_FILE),
+      duplicate: added.duplicate,
+    };
+  }
+
   recordCandidateConflictCheck(
     candidateId: string,
     args: {
@@ -265,17 +297,16 @@ export class SessionStore {
     const sessionId = this.resolveSessionId(args.sessionId);
     const session = this.requireSession(sessionId);
     const document = this.readCandidateDocument(sessionId);
-    const candidate = document.candidates.find((item) => item.id === candidateId);
-    if (!candidate) throw new Error(`Candidate ${candidateId} not found in session ${sessionId}.`);
-    if (candidate.status !== "proposed") throw new Error(`Candidate ${candidateId} is already ${candidate.status}.`);
-
-    if (args.trap) candidate.trap = args.trap;
-    candidate.quality.conflict_checked = true;
-    candidate.quality.conflict_status = args.conflictStatus;
-    candidate.quality.suggested_action = args.suggestedAction;
-    this.writeCandidateDocument(session.id, document.candidates);
-    this.refreshSessionSummaries(session.id);
-    return { session, candidate };
+    return this.saveCandidateDocumentMutation(session, recordCandidateConflictCheckInDocument(
+      document.candidates,
+      candidateId,
+      {
+        sessionId,
+        trap: args.trap,
+        conflictStatus: args.conflictStatus,
+        suggestedAction: args.suggestedAction,
+      }
+    ));
   }
 
   saveCandidateTrap(
@@ -288,17 +319,11 @@ export class SessionStore {
     const sessionId = this.resolveSessionId(args.sessionId);
     const session = this.requireSession(sessionId);
     const document = this.readCandidateDocument(sessionId);
-    const candidate = document.candidates.find((item) => item.id === candidateId);
-    if (!candidate) throw new Error(`Candidate ${candidateId} not found in session ${sessionId}.`);
-    if (candidate.status !== "proposed") throw new Error(`Candidate ${candidateId} is already ${candidate.status}.`);
-
-    const scored = scoreCandidateTrap({ trap: args.trap, evidence: candidate.evidence });
-    candidate.trap = args.trap;
-    candidate.quality_score = scored.score;
-    candidate.quality = scored.quality;
-    this.writeCandidateDocument(session.id, document.candidates);
-    this.refreshSessionSummaries(session.id);
-    return { session, candidate };
+    return this.saveCandidateDocumentMutation(session, saveCandidateTrapInDocument(
+      document.candidates,
+      candidateId,
+      { sessionId, trap: args.trap }
+    ));
   }
 
   acceptCandidate(
@@ -319,24 +344,24 @@ export class SessionStore {
     const sessionId = this.resolveSessionId(args.sessionId);
     const session = this.requireSession(sessionId);
     const document = this.readCandidateDocument(sessionId);
-    const candidate = document.candidates.find((item) => item.id === candidateId);
-    if (!candidate) throw new Error(`Candidate ${candidateId} not found in session ${sessionId}.`);
-    if (candidate.status !== "proposed") throw new Error(`Candidate ${candidateId} is already ${candidate.status}.`);
-
-    if (args.trap) candidate.trap = args.trap;
-    candidate.status = "accepted";
-    candidate.accepted_trap_id = args.trapId;
-    candidate.accepted_scope = args.scope === "project" ? "project" : "global";
-    candidate.accepted_at = now.toISOString();
-    candidate.quality.conflict_checked = args.conflictChecked ?? candidate.quality.conflict_checked;
-    candidate.quality.conflict_status = args.conflictStatus ?? candidate.quality.conflict_status;
-    candidate.quality.suggested_action = args.suggestedAction ?? candidate.quality.suggested_action;
-    this.writeCandidateDocument(session.id, document.candidates);
-    this.refreshSessionSummaries(session.id);
+    const accepted = this.saveCandidateDocumentMutation(session, acceptCandidateInDocument(
+      document.candidates,
+      candidateId,
+      {
+        sessionId,
+        trap: args.trap,
+        trapId: args.trapId,
+        scope: args.scope,
+        conflictChecked: args.conflictChecked,
+        conflictStatus: args.conflictStatus,
+        suggestedAction: args.suggestedAction,
+      },
+      now
+    ));
 
     return {
       session,
-      candidate,
+      candidate: accepted.candidate,
       trap_id: args.trapId,
       scope: args.scope,
       evidence_id: args.evidenceId,
@@ -352,44 +377,29 @@ export class SessionStore {
     const sessionId = this.resolveSessionId(args.sessionId);
     const session = this.requireSession(sessionId);
     const document = this.readCandidateDocument(sessionId);
-    const candidate = document.candidates.find((item) => item.id === candidateId);
-    if (!candidate) throw new Error(`Candidate ${candidateId} not found in session ${sessionId}.`);
-    if (candidate.status !== "proposed") throw new Error(`Candidate ${candidateId} is already ${candidate.status}.`);
-
-    candidate.status = "rejected";
-    candidate.rejected_at = now.toISOString();
-    if (args.reason) candidate.rejection_reason = args.reason;
-    this.writeCandidateDocument(session.id, document.candidates);
-    this.refreshSessionSummaries(session.id);
-    return { session, candidate };
+    return this.saveCandidateDocumentMutation(session, rejectCandidateInDocument(
+      document.candidates,
+      candidateId,
+      { sessionId, reason: args.reason },
+      now
+    ));
   }
 
   removeCandidates(sessionId: string | undefined, candidateIds: string[]): RemoveSessionCandidatesResult {
     const resolvedSessionId = this.resolveSessionId(sessionId);
     const session = this.requireSession(resolvedSessionId);
-    const removeIds = new Set(uniqueStrings(candidateIds));
-    if (removeIds.size === 0) {
-      return {
-        session,
-        removed_count: 0,
-        removed_candidate_ids: [],
-        candidates: this.readCandidateDocument(session.id).candidates,
-      };
-    }
-
     const document = this.readCandidateDocument(session.id);
-    const removed = document.candidates.filter((candidate) => removeIds.has(candidate.id));
-    const candidates = document.candidates.filter((candidate) => !removeIds.has(candidate.id));
-    if (removed.length > 0) {
-      this.writeCandidateDocument(session.id, candidates);
+    const removed = removeCandidatesFromDocument(document.candidates, candidateIds);
+    if (removed.removed.length > 0) {
+      this.writeCandidateDocument(session.id, removed.candidates);
       this.refreshSessionSummaries(session.id);
     }
 
     return {
       session,
-      removed_count: removed.length,
-      removed_candidate_ids: removed.map((candidate) => candidate.id),
-      candidates,
+      removed_count: removed.removed.length,
+      removed_candidate_ids: removed.removed.map((candidate) => candidate.id),
+      candidates: removed.candidates,
     };
   }
 
@@ -486,6 +496,15 @@ export class SessionStore {
     const candidate = this.readCandidateDocument(sessionId).candidates.find((item) => item.id === candidateId);
     if (!candidate) throw new Error(`Candidate ${candidateId} not found in session ${sessionId}.`);
     return candidate;
+  }
+
+  private saveCandidateDocumentMutation(
+    session: SessionMetadata,
+    mutation: CandidateDocumentUpdateResult
+  ): { session: SessionMetadata; candidate: CandidateTrap } {
+    this.writeCandidateDocument(session.id, mutation.candidates);
+    this.refreshSessionSummaries(session.id);
+    return { session, candidate: mutation.candidate };
   }
 
   private readCandidateDocument(id: string): CandidateTrapDocument {

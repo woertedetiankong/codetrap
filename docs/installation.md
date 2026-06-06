@@ -308,19 +308,39 @@ When editing a known area, pass applicability hints:
 
 codetrap search "<keywords>" --path src/db/repository.ts --module db --json
 
-To add a lesson:
+To capture a post-flight lesson from agent work:
 
-codetrap add --json '{...}' --output-json
+```bash
+cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
+Title: <durable pitfall>
+Context: <when it triggers>
+Mistake: <what the agent did wrong>
+Fix: <what to do instead>
+EOF
+```
+
+`--trap-json` remains available for callers that already have a structured object:
+
+```bash
+codetrap session capture --trap-json '{...}' --kind review --json
+```
 
 For longer implementation work, keep temporary notes and explicit candidate traps in session files first:
 
 ```bash
 codetrap session start "<goal>"
 codetrap session note --kind decision --text "<what changed and why>"
-codetrap session note --kind review --text $'Title: <durable pitfall>\nContext: <when it triggers>\nMistake: <what the agent did wrong>\nFix: <what to do instead>'
+cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
+Title: <durable pitfall>
+Context: <when it triggers>
+Mistake: <what the agent did wrong>
+Fix: <what to do instead>
+EOF
 codetrap session close --propose-traps
 codetrap session candidates
 ```
+
+Pending candidates are visible from `codetrap session status`, `codetrap session list`, `codetrap doctor`, and `codetrap web`.
 
 Only accepted candidates are written to `traps.db`:
 

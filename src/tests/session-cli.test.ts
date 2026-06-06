@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -81,6 +81,15 @@ describe("session CLI", () => {
 
     const inactive = JSON.parse(runCli(["session", "status", "--json"], cwd, home).stdout);
     expect(inactive.active_session_id).toBeNull();
+    expect(inactive.candidate_review).toMatchObject({
+      pending_count: 1,
+      reviewed_count: 0,
+      pending_session_count: 1,
+      next_session_id: started.id,
+    });
+    const inactiveText = runCli(["session", "status"], cwd, home);
+    expect(inactiveText.stdout).toContain("Pending candidate review: 1 candidate(s) across 1 session(s).");
+    expect(inactiveText.stdout).toContain(`codetrap session candidates ${started.id}`);
 
     const candidates = JSON.parse(runCli(["session", "candidates", started.id, "--json"], cwd, home).stdout);
     expect(candidates.session_id).toBe(started.id);
@@ -152,7 +161,18 @@ describe("session CLI", () => {
       status: "closed",
       candidate_count: 1,
       accepted_count: 1,
+      pending_count: 0,
+      reviewed_count: 1,
+      rejected_count: 0,
+      high_quality_pending_count: 0,
+      needs_edit_count: 0,
+      candidate_review: {
+        session_id: started.id,
+        pending_count: 0,
+        reviewed_count: 1,
+      },
     });
+    expect(runCli(["session", "list"], cwd, home).stdout).toContain("(0 pending, 1 reviewed)");
   });
 
   test("keeps raw test failures as notes instead of fallback candidate traps", () => {
@@ -192,6 +212,483 @@ describe("session CLI", () => {
 
     const candidates = JSON.parse(runCli(["session", "candidates", started.id, "--json"], cwd, home).stdout);
     expect(candidates.candidates).toEqual([]);
+  });
+
+  test("captures a post-flight candidate in the active session", () => {
+    const cwd = tempProjectDir("codetrap-session-capture-active-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const started = JSON.parse(runCli([
+      "session",
+      "start",
+      "update web pane controls",
+      "--module",
+      "web",
+      "--json",
+    ], cwd, home).stdout);
+
+    const capture = runCli([
+      "session",
+      "capture",
+      "--trap-json",
+      JSON.stringify({
+        title: "Keep pane toggle semantics aligned after layout swaps",
+        context: "When changing web console pane order or shell layout.",
+        mistake: "Updating visual pane order without updating collapse target semantics.",
+        fix: "Update the shell toggle target to match the current rightmost pane and add regression coverage.",
+        tags: ["web", "pane"],
+        path_globs: ["src/web/**"],
+        module: "",
+        owner: "",
+      }),
+      "--kind",
+      "review",
+      "--source-ref",
+      "manual-review",
+      "--related-files",
+      "src/web/client-script.ts",
+      "--json",
+    ], cwd, home);
+    expect(capture.exitCode).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload).toMatchObject({
+      success: true,
+      session_id: started.id,
+      candidate_id: "cand-001",
+      created_session: false,
+      closed_session: false,
+      duplicate: false,
+    });
+    expect(payload.next_action.command).toContain("codetrap session candidate cand-001");
+
+    const status = JSON.parse(runCli(["session", "status", "--json"], cwd, home).stdout);
+    expect(status.active_session_id).toBe(started.id);
+
+    const candidates = JSON.parse(runCli(["session", "candidates", started.id, "--json"], cwd, home).stdout);
+    expect(candidates.candidates).toHaveLength(1);
+    expect(candidates.candidates[0]).toMatchObject({
+      id: "cand-001",
+      status: "proposed",
+      trap: {
+        title: "Keep pane toggle semantics aligned after layout swaps",
+        category: "other",
+        scope: "project",
+        severity: "warning",
+        module: null,
+        owner: null,
+      },
+      evidence: [
+        expect.objectContaining({
+          source_type: "conversation",
+          source_ref: "manual-review",
+          related_files: ["src/web/client-script.ts"],
+        }),
+      ],
+    });
+  });
+
+  test("captures a markdown candidate from stdin in the active session", () => {
+    const cwd = tempProjectDir("codetrap-session-capture-markdown-stdin-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const started = JSON.parse(runCli([
+      "session",
+      "start",
+      "capture markdown trap drafts",
+      "--module",
+      "session",
+      "--json",
+    ], cwd, home).stdout);
+    const markdown = [
+      "Title: Keep Markdown trap capture explicit",
+      "Context:",
+      "When an AI agent records a post-flight lesson after a repeated test failure.",
+      "Mistake:",
+      "Passing raw failure logs directly to codetrap creates noisy candidate memory.",
+      "Fix:",
+      "Have the agent summarize the durable lesson into explicit trap fields first.",
+      "Severity: error",
+      "Tags:",
+      "- session",
+      "- markdown",
+      "Path globs:",
+      "- src/lib/session-capture.ts",
+      "Related files:",
+      "- src/lib/session-capture.ts",
+      "- src/tests/session-cli.test.ts",
+      "Module:",
+      "Owner:",
+      "Evidence:",
+      "The Markdown draft came from a review of agent capture workflow quality.",
+    ].join("\n");
+
+    const capture = runCli([
+      "session",
+      "capture",
+      "--trap-markdown",
+      "-",
+      "--kind",
+      "review",
+      "--source-ref",
+      "markdown-review",
+      "--related-files",
+      "src/commands/workflow.ts",
+      "--json",
+    ], cwd, home, markdown);
+    expect(capture.exitCode).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload).toMatchObject({
+      success: true,
+      session_id: started.id,
+      candidate_id: "cand-001",
+      created_session: false,
+      closed_session: false,
+    });
+
+    const candidates = JSON.parse(runCli(["session", "candidates", started.id, "--json"], cwd, home).stdout);
+    expect(candidates.candidates[0]).toMatchObject({
+      trap: {
+        title: "Keep Markdown trap capture explicit",
+        category: "other",
+        scope: "project",
+        severity: "error",
+        tags: ["session", "markdown"],
+        path_globs: ["src/lib/session-capture.ts"],
+        module: null,
+        owner: null,
+      },
+      evidence: [
+        expect.objectContaining({
+          source_type: "conversation",
+          source_ref: "markdown-review",
+          related_files: [
+            "src/commands/workflow.ts",
+            "src/lib/session-capture.ts",
+            "src/tests/session-cli.test.ts",
+          ],
+          note: "The Markdown draft came from a review of agent capture workflow quality.",
+        }),
+      ],
+    });
+  });
+
+  test("captures a markdown file into a closed post-flight session without confirming it", () => {
+    const cwd = tempProjectDir("codetrap-session-capture-markdown-file-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const markdownPath = join(cwd, "candidate.md");
+    writeFileSync(markdownPath, [
+      "Title: Do not search pending Markdown candidates as confirmed traps",
+      "Context: When capturing a post-flight lesson without an active session.",
+      "Mistake: Treating a proposed candidate as confirmed memory can affect future searches before review.",
+      "Fix: Keep Markdown-captured candidates in the session inbox until explicit accept.",
+      "Category: bug",
+      "Severity: error",
+      "Tags: session,markdown",
+      "Evidence: This verifies the candidate inbox boundary.",
+    ].join("\n"));
+
+    const capture = runCli([
+      "session",
+      "capture",
+      "--goal",
+      "post-flight markdown capture",
+      "--trap-markdown-file",
+      markdownPath,
+      "--kind",
+      "test_failure",
+      "--json",
+    ], cwd, home);
+    expect(capture.exitCode).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload).toMatchObject({
+      success: true,
+      candidate_id: "cand-001",
+      created_session: true,
+      closed_session: true,
+      candidate_count: 1,
+    });
+
+    const search = JSON.parse(runCli([
+      "search",
+      "pending Markdown candidates",
+      "--scope",
+      "project",
+      "--mode",
+      "fts",
+      "--json",
+    ], cwd, home).stdout);
+    expect(search).toEqual([]);
+
+    const accept = JSON.parse(runCli([
+      "session",
+      "accept",
+      "cand-001",
+      "--session",
+      payload.session_id,
+      "--json",
+    ], cwd, home).stdout);
+    expect(accept).toMatchObject({
+      success: true,
+      candidate_id: "cand-001",
+      trap_id: 1,
+      scope: "project",
+    });
+
+    const searchAfterAccept = JSON.parse(runCli([
+      "search",
+      "pending Markdown candidates",
+      "--scope",
+      "project",
+      "--mode",
+      "fts",
+      "--json",
+    ], cwd, home).stdout);
+    expect(searchAfterAccept[0]).toMatchObject({
+      trap_id: 1,
+      title: "Do not search pending Markdown candidates as confirmed traps",
+    });
+  });
+
+  test("validates markdown capture input selection and content", () => {
+    const cwd = tempProjectDir("codetrap-session-capture-markdown-validation-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const trapJson = JSON.stringify({
+      title: "JSON trap",
+      context: "When validating mixed capture inputs.",
+      mistake: "Accepting multiple capture sources.",
+      fix: "Require exactly one capture source.",
+    });
+    const markdown = [
+      "Title: Markdown trap",
+      "Context: When validating mixed capture inputs.",
+      "Mistake: Accepting multiple capture sources.",
+      "Fix: Require exactly one capture source.",
+    ].join("\n");
+
+    const mixed = runCli([
+      "session",
+      "capture",
+      "--trap-json",
+      trapJson,
+      "--trap-markdown",
+      markdown,
+      "--json",
+    ], cwd, home);
+    expect(mixed.exitCode).toBe(1);
+    expect(mixed.stderr).toContain("Choose only one of --trap-json, --trap-markdown, or --trap-markdown-file");
+
+    const emptyStdin = runCli([
+      "session",
+      "capture",
+      "--trap-markdown",
+      "-",
+      "--json",
+    ], cwd, home, "");
+    expect(emptyStdin.exitCode).toBe(1);
+    expect(emptyStdin.stderr).toContain("Markdown trap input is required");
+
+    const missingFile = runCli([
+      "session",
+      "capture",
+      "--trap-markdown-file",
+      join(cwd, "missing.md"),
+      "--json",
+    ], cwd, home);
+    expect(missingFile.exitCode).toBe(1);
+    expect(missingFile.stderr).toContain("missing.md");
+
+    const missingFix = runCli([
+      "session",
+      "capture",
+      "--trap-markdown",
+      [
+        "Title: Missing fix",
+        "Context: When capturing incomplete Markdown.",
+        "Mistake: Missing required fields.",
+      ].join("\n"),
+      "--json",
+    ], cwd, home);
+    expect(missingFix.exitCode).toBe(1);
+    expect(missingFix.stderr).toContain("trap fix is required");
+
+    const invalidSeverity = runCli([
+      "session",
+      "capture",
+      "--trap-markdown",
+      [
+        "Title: Invalid severity",
+        "Context: When capturing invalid Markdown enums.",
+        "Mistake: Unsupported severity labels are accepted.",
+        "Fix: Reject unsupported severity labels before writing candidates.",
+        "Severity: fatal",
+      ].join("\n"),
+      "--json",
+    ], cwd, home);
+    expect(invalidSeverity.exitCode).toBe(1);
+    expect(invalidSeverity.stderr).toContain("Invalid trap severity");
+  });
+
+  test("captures into a closed post-flight session when no session is active", () => {
+    const cwd = tempProjectDir("codetrap-session-capture-postflight-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+
+    const capture = runCli([
+      "session",
+      "capture",
+      "--goal",
+      "post-flight web pane capture",
+      "--trap-json",
+      JSON.stringify({
+        title: "Keep web pane capture visible in the review inbox",
+        category: "bug",
+        scope: "project",
+        context: "When capturing a post-flight lesson after a web console task.",
+        mistake: "Leaving the candidate outside a session makes it invisible to the review inbox.",
+        fix: "Create a post-flight session, write the candidate, generate a recap, and close the session.",
+        severity: "error",
+        tags: ["session", "capture"],
+      }),
+      "--kind",
+      "test_failure",
+      "--json",
+    ], cwd, home);
+    expect(capture.exitCode).toBe(0);
+    const payload = JSON.parse(capture.stdout);
+    expect(payload).toMatchObject({
+      success: true,
+      candidate_id: "cand-001",
+      created_session: true,
+      closed_session: true,
+      candidate_count: 1,
+    });
+    expect(payload.recap_path).toContain("recap.md");
+
+    const status = JSON.parse(runCli(["session", "status", "--json"], cwd, home).stdout);
+    expect(status.active_session_id).toBeNull();
+
+    const list = JSON.parse(runCli(["session", "list", "--json"], cwd, home).stdout);
+    expect(list[0]).toMatchObject({
+      id: payload.session_id,
+      goal: "post-flight web pane capture",
+      status: "closed",
+      candidate_count: 1,
+    });
+
+    const candidates = JSON.parse(runCli(["session", "candidates", payload.session_id, "--json"], cwd, home).stdout);
+    expect(candidates.candidates[0].evidence[0]).toMatchObject({
+      source_type: "test_failure",
+      source_ref: `session:${payload.session_id}`,
+    });
+  });
+
+  test("close propose-traps merges capture candidates without overwriting reviewed status", () => {
+    const cwd = tempProjectDir("codetrap-session-capture-dedupe-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const started = JSON.parse(runCli([
+      "session",
+      "start",
+      "dedupe capture candidates",
+      "--module",
+      "session",
+      "--json",
+    ], cwd, home).stdout);
+    const trap = {
+      title: "Keep captured candidates from being duplicated on close",
+      category: "bug",
+      scope: "project",
+      context: "When closing a session after a candidate was captured directly.",
+      mistake: "Regenerating candidates from notes can duplicate the same lesson or reset review status.",
+      fix: "Merge proposed note candidates into the existing candidate document and preserve existing candidate status.",
+      severity: "error",
+      tags: ["session", "capture"],
+    };
+
+    expect(runCli([
+      "session",
+      "capture",
+      "--trap-json",
+      JSON.stringify(trap),
+      "--json",
+    ], cwd, home).exitCode).toBe(0);
+    expect(runCli([
+      "session",
+      "reject",
+      "cand-001",
+      "--session",
+      started.id,
+      "--reason",
+      "Already covered elsewhere.",
+      "--json",
+    ], cwd, home).exitCode).toBe(0);
+    expect(runCli([
+      "session",
+      "note",
+      "--kind",
+      "review",
+      "--text",
+      [
+        `Title: ${trap.title}`,
+        `Category: ${trap.category}`,
+        `Context: ${trap.context}`,
+        `Mistake: ${trap.mistake}`,
+        `Fix: ${trap.fix}`,
+        `Severity: ${trap.severity}`,
+        "Tags: session,capture",
+      ].join("\n"),
+    ], cwd, home).exitCode).toBe(0);
+
+    const close = JSON.parse(runCli(["session", "close", "--propose-traps", "--json"], cwd, home).stdout);
+    expect(close).toMatchObject({
+      id: started.id,
+      candidate_count: 1,
+    });
+    const candidates = JSON.parse(runCli(["session", "candidates", started.id, "--json"], cwd, home).stdout);
+    expect(candidates.candidates).toHaveLength(1);
+    expect(candidates.candidates[0]).toMatchObject({
+      id: "cand-001",
+      status: "rejected",
+      rejection_reason: "Already covered elsewhere.",
+    });
+  });
+
+  test("validates capture trap json before creating candidates", () => {
+    const cwd = tempProjectDir("codetrap-session-capture-validation-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+
+    const invalidJson = runCli(["session", "capture", "--trap-json", "{bad", "--json"], cwd, home);
+    expect(invalidJson.exitCode).toBe(1);
+    expect(invalidJson.stdout).toBe("");
+    expect(invalidJson.stderr).toContain("Invalid --trap-json");
+
+    const missingFix = runCli([
+      "session",
+      "capture",
+      "--trap-json",
+      JSON.stringify({
+        title: "Missing fix",
+        context: "When capturing incomplete lessons.",
+        mistake: "Saving candidates without actionable fixes.",
+      }),
+      "--json",
+    ], cwd, home);
+    expect(missingFix.exitCode).toBe(1);
+    expect(missingFix.stdout).toBe("");
+    expect(missingFix.stderr).toContain("trap fix is required");
+
+    const invalidSeverity = runCli([
+      "session",
+      "capture",
+      "--trap-json",
+      JSON.stringify({
+        title: "Invalid severity",
+        context: "When validating capture input.",
+        mistake: "Accepting unsupported severity labels.",
+        fix: "Reject unsupported severity labels before writing candidates.",
+        severity: "fatal",
+      }),
+      "--json",
+    ], cwd, home);
+    expect(invalidSeverity.exitCode).toBe(1);
+    expect(invalidSeverity.stdout).toBe("");
+    expect(invalidSeverity.stderr).toContain("Invalid trap severity");
   });
 
   test("blocks possible conflicts unless the user accepts lifecycle handling", () => {

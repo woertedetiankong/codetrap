@@ -1,11 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { CATEGORIES, SCOPES, SEVERITIES } from "../lib/constants";
-import type { CandidateTrap } from "../domain/session";
 import { TrapStore } from "../lib/store";
 import { TrapOperations } from "../lib/trap-operations";
-import { SessionOperations, type SessionAcceptResult } from "../lib/session-operations";
+import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
 import { toListJson, toTrapDetailsJson } from "../lib/output-json";
+import {
+  reviewedSessionCandidates,
+  sessionConflictPayload,
+} from "../lib/session-review";
 import { WEB_INDEX_HTML } from "./static";
 import {
   addWebProject,
@@ -29,33 +32,6 @@ type WebContext = {
   home?: string;
   currentProjectRoot: string | null;
 };
-
-type WebCandidateReview =
-  | { status: "pending"; label: string }
-  | {
-      status: "accepted";
-      label: string;
-      trap_id: number;
-      scope: string;
-      trap_present: true;
-      trap_status: string;
-      trap_title: string;
-    }
-  | {
-      status: "accepted_missing";
-      label: string;
-      trap_id?: number;
-      scope?: string;
-      trap_present: false;
-    }
-  | {
-      status: "rejected";
-      label: string;
-      rejected_at?: string;
-      rejection_reason?: string;
-    };
-
-type WebCandidate = CandidateTrap & { review: WebCandidateReview };
 
 export async function startWebServerFromArgs(args: string[], cwd = process.cwd()): Promise<void> {
   const options = webServerOptionsFromArgs(args, cwd);
@@ -145,8 +121,13 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
 
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const projectRoot = projectRootFromQuery(url, context);
-    const sessions = sessionOperations(projectRoot, context.home).sessions.listSessions({ status: "all", limit: 100 });
-    return jsonResponse({ project_root: projectRoot, sessions });
+    const ops = sessionOperations(projectRoot, context.home);
+    const sessions = ops.sessions.listSessions({ status: "all", limit: 100 });
+    return jsonResponse({
+      project_root: projectRoot,
+      candidate_review: ops.sessions.candidateReviewSummary(),
+      sessions,
+    });
   }
 
   if (request.method === "GET" && url.pathname === "/api/candidates") {
@@ -158,7 +139,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     return jsonResponse({
       project_root: projectRoot,
       session,
-      candidates: webCandidates(document.candidates, ops.traps),
+      candidates: reviewedSessionCandidates(document.candidates, ops.traps),
     });
   }
 
@@ -205,11 +186,12 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     const result = await sessionOperations(projectRoot, context.home).sessions.acceptCandidate({
       candidateId: stringBodyField(body, "candidateId"),
       sessionId: optionalStringBodyField(body, "sessionId"),
+      edit: optionalRecordBodyField(body, "trap"),
       acceptAnyway: booleanBodyField(body, "acceptAnyway"),
       supersedesId: optionalNumberBodyField(body, "supersedesId"),
     });
     if (!result.success) {
-      throw new WebPayloadError(409, conflictPayload(result));
+      throw new WebPayloadError(409, sessionConflictPayload(result));
     }
     return jsonResponse({
       success: true,
@@ -254,7 +236,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
       session: result.session,
       removed_count: result.removed_count,
       removed_candidate_ids: result.removed_candidate_ids,
-      candidates: webCandidates(result.candidates, ops.traps),
+      candidates: reviewedSessionCandidates(result.candidates, ops.traps),
     });
   }
 
@@ -271,64 +253,6 @@ function sessionOperations(projectRoot: string, home?: string): { traps: TrapOpe
 
 function trapOperations(projectRoot: string, home?: string): TrapOperations {
   return new TrapOperations(new TrapStore(projectRoot, undefined, home));
-}
-
-function webCandidates(candidates: CandidateTrap[], traps: TrapOperations): WebCandidate[] {
-  return candidates.map((candidate) => ({
-    ...candidate,
-    review: candidateReview(candidate, traps),
-  }));
-}
-
-function candidateReview(candidate: CandidateTrap, traps: TrapOperations): WebCandidateReview {
-  if (candidate.status === "proposed") {
-    return { status: "pending", label: "pending review" };
-  }
-
-  if (candidate.status === "rejected") {
-    return {
-      status: "rejected",
-      label: "rejected",
-      rejected_at: candidate.rejected_at,
-      rejection_reason: candidate.rejection_reason,
-    };
-  }
-
-  const trapId = candidate.accepted_trap_id;
-  const scope = candidate.accepted_scope ?? acceptedScopeFallback(candidate);
-  if (trapId === undefined) {
-    return {
-      status: "accepted_missing",
-      label: "accepted -> trap link missing",
-      scope,
-      trap_present: false,
-    };
-  }
-
-  const details = traps.getTrapDetails(trapId, scope);
-  if (!details) {
-    return {
-      status: "accepted_missing",
-      label: `accepted -> trap #${trapId} deleted`,
-      trap_id: trapId,
-      scope,
-      trap_present: false,
-    };
-  }
-
-  return {
-    status: "accepted",
-    label: `accepted -> trap #${trapId}`,
-    trap_id: trapId,
-    scope: details.scope,
-    trap_present: true,
-    trap_status: details.trap.status,
-    trap_title: details.trap.title,
-  };
-}
-
-function acceptedScopeFallback(candidate: CandidateTrap): string {
-  return candidate.trap.scope === "global" ? "global" : "project";
 }
 
 function registerInitialProject(options: WebServerOptions): string | null {
@@ -452,14 +376,11 @@ function recordBodyField(body: Record<string, unknown>, key: string): Record<str
   return value;
 }
 
-function conflictPayload(result: Exclude<SessionAcceptResult, { success: true }>): Record<string, unknown> {
-  return {
-    success: false,
-    error: "Possible active trap conflict found.",
-    session_id: result.session_id,
-    candidate_id: result.candidate_id,
-    possible_conflicts: result.possible_conflicts,
-  };
+function optionalRecordBodyField(body: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const value = body[key];
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) throw new WebHttpError(400, `${key} must be an object.`);
+  return value;
 }
 
 function parsePort(value: string): number {

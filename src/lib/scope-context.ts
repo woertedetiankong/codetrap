@@ -2,7 +2,7 @@ import { openGlobal, openProject } from "../db/connection";
 import { TrapRepository } from "../db/repository";
 import { CODETRAP_DIR, TRAPS_DB_FILE } from "./constants";
 import type { Scope } from "./constants";
-import type { EmbeddingProvider } from "./embedder";
+import type { EmbeddingRuntime } from "./embedding-runtime";
 import { findProjectRoot, getGlobalDB, resolveScopePath } from "./scope";
 import { ScopePathResolver } from "./scope-path";
 
@@ -36,7 +36,7 @@ export class ScopedRepositoryContext {
   private globalRepository?: TrapRepository;
   private projectRepository?: TrapRepository;
 
-  constructor(cwd = process.cwd(), private readonly embedder?: EmbeddingProvider, private readonly home?: string) {
+  constructor(cwd = process.cwd(), private readonly embeddings?: EmbeddingRuntime, private readonly home?: string) {
     this.context = createScopeContext(cwd, home);
   }
 
@@ -87,14 +87,14 @@ export class ScopedRepositoryContext {
       throw new Error("Not in a project. Run 'codetrap init' first, or use --scope global.");
     }
     if (!this.projectRepository) {
-      this.projectRepository = new TrapRepository(openProject(projectRoot), this.embedder);
+      this.projectRepository = new TrapRepository(openProject(projectRoot), this.embeddings);
     }
     return this.projectRepository;
   }
 
   private globalRepo(): TrapRepository {
     if (!this.globalRepository) {
-      this.globalRepository = new TrapRepository(openGlobal(this.home), this.embedder);
+      this.globalRepository = new TrapRepository(openGlobal(this.home), this.embeddings);
     }
     return this.globalRepository;
   }

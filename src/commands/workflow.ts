@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { TrapStore } from "../lib/store";
 import { formatTrapShort, formatTrapDetails, formatTrapActionCard } from "../lib/format";
 import type { Trap } from "../domain/trap";
-import type { SessionMetadata } from "../domain/session";
 import {
   formatScopeMigrationText,
   runScopeMigration,
@@ -18,9 +17,17 @@ import {
   CANDIDATES_FILE,
   NOTES_FILE,
   RECAP_FILE,
-  sessionRelativeDir,
   sessionRelativeFile,
 } from "../lib/session-codec";
+import {
+  sessionAcceptPayload,
+  sessionCliConflictPayload,
+  sessionCleanupPayload,
+  sessionConflictPayload,
+  sessionConflictText,
+  sessionPayload,
+  sessionRejectPayload,
+} from "../lib/session-review";
 import {
   toCliSearchJson,
   toListJson,
@@ -40,6 +47,7 @@ import {
   listRequestFromArgs,
   searchRequestFromArgs,
   sessionAcceptRequestFromArgs,
+  sessionCaptureRequestFromArgs,
   sessionCandidateRequestFromArgs,
   sessionCloseRequestFromArgs,
   sessionIdRequestFromArgs,
@@ -343,7 +351,11 @@ function cmdStats(args: string[], operations: TrapOperations): CommandResult {
 
 function cmdDoctor(args: string[], store: TrapStore, operations: TrapOperations): CommandResult {
   const { opts } = parseArgs(args);
-  const report = buildDoctorReport(store, operations);
+  const projectRoot = store.getProjectRoot();
+  const candidateReview = projectRoot
+    ? new SessionOperations(new SessionStore(projectRoot), operations).candidateReviewSummary()
+    : null;
+  const report = buildDoctorReport(store, operations, process.cwd(), candidateReview);
   return opts.json !== undefined
     ? jsonResult(report)
     : textResult(formatDoctorText(report));
@@ -413,6 +425,8 @@ async function cmdSession(args: string[], store: TrapStore, trapOperations: Trap
         return cmdSessionNotes(rest, sessions);
       case "close":
         return cmdSessionClose(rest, sessions);
+      case "capture":
+        return cmdSessionCapture(rest, sessions);
       case "candidates":
         return cmdSessionCandidates(rest, sessions);
       case "candidate":
@@ -428,7 +442,7 @@ async function cmdSession(args: string[], store: TrapStore, trapOperations: Trap
       case "cleanup":
         return cmdSessionCleanup(rest, sessions);
       default:
-        return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|candidates|candidate|accept|reject|delete|prune|cleanup>");
+        return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|capture|candidates|candidate|accept|reject|delete|prune|cleanup>");
     }
   } catch (error) {
     return errorFrom(error);
@@ -472,14 +486,31 @@ function cmdSessionStatus(args: string[], sessions: SessionOperations): CommandR
     return jsonResult({
       active_session_id: status.active_session_id,
       session: status.session ? sessionPayload(status.session) : null,
+      candidate_review: status.candidate_review,
     });
   }
-  if (!status.session) return textResult("No active session.");
-  return textResult([
+  if (!status.session) {
+    const lines = ["No active session."];
+    if (status.candidate_review.pending_count > 0) {
+      lines.push(
+        `Pending candidate review: ${status.candidate_review.pending_count} candidate(s) across ${status.candidate_review.pending_session_count} session(s).`
+      );
+      if (status.candidate_review.next_session_id) {
+        lines.push(`Review: codetrap session candidates ${status.candidate_review.next_session_id}`);
+      }
+      lines.push("Open web review: codetrap web");
+    }
+    return textResult(lines.join("\n"));
+  }
+  const lines = [
     `Active session ${status.session.id}`,
     `Goal: ${status.session.goal}`,
     `Notes: ${sessionRelativeFile(status.session.id, NOTES_FILE)}`,
-  ].join("\n"));
+  ];
+  if (status.candidate_review.pending_count > 0) {
+    lines.push(`Pending candidate review: ${status.candidate_review.pending_count} candidate(s).`);
+  }
+  return textResult(lines.join("\n"));
 }
 
 function cmdSessionList(args: string[], sessions: SessionOperations): CommandResult {
@@ -487,7 +518,9 @@ function cmdSessionList(args: string[], sessions: SessionOperations): CommandRes
   const entries = sessions.listSessions(sessionListRequestFromArgs(opts));
   if (opts.json !== undefined) return jsonResult(entries);
   if (entries.length === 0) return textResult("No sessions found.");
-  return textResult(entries.map((entry) => `${entry.id} [${entry.status}] ${entry.goal}`).join("\n"));
+  return textResult(entries.map((entry) =>
+    `${entry.id} [${entry.status}] ${entry.goal} (${entry.pending_count} pending, ${entry.reviewed_count} reviewed)`
+  ).join("\n"));
 }
 
 function cmdSessionShow(args: string[], sessions: SessionOperations): CommandResult {
@@ -539,6 +572,39 @@ function cmdSessionClose(args: string[], sessions: SessionOperations): CommandRe
   return textResult(lines.join("\n"));
 }
 
+function cmdSessionCapture(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts } = parseArgs(args);
+  const result = sessions.captureCandidate(sessionCaptureRequestFromArgs(opts, {
+    isTTY: process.stdin.isTTY === true,
+    readStdin: () => readFileSync(0, "utf-8"),
+    readFile: (path) => readFileSync(path, "utf-8"),
+  }));
+  const nextAction = `codetrap session candidate ${result.candidate.id} --session ${result.session.id} --json`;
+  const payload = {
+    success: true,
+    session_id: result.session.id,
+    candidate_id: result.candidate.id,
+    status: result.candidate.status,
+    quality_score: result.candidate.quality_score,
+    candidate_count: result.candidate_count,
+    created_session: result.created_session,
+    closed_session: result.closed_session,
+    duplicate: result.duplicate,
+    candidate_traps_path: sessionRelativeFile(result.session.id, CANDIDATES_FILE),
+    recap_path: result.recap_path,
+    next_action: {
+      command: nextAction,
+    },
+  };
+  if (opts.json !== undefined) return jsonResult(payload);
+  return textResult([
+    `${result.duplicate ? "Reused" : "Captured"} candidate ${result.candidate.id} in session ${result.session.id}.`,
+    result.created_session ? "Created and closed a post-flight session." : "Session remains active.",
+    `Candidate inbox: ${payload.candidate_traps_path}`,
+    `Review: ${nextAction}`,
+  ].join("\n"));
+}
+
 function cmdSessionCandidates(args: string[], sessions: SessionOperations): CommandResult {
   const { opts, positionals } = parseArgs(args);
   const request = sessionIdRequestFromArgs(positionals);
@@ -562,16 +628,7 @@ async function cmdSessionAccept(args: string[], sessions: SessionOperations): Pr
   const { opts, positionals } = parseArgs(args);
   const accepted = await sessions.acceptCandidate(sessionAcceptRequestFromArgs(positionals, opts));
   if (!accepted.success) return possibleConflictResult(accepted, opts.json !== undefined);
-  const payload = {
-    success: true,
-    session_id: accepted.session.id,
-    candidate_id: accepted.candidate.id,
-    status: accepted.candidate.status,
-    trap_id: accepted.trap_id,
-    scope: accepted.scope,
-    evidence_id: accepted.evidence_id,
-    superseded_id: accepted.superseded_id,
-  };
+  const payload = sessionAcceptPayload(accepted);
   if (opts.json !== undefined) return jsonResult(payload);
   const lines = [`Accepted ${accepted.candidate.id}; wrote trap #${accepted.trap_id} to ${accepted.scope} scope.`];
   if (accepted.superseded_id !== null) lines.push(`Superseded trap #${accepted.superseded_id}.`);
@@ -581,13 +638,7 @@ async function cmdSessionAccept(args: string[], sessions: SessionOperations): Pr
 function cmdSessionReject(args: string[], sessions: SessionOperations): CommandResult {
   const { opts, positionals } = parseArgs(args);
   const rejected = sessions.rejectCandidate(sessionRejectRequestFromArgs(positionals, opts));
-  const payload = {
-    success: true,
-    session_id: rejected.session.id,
-    candidate_id: rejected.candidate.id,
-    status: rejected.candidate.status,
-    reason: rejected.candidate.rejection_reason ?? null,
-  };
+  const payload = sessionRejectPayload(rejected);
   if (opts.json !== undefined) return jsonResult(payload);
   return textResult(`Rejected ${rejected.candidate.id}.`);
 }
@@ -621,12 +672,7 @@ function cmdSessionCleanup(args: string[], sessions: SessionOperations): Command
   }
   const request = sessionIdRequestFromArgs(positionals);
   const result = sessions.cleanupDeletedTrapCandidates(request.sessionId);
-  const payload = {
-    success: true,
-    session_id: result.session.id,
-    removed_count: result.removed_count,
-    removed_candidate_ids: result.removed_candidate_ids,
-  };
+  const payload = sessionCleanupPayload(result);
   if (opts.json !== undefined) return jsonResult(payload);
   return textResult(`Removed ${result.removed_count} deleted-trap candidate(s) from session ${result.session.id}.`);
 }
@@ -679,42 +725,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function sessionPayload(session: SessionMetadata) {
-  return {
-    ...session,
-    session_dir: sessionRelativeDir(session.id),
-    notes_path: sessionRelativeFile(session.id, NOTES_FILE),
-    recap_path: sessionRelativeFile(session.id, RECAP_FILE),
-    candidate_traps_path: sessionRelativeFile(session.id, CANDIDATES_FILE),
-  };
-}
-
 function possibleConflictResult(
   result: SessionConflictResult,
   asJson: boolean
 ): CommandResult {
-  const payload = {
-    success: false,
-    error: "Possible active trap conflict found.",
-    session_id: result.session_id,
-    candidate_id: result.candidate_id,
-    possible_conflicts: result.possible_conflicts,
-    next_actions: [
-      `codetrap session accept ${result.candidate_id} --session ${result.session_id} --accept-anyway`,
-      `codetrap session accept ${result.candidate_id} --session ${result.session_id} --supersedes <trap-id>`,
-      `codetrap session reject ${result.candidate_id} --session ${result.session_id} --reason <reason>`,
-    ],
-  };
-  if (asJson) return jsonResult(payload, 1);
-
-  return errorResult([
-    "Possible active trap conflict found:",
-    ...result.possible_conflicts.map((conflict) => [
-      `#${conflict.trap_id} ${conflict.title}`,
-      `  reason: ${conflict.reason}`,
-      `  fix: ${conflict.fix}`,
-    ].join("\n")),
-    "",
-    `Use --accept-anyway to save as a new trap, or --supersedes <trap-id> to preserve lifecycle history.`,
-  ].join("\n"));
+  const payload = sessionConflictPayload(result);
+  if (asJson) return jsonResult(sessionCliConflictPayload(payload), 1);
+  return errorResult(sessionConflictText(payload));
 }

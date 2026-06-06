@@ -73,17 +73,33 @@ A candidate trap is a proposed Trap extracted from an explicit structured sessio
 
 Candidate traps can be `proposed`, `accepted`, or `rejected`. Accepting a candidate writes a confirmed Trap through `TrapOperations`, attaches session evidence, and may supersede an older active Trap. Rejected and proposed candidates do not appear in normal Trap search.
 
+### Session Capture
+
+Session capture is the low-friction post-flight path for agent-drafted candidate Traps. `codetrap session capture --trap-markdown - ...` is the preferred agent-drafted path because Markdown avoids shell-escaped JSON, while `--trap-json` remains available for structured callers. Capture validates the structured Trap draft, scores it, writes it to the Session candidate inbox, and never writes directly to `traps.db`. If no Session is active, capture creates a post-flight Session, writes the Candidate Trap and recap, then closes the Session so no active state is left behind.
+
 ### Session Operations
 
-Session operations are the shared execution layer for session commands. They compose `SessionStore`, `TrapOperations`, and candidate conflict detection for start/note/status/list/show/notes/close/candidates/accept/reject workflows. During accept, `SessionOperations` applies `--edit-json` before conflict detection, checks the edited candidate, then either writes the Trap and evidence or records conflict diagnostics on the candidate.
+Session operations are the shared execution layer for session commands. They compose `SessionStore`, `TrapOperations`, and candidate conflict detection for start/note/capture/status/list/show/notes/close/candidates/accept/reject workflows. During capture, `SessionOperations` asks the Session Capture Module to normalize the agent-drafted Trap Markdown or JSON and build candidate evidence, then delegates candidate file writes to `SessionStore`. During accept, `SessionOperations` applies `--edit-json` before conflict detection, checks the edited candidate, then either writes the Trap and evidence or records conflict diagnostics on the candidate.
 
 CLI and future MCP session adapters should call `SessionOperations` instead of duplicating candidate accept, conflict, evidence, or supersede behavior.
+
+### Session Review Contract
+
+Session review contract is the shared transport-neutral shape for Session candidate review surfaces.
+
+`src/lib/session-review.ts` owns session JSON payload paths, candidate review status, accepted-missing Trap checks, accept/reject/cleanup payloads, neutral conflict payloads, conflict text, and the CLI-only conflict presenter. CLI JSON adds command-oriented `next_actions` with `sessionCliConflictPayload`; Web/API payloads keep the base conflict shape transport-neutral.
 
 ### Session Store
 
 Session store owns session file layout and project-local session state under `.codetrap/sessions/`.
 
 `src/lib/session-store.ts` reads and writes active session state, session index entries, session metadata, implementation notes, recaps, and candidate documents. It does not write confirmed Traps; that behavior belongs to Session Operations through Trap Operations.
+
+### Session Candidate Document
+
+Session candidate document is the pure mutation layer for `candidate-traps.json`.
+
+`src/lib/session-candidate-document.ts` owns candidate document transitions such as add, save edited trap shape, record conflict diagnostics, accept, reject, and remove. `SessionStore` calls this Module and remains responsible for file persistence, recap regeneration, and index refresh.
 
 ### Session Maintenance
 
@@ -191,6 +207,12 @@ Embedding index is the Module for semantic trap availability and embedding fresh
 
 `src/lib/embedding-index.ts` owns the index-facing Interface for fresh semantic candidates, embeddable counts, traps needing embeddings, and embedding state counts. Provider-specific embedding calls stay behind `EmbeddingProvider`; raw SQL stays in `src/db/embedding-queries.ts`.
 
+### Embedding Runtime
+
+Embedding runtime is the Module for embedding provider selection, provider availability, provider config, setup next actions, and provider-required error modes.
+
+`src/lib/embedding-runtime.ts` owns the seam where Jina and future local embedding Adapters plug in. Store, Search, Doctor, and Search Eval should ask the runtime for provider/config/status instead of reading environment variables or embedding-provider facts directly.
+
 Implemented retrieval and agent-memory reference notes live in `docs/agent-memory-reference-analysis.md`. The next CLI-first product direction lives in `docs/codetrap-optimization-roadmap.zh-CN.md`.
 
 ## Adapter Rules
@@ -223,7 +245,9 @@ The MCP server is optimized for AI tool use.
 
 The web console is a local review surface for Projects, Sessions, Candidate Traps, the Trap Library, and Growth Insights. It is not the canonical agent interface; CLI JSON remains the primary Agent API.
 
-`src/web/static.ts` owns the HTML/CSS shell. Browser behavior lives in `src/web/client-script.ts`, and display strings live in `src/web/client-text.ts` so locale coverage and UI shell generation can be tested without reading the full static artifact. Server routes in `src/web/server.ts` should stay thin adapters over `TrapOperations` and `SessionOperations`.
+`src/web/static.ts` owns the HTML/CSS shell. Browser behavior lives in `src/web/client-script.ts`, Review queue and candidate draft/request modeling live in `src/web/client-review.ts`, and display strings live in `src/web/client-text.ts` so locale coverage and UI shell generation can be tested without reading the full static artifact. Server routes in `src/web/server.ts` should stay thin adapters over `TrapOperations` and `SessionOperations`.
+
+The browser shell Module lives in `src/web/client-shell.ts`; it owns desktop pane sizing, collapse state, splitter keyboard/pointer behavior, and shell layout persistence. The Review Module in `src/web/client-review.ts` owns pending-session selection, queue state, visible candidate draft normalization, and mutation payload construction for save/accept flows. `src/web/client-script.ts` should compose those Modules instead of mixing shell layout internals or candidate normalization into DOM event handlers.
 
 ## Design Direction
 
@@ -265,7 +289,9 @@ src/
     trap-operations.ts  -- shared CLI/MCP Trap operation execution
     session-store.ts    -- project-local session file storage
     session-operations.ts -- shared Session operation execution
-    session-capture.ts  -- deterministic candidate extraction from explicit trap notes
+    session-review.ts   -- shared Session review payloads plus CLI conflict presenter
+    session-candidate-document.ts -- pure candidate-traps.json transition rules
+    session-capture.ts  -- deterministic candidate construction, extraction, and merge policy
     session-conflicts.ts -- possible active Trap conflict detection for candidates
     trap-quality.ts     -- deterministic candidate Trap quality scoring
     trap-mutation-result.ts -- shared mutation result and scoped fallback semantics
@@ -273,6 +299,7 @@ src/
     output-json.ts      -- shared CLI/MCP JSON presenters
     doctor.ts           -- doctor diagnostic report
     embedding-index.ts  -- semantic candidate and embedding freshness Interface
+    embedding-runtime.ts -- embedding provider runtime, config, setup actions, and Adapter seam
     embedding-health.ts -- embedding freshness and fallback summaries
     trap-archive.ts     -- Trap archive import/export compatibility
     trap-codec.ts       -- whole Trap shape conversion for JSON/archive/storage inputs
@@ -294,6 +321,13 @@ src/
     server.ts           -- MCP server (stdio transport)
     tools.ts            -- MCP tool schemas
     resources.ts        -- MCP resource URIs (4 resources)
+  web/
+    server.ts           -- thin Web API adapter over shared operations
+    static.ts           -- HTML/CSS shell artifact
+    client-shell.ts     -- browser pane sizing/collapse Module
+    client-review.ts    -- Review queue and candidate draft/request Module
+    client-script.ts    -- DOM composition and event wiring
+    client-text.ts      -- localized Web UI strings
 skills/
   codetrap-add/SKILL.md
   codetrap-check/SKILL.md

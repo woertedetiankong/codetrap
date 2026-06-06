@@ -142,11 +142,61 @@ describe("CLI JSON contract", () => {
       fallback_reason: "semantic_unavailable",
     });
     expect(doctor.diagnostics.mis_scoped_traps.global_db_project_traps).toEqual([]);
+    expect(doctor.candidate_review).toMatchObject({
+      pending_count: 0,
+      reviewed_count: 0,
+      session_count: 0,
+      next_session_id: null,
+    });
     expect(doctor.next_actions).toEqual([
       expect.objectContaining({
         command: "export JINA_API_KEY=<your-jina-api-key>",
       }),
     ]);
+  });
+
+  test("doctor --json reports pending session candidate review work", () => {
+    const cwd = tempProjectDir("codetrap-cli-doctor-candidates-");
+    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const capture = runCli([
+      "session",
+      "capture",
+      "--trap-json",
+      JSON.stringify({
+        title: "Review pending candidates from doctor",
+        category: "bug",
+        scope: "project",
+        context: "When a post-flight candidate is captured in a closed session.",
+        mistake: "Leaving proposed candidates hidden means they never become durable traps.",
+        fix: "Surface pending candidate counts in doctor and review them through the session inbox.",
+        severity: "error",
+        tags: ["session", "review"],
+        path_globs: ["src/lib/session-*.ts"],
+        module: "session",
+      }),
+      "--kind",
+      "review",
+      "--json",
+    ], cwd, home);
+    expect(capture.exitCode).toBe(0);
+    const captured = JSON.parse(capture.stdout);
+
+    const doctor = JSON.parse(runCli(["doctor", "--json"], cwd, home).stdout);
+    expect(doctor.candidate_review).toMatchObject({
+      pending_count: 1,
+      reviewed_count: 0,
+      pending_session_count: 1,
+      high_quality_pending_count: 1,
+      next_session_id: captured.session_id,
+    });
+    expect(doctor.next_actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        command: `codetrap session candidates ${captured.session_id} --json`,
+      }),
+      expect.objectContaining({
+        command: "codetrap web",
+      }),
+    ]));
   });
 
   test("doctor --json reports project-scoped traps stranded in the global database", () => {

@@ -156,11 +156,18 @@ Review the top 3 action cards before deciding no trap applies. If a card is high
 codetrap show <id> --scope <project|global> --json
 ```
 
-When a new recurring mistake or project convention is discovered, ask whether to record it:
+When a new recurring mistake or project convention is discovered, put a structured draft in the session candidate inbox:
 
 ```bash
-codetrap add --json '{...}' --output-json
+cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
+Title: <durable pitfall>
+Context: <when it triggers>
+Mistake: <what the agent did wrong>
+Fix: <what to do instead>
+EOF
 ```
+
+Do not accept it automatically. Tell the user the returned candidate id and session id, then ask whether to accept, edit, reject, or supersede it.
 ````
 
 ### MCP（可选）

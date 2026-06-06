@@ -10,7 +10,14 @@ import {
   type TrapUpdate,
 } from "../domain/trap";
 import type { SearchMode, TrapStatus } from "./constants";
-import { createDefaultEmbeddingProvider, embeddingConfig, type EmbeddingConfig, type EmbeddingProvider } from "./embedder";
+import type { EmbeddingConfig } from "./embedder";
+import {
+  defaultEmbeddingRuntime,
+  embeddingRuntimeFrom,
+  type EmbeddingRuntime,
+  type EmbeddingRuntimeInput,
+  type EmbeddingRuntimeStatus,
+} from "./embedding-runtime";
 import { summarizeEmbeddingState, type EmbeddingStateSummary, type EmbeddingStatsResult } from "./embedding-health";
 import { normalizeScope, ScopedRepositoryContext, type ScopedRepository } from "./scope-context";
 import { importTrapArchive } from "./trap-archive";
@@ -36,15 +43,15 @@ export type TrapEmbeddingStats = EmbeddingStatsResult;
 
 export class TrapStore {
   private readonly scopes: ScopedRepositoryContext;
-  private readonly embedder?: EmbeddingProvider;
+  private readonly embeddings: EmbeddingRuntime;
 
   constructor(
     cwd: string,
-    embedder: EmbeddingProvider | undefined = createDefaultEmbeddingProvider(),
+    embeddings: EmbeddingRuntimeInput = defaultEmbeddingRuntime(),
     private readonly home?: string
   ) {
-    this.embedder = embedder;
-    this.scopes = new ScopedRepositoryContext(cwd, embedder, home);
+    this.embeddings = embeddingRuntimeFrom(embeddings);
+    this.scopes = new ScopedRepositoryContext(cwd, this.embeddings, home);
   }
 
   add(input: TrapInput): { id: number; scope: string } {
@@ -242,16 +249,16 @@ export class TrapStore {
     return this.scopes.projectRoot();
   }
 
-  hasEmbeddingProvider(): boolean {
-    return this.embedder !== undefined;
+  embeddingConfig(): EmbeddingConfig | null {
+    return this.embeddings.config();
   }
 
-  embeddingConfig(): EmbeddingConfig | null {
-    return this.embedder ? embeddingConfig(this.embedder) : null;
+  embeddingRuntimeStatus(): EmbeddingRuntimeStatus {
+    return this.embeddings.status();
   }
 
   forCwd(cwd: string): TrapStore {
-    return new TrapStore(cwd, this.embedder, this.home);
+    return new TrapStore(cwd, this.embeddings, this.home);
   }
 
   async ensureEmbeddings(opts: { scope?: string; category?: string; limit?: number; force?: boolean; batchSize?: number } = {}): Promise<{

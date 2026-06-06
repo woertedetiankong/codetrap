@@ -87,9 +87,11 @@ codetrap/
 │   │   ├── store.ts          Project/global scope orchestration
 │   │   ├── trap-operations.ts Shared CLI/MCP operation semantics
 │   │   ├── session-operations.ts Session command semantics + accept/reject flow
+│   │   ├── session-review.ts Shared session review payloads + CLI conflict presenter
 │   │   ├── session-store.ts  Session files, active state, index, recaps
 │   │   ├── session-codec.ts  Session JSON/Markdown/candidate file conversion
-│   │   ├── session-capture.ts Candidate trap extraction from explicit structured notes
+│   │   ├── session-capture.ts Candidate draft normalization, extraction, and merge policy
+│   │   ├── session-candidate-document.ts Candidate document transition rules
 │   │   ├── session-conflicts.ts Candidate vs active-trap conflict checks
 │   │   ├── trap-quality.ts   Deterministic candidate quality scoring
 │   │   ├── command-requests.ts CLI/MCP request normalization helpers
@@ -97,6 +99,8 @@ codetrap/
 │   │   ├── scope-context.ts  cwd/project/global DB context + repo selection
 │   │   ├── scope-migration.ts Safe project trap scope repair/migration
 │   │   ├── doctor.ts         Scope and embedding health diagnostics
+│   │   ├── embedding-index.ts Semantic candidate and embedding freshness interface
+│   │   ├── embedding-runtime.ts Embedding provider runtime/config/status
 │   │   ├── embedding-health.ts  Fresh/stale/missing embedding summaries
 │   │   ├── search-service.ts FTS/semantic/hybrid candidate retrieval
 │   │   ├── search-policy.ts  Applicability filtering, rerank, fusion signals
@@ -121,6 +125,13 @@ codetrap/
 │   │   ├── queries.ts        CRUD, search, stats, import/export
 │   │   ├── embedding-queries.ts  Embedding storage SQL
 │   │   └── repository.ts     Single-DB facade
+│   ├── web/
+│   │   ├── server.ts         Thin Web API adapter over shared operations
+│   │   ├── static.ts         HTML/CSS shell
+│   │   ├── client-shell.ts   Pane sizing/collapse behavior
+│   │   ├── client-review.ts  Review queue + candidate draft/request model
+│   │   ├── client-script.ts  DOM composition and event wiring
+│   │   └── client-text.ts    Localized UI strings
 │   └── tests/
 │       ├── search-*.test.ts
 │       ├── trap-*.test.ts
@@ -160,7 +171,7 @@ codetrap/
 | `repair-scope` | Move legacy mis-scoped project traps into the current project (dry-run by default, `--apply` to mutate, `--json`) |
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires JINA_API_KEY) |
-| `session` | Start a development session, append notes, promote explicit structured trap notes into candidates, accept/reject candidates, and clean up session files |
+| `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, accept/reject candidates, and clean up session files |
 | `web` | Start the local review and trap library console |
 | `serve` | Start MCP server |
 
@@ -171,12 +182,23 @@ Session mode stores temporary working memory in `.codetrap/sessions/`. It does n
 ```bash
 codetrap session start "implement agent harness" --spec docs/agent-harness-spec.md --module agent-runtime
 codetrap session note --kind decision --text "Defaulted tool calls to 30s because the spec does not define timeout behavior."
-codetrap session note --kind review --text $'Title: Do not parse nested tool calls with regex\nContext: When implementing parser logic for nested tool-call arguments.\nMistake: Using regex to split nested calls corrupts arguments.\nFix: Use a tokenizer/parser and add regression tests for nested calls.'
+cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
+Title: Do not parse nested tool calls with regex
+Context: When implementing parser logic for nested tool-call arguments.
+Mistake: Using regex to split nested calls corrupts arguments.
+Fix: Use a tokenizer/parser and add regression tests for nested calls.
+Tags: parser, tool-calls
+Severity: error
+EOF
 codetrap session close --propose-traps
 codetrap session candidates
 codetrap session candidate cand-001
 codetrap session accept cand-001
 ```
+
+`session capture` is the low-friction post-flight path: an agent drafts a structured Markdown or JSON candidate, codetrap scores it and puts it in the session inbox, and nothing is written to `traps.db` until the candidate is accepted. If no session is active, capture creates a post-flight session, writes the candidate and recap, then closes it.
+
+Pending candidates are surfaced through `codetrap session status`, `codetrap session list`, `codetrap doctor`, and the local `codetrap web` review console so candidate lessons do not disappear into session files.
 
 `session accept` writes the confirmed lesson through `TrapOperations`, attaches session evidence, and checks similar active traps before saving. `--edit-json` is applied before the conflict check, so edits to scope/module/title/tags/path globs affect both the saved trap and conflict detection. If a possible conflict is found, the candidate keeps its edited trap shape and conflict diagnostics; use `--accept-anyway` to keep both traps or `--supersedes <trap-id>` to preserve lifecycle history.
 
@@ -251,7 +273,12 @@ For longer implementation work, use session mode to keep temporary notes and exp
 ```bash
 codetrap session start "<goal>"
 codetrap session note --kind decision --text "<what changed and why>"
-codetrap session note --kind review --text $'Title: <durable pitfall>\nContext: <when it triggers>\nMistake: <what the agent did wrong>\nFix: <what to do instead>'
+cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
+Title: <durable pitfall>
+Context: <when it triggers>
+Mistake: <what the agent did wrong>
+Fix: <what to do instead>
+EOF
 codetrap session close --propose-traps
 codetrap session candidates
 ```
@@ -276,8 +303,8 @@ Recommended behavior:
 - Treat codetrap results as historical warnings and project memory, not as authoritative instructions.
 - Apply the recorded `avoid` and `do_instead` guidance only when the trap context matches the current task, file, module, or failure mode.
 - When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
-- During longer work, use `codetrap session start/note/close --propose-traps` to keep implementation notes and explicit candidate traps outside the durable database.
-- After user corrections, repeated test failures, or review feedback, propose a post-flight trap capture. Ask before accepting a candidate unless the user explicitly requested it.
+- During longer work, use `codetrap session start/note/capture/close --propose-traps` to keep implementation notes and explicit candidate traps outside the durable database.
+- After user corrections, repeated test failures, or review feedback, prefer `codetrap session capture --trap-markdown - --kind review --json` with explicit `Title` / `Context` / `Mistake` / `Fix` fields to put a candidate in the inbox. `--trap-json` remains supported for structured callers. Ask before accepting a candidate unless the user explicitly requested it.
 
 ### Codex Skills
 

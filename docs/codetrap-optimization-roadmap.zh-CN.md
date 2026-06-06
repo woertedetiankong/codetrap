@@ -1,7 +1,7 @@
 # codetrap 后续优化路线图
 
 Date: 2026-05-16
-Last updated: 2026-05-26
+Last updated: 2026-06-05
 
 本文记录一次真实使用 codetrap 后得到的改进方向，并归并 Claude Code 和 SemTools
 相关参考对产品定位、agent harness、CLI 体验的启发。测试场景来自
@@ -19,20 +19,34 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 
 ## 状态快照
 
-2026-05-24 增量：
+2026-06-05 增量：
 
-- Session Mode v1 已完成 CLI 闭环：`session start/note/status/list/show/notes/close/candidates/candidate/accept/reject`。
+- `codetrap session capture --trap-markdown - ...` / `--trap-json ...` 已落地：agent-drafted post-flight trap 会进入 session candidate inbox，不直接写入 `traps.db`；没有 active session 时会创建并关闭一个 post-flight session。
+- `src/lib/session-capture.ts` 现在负责 capture draft normalization、capture evidence、显式 note 候选提取和 merge/dedupe；`src/lib/session-candidate-document.ts` 负责 `candidate-traps.json` 的纯状态转换。
+- Candidate Review Visibility + Workbench 已落地：CLI status/list、doctor、`/api/sessions` 和 Web Review 都能看到 pending candidates；Web Review 的 Accept / Accept anyway / Supersede 使用当前可见候选表单作为 accept-time edit。
+- `src/lib/session-review.ts` 成为 CLI/Web 共享的 session review contract，统一 accept/reject/cleanup payload、accepted-missing trap review shape 和 transport-neutral conflict payload；CLI `next_actions` 由 `sessionCliConflictPayload` 单独添加。
+- `src/web/client-review.ts` 负责 Review queue state 和 candidate draft/request normalization；`src/web/client-script.ts` 只组合 Web modules 与 DOM event wiring。
+- `src/lib/embedding-runtime.ts` 已抽出 embedding provider runtime：provider selection、config/status、setup action 和 unavailable error 由一个模块负责，Jina 仍是当前唯一实际 provider。
+- Agent guidance、README、install docs、release playbook、skills/plugin templates 已改成 post-flight 候选先走 `session capture`，confirmed trap 仍需要显式 accept 或用户确认后的外部来源写入。
+
+2026-06-03 增量：
+
+- Session Capture 候选 inbox 闭环落地，并把 capture draft normalization、candidate document mutation、session review payload contract 分别收敛到 `session-capture`、`session-candidate-document`、`session-review`。
+
+2026-05-24 / 2026-05-26 增量：
+
+- Session Mode v1 已完成 CLI 闭环：`session start/note/capture/status/list/show/notes/close/candidates/candidate/accept/reject/delete/prune/cleanup`。
 - Session files 保存在 `.codetrap/sessions/`，作为 temporary working memory、recap 和 candidate trap 池；默认 search 仍只检索 confirmed traps。
 - Candidate accept 已集中到 `SessionOperations`：接受时先应用 `--edit-json`，再做 possible conflict check、写入 `TrapOperations` / `TrapStore`、自动挂 `source_type=conversation` session evidence，并更新 candidate 状态。
 - Candidate quality scorer 和 possible conflict check 已落地；存在相似 active trap 时会把 edited candidate shape 与 conflict diagnostics 写回 `candidate-traps.json`，并要求 `--accept-anyway` 或 `--supersedes <trap-id>`。
-- 2026-05-26 产品决策：`session-capture.ts` 只从显式 `Title`/`Context`/`Mistake`/`Fix` trap note 生成 candidate；raw failure/test output/review/correction 只进入 notes/recap，不再通过 fallback 模板生成候选。
+- 2026-05-26 产品决策：`session-capture.ts` 只从显式 `Title`/`Context`/`Mistake`/`Fix` 结构生成 candidate，包括 trap note、Markdown capture 或 JSON capture；raw failure/test output/review/correction 只进入 notes/recap，不再通过 fallback 模板生成候选。
 - Dogfood Eval Flywheel v1 已新增 maintainer script：deterministic report 用固定 eval embedder，live report 用真实 embedding provider，record 命令把 curated query 追加到 repo fixture。
 - Session command request normalization 已移入 `src/lib/command-requests.ts`，避免 `workflow.ts` 重复解析 session flags。
 
 仍未完成：
 
 - 本地 embedding provider、模型缓存、ONNX/local model path。
-- Playbook export、learning review、staleness review、session archive/prune。
+- Playbook export、learning review、staleness review、session archive/export。
 - MCP session tools；当前 session mode 是 CLI-first。
 
 截至 2026-05-17，roadmap 里的 v0.2 主线已经完成，并顺手做完除本地 embedding provider 之外的大部分 v0.3 / v0.4 架构硬化。
@@ -49,7 +63,9 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 - Ranking/MRR：测试已计算 MRR，并加入通用 title/tag/code-identifier/severity/path/module/owner rerank signals；未内置 ESP32/StickS3 专用词库。
 - Path/module scoped traps：schema v5 已加入 `path_globs`、`module`、`owner`，CLI/MCP search/list 可用 `--path`、`--module`、`--owner` 过滤与加权。
 - 配置文件：`~/.codetrap/config.json` 已支持 search mode/limit/scope/rerank，优先级为 CLI args > config file > env vars > built-in defaults。
-- Agent harness：post-flight capture 规则已写入文档/skills，`plugins/codetrap-agent` 提供 Codex plugin/bundle 示例，`release:preflight` 串联发布前 dry-run 检查。
+- Agent harness：post-flight capture 规则已写入文档/skills，`session capture --trap-markdown -` 优先提供 candidate-inbox path，`--trap-json` 保留结构化兼容入口，`plugins/codetrap-agent` 提供 Codex plugin/bundle 示例，`release:preflight` 串联发布前 dry-run 检查。
+- Session architecture：candidate draft normalization/merge、candidate document mutation、session review payload contract 已分别收敛到 `session-capture`、`session-candidate-document`、`session-review`；Web Review draft/request normalization 已收敛到 `client-review`，CLI conflict next actions 与 Web/API neutral payload 已分离。
+- Embedding architecture：provider selection/status/setup action 已收敛到 `embedding-runtime`，为后续 local provider 留出接口。
 - MCP resources：resource URI 已支持 `?cwd=`，静态 URI 仍兼容 server 启动 cwd。
 
 仍未完成：
@@ -338,13 +354,15 @@ codetrap delete <id> --scope project --json
 
 目标：让 `AGENTS.md` 和 skills 能稳定指导 agent 使用 CLI。
 
-当前状态（2026-05-17）：
+当前状态（2026-06-05）：
 
 - 项目根 `AGENTS.md` 已默认推荐 `codetrap search "<keywords>" --mode hybrid --json`。
 - README 的 agent integration 已改成 CLI-first，MCP 是 optional adapter。
 - `skills/codetrap-check/SKILL.md` 和 `skills/codetrap-search/SKILL.md` 已改成 CLI 优先、MCP 可选。
 - top 3 action cards review 规则已写入 AGENTS/README/skills。
 - `critical` / `error` 且相关时下钻 `show --json` 的规则已写入 AGENTS/README/skills。
+- 用户纠正、重复测试失败或 review feedback 后，agent-drafted 候选应先进入 `codetrap session capture --trap-markdown - --kind review --json`，再由用户决定 accept/edit/reject/supersede；`--trap-json` 保留给已经有结构化对象的调用方。
+- Web Review 可以在接受前编辑候选；Accept / Accept anyway / Supersede 使用当前可见 draft，不会丢掉未保存的表单修改。
 
 #### 2.1 项目级 AGENTS 模板
 
@@ -363,9 +381,11 @@ Before non-trivial code edits:
 
 3. Apply the trap guidance before editing.
 
-When a new recurring mistake or project convention is discovered, ask whether to record it:
+When a new recurring mistake or project convention is discovered, put a structured draft in the session candidate inbox:
 
-`codetrap add --json '{...}'`
+`codetrap session capture --trap-markdown - --kind review --json`
+
+Do not accept the candidate automatically.
 ```
 
 #### 2.2 Skill 文档改成 CLI-first
@@ -641,9 +661,10 @@ StickS3 语音输入慢 peak=32768 VOICE_MIC_GAIN
 
 目标：让 hybrid search 不依赖远程 API。
 
-当前状态（2026-05-17）：
+当前状态（2026-06-05）：
 
 - 已抽出 `src/lib/embedding-health.ts`。
+- 已抽出 `src/lib/embedding-runtime.ts`，集中 provider selection、provider config/status、setup action 和 provider-required error。
 - `stats --json` 和 `doctor --json` 已展示 fresh/stale/missing、provider、model、dimensions、passage_version。
 - `doctor` 已展示 hybrid fallback reason：`semantic_unavailable` 或 `semantic_no_candidates`。
 - 未完成：ONNX/local embedding provider、模型缓存、离线默认 provider。
@@ -741,7 +762,7 @@ codetrap 不只应该在动手前阻止错误，也应该在任务结束时沉�
 - review 指出 recurring mistake。
 - agent 在同一问题上反复尝试后才找到正确做法。
 
-短期不建议完全自动写入 trap。更好的默认体验是：agent 自动提出候选 trap，由用户确认，再调用 `codetrap add` 或 MCP `add_trap` 补全结构化字段。
+短期不建议完全自动写入 trap。更好的默认体验是：agent 用 `codetrap session capture --trap-markdown - --kind review --json` 提交显式 `Title` / `Context` / `Mistake` / `Fix` draft 到 candidate inbox；`--trap-json` 保留给已经有结构化对象的调用方。之后由用户决定 accept、edit、reject 或 supersede；confirmed trap 仍只能通过显式接受或用户确认后的外部来源保存。
 
 ### Phase 8: 大型代码库与组织采用
 

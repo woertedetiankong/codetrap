@@ -2,12 +2,12 @@ import type { Database } from "bun:sqlite";
 import * as queries from "../db/queries";
 import type { TrapSearchResult } from "../domain/trap";
 import type { SearchMode, TrapStatus } from "./constants";
+import { cosineSimilarity } from "./embedder";
 import {
-  cosineSimilarity,
-  EmbeddingProviderUnavailableError,
-  embeddingConfig,
-  type EmbeddingProvider,
-} from "./embedder";
+  embeddingRuntimeFrom,
+  type EmbeddingRuntime,
+  type EmbeddingRuntimeInput,
+} from "./embedding-runtime";
 import {
   DEFAULT_RANKING_CONFIG,
   TrapSearchPolicy,
@@ -34,12 +34,14 @@ const DEFAULT_LIMIT = 20;
 export class SearchService {
   private readonly policy: TrapSearchPolicy;
   private readonly embeddingIndex: DatabaseEmbeddingIndex;
+  private readonly embeddings: EmbeddingRuntime;
 
   constructor(
     private readonly db: Database,
-    private readonly embedder?: EmbeddingProvider,
+    embeddings?: EmbeddingRuntimeInput,
     ranking: RankingConfig = DEFAULT_RANKING_CONFIG
   ) {
+    this.embeddings = embeddingRuntimeFrom(embeddings);
     this.policy = new TrapSearchPolicy(ranking);
     this.embeddingIndex = new DatabaseEmbeddingIndex(db);
   }
@@ -106,14 +108,13 @@ export class SearchService {
     query: string,
     plan: SearchRetrievalPlan
   ): Promise<TrapSearchResult[]> {
-    if (!this.embedder) {
-      throw new EmbeddingProviderUnavailableError();
-    }
+    const provider = this.embeddings.requireProvider();
 
-    const [queryEmbedding] = await this.embedder.embed([query], "retrieval.query");
+    const [queryEmbedding] = await provider.embed([query], "retrieval.query");
     if (!queryEmbedding) return [];
 
-    const config = embeddingConfig(this.embedder);
+    const config = this.embeddings.config();
+    if (!config) throw this.embeddings.unavailableError();
     const candidates = this.embeddingIndex.freshEmbeddings(config, plan.semanticStorageFilter);
 
     const results = candidates

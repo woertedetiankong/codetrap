@@ -31,6 +31,54 @@ Note:
 
 ## Observations
 
+## 2026-06-03 - Knowledge sync after session capture
+
+Task: Reconcile project docs, AGENTS guidance, handoff, and memory notes after session capture and embedding runtime changes.
+Query: documentation sync agent memory docs stale
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - database/search internals, not relevant to docs sync.
+2. #5 Set SQLite busy_timeout before lock-prone startup pragmas - database startup, not relevant to docs sync.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: Proceeded with a direct docs/code audit; updated stale agent guidance and handoff material manually.
+
+## 2026-06-03 - Session capture architecture deepening
+
+Task: Refactor session capture candidate drafting and candidate document mutation responsibilities after architecture review.
+Query: session capture candidate mutation session-store
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: Proceeded with a local architecture read: capture draft normalization moved into `session-capture`, while candidate document transitions moved into a dedicated pure mutation module.
+
+## 2026-06-03 - Session capture candidate inbox
+
+Task: Add `codetrap session capture` so agent-drafted post-flight trap candidates go into the session inbox instead of directly into confirmed traps.
+Query: session capture candidate inbox post-flight trap note close propose duplicate
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - relevant reminder while accepting capture `path_globs`, `module`, and `owner` fields.
+2. No second result.
+3. No third result.
+
+Judgment: useful_hit
+Action changed: yes
+Promote: no
+Note: Normalize empty `module`/`owner` values to null in capture input, preserve path_globs as arrays, and keep regression coverage around candidate capture fields.
+
 ## 2026-06-02 - Web drag-collapse edge reveal
 
 Task: Make the web console side panes feel Codex-like: drag to collapse at a threshold and hover the shell edge to reveal collapsed panes.
@@ -191,6 +239,38 @@ Action changed: no
 Promote: no
 Note: The check did not surface prior traps for this architecture-deepening pass; proceed with source, tests, and CONTEXT.md as the authoritative guides.
 
+## 2026-06-04 - Candidate Review Visibility
+
+Task: Surface pending session candidates through CLI, doctor, API, and Web Review without changing confirmed trap search.
+Query: candidate review visibility pending session doctor web inbox
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: The gap was product visibility for pending candidate documents, not a repeated implementation pitfall. Keep this as a raw observation rather than a search regression fixture.
+
+## 2026-06-04 - Web Review Client Model
+
+Task: Deepen the Web Review client Module with TDD so pending-session selection and candidate queue behavior are tested outside the generated browser script.
+Query: web review client candidate session pending selection test
+Mode: hybrid
+
+Top results:
+1. #5 Set SQLite busy_timeout before lock-prone startup pragmas - not applicable to browser Review state.
+2. #3 Applicability filters must normalize absolute paths and empty scope fields - not applicable to browser Review state.
+3. No third result.
+
+Judgment: noisy_hit
+Action changed: no
+Promote: no
+Note: The results were plausible codetrap development traps but did not match the Web client Module seam. No fixture promotion.
+
 ## 2026-05-31 - Web Library follow-ups
 
 Task: Add Review-to-Library trap navigation, Library sorting, and a standalone Insights view.
@@ -270,3 +350,67 @@ Judgment: noisy_hit
 Action changed: no
 Promote: no
 Note: The result was search-related but the fix belongs in `src/db/connection.ts`, not applicability filtering.
+
+## 2026-06-05 - Markdown trap capture
+
+Task: Add Markdown input for `codetrap session capture`.
+Query: session capture markdown trap-json candidate note parsing
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. Follow-up query `empty module owner session capture path_globs command requests` returned #3 Applicability filters must normalize absolute paths and empty scope fields.
+3. No third result.
+
+Judgment: useful_hit
+Action changed: yes
+Promote: no
+Note: The first query had no direct capture-specific trap, but #3 is relevant to the planned empty `Module:` / `Owner:` Markdown behavior, so implementation will preserve null normalization and add regression coverage.
+
+## 2026-06-05 - Candidate Review Workbench
+
+Task: Improve Web Review candidate polish and triage after Markdown capture.
+Query: web review candidate edit save accept reject session candidate
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: No existing project trap directly covered Web Review candidate editing. Keep the work routed through existing SessionOperations/session-review contracts and avoid changing confirmed trap search semantics.
+
+## 2026-06-05 - Review Workbench Architecture TDD
+
+Task: Deepen Web Review candidate draft request modeling and split CLI conflict next actions from the transport-neutral session review payload.
+Query: web review candidate draft accept payload session review conflict cli next_actions transport neutral
+Mode: hybrid
+
+Top results:
+1. #5 Set SQLite busy_timeout before lock-prone startup pragmas - database startup behavior, not applicable to Web Review or session review payload shape.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: Proceed with TDD through Web Review and Session Review public Modules; no existing trap changes the design.
+
+## 2026-06-05 - Neat-freak docs sync
+
+Task: Reconcile project docs and agent guidance after Markdown capture, Candidate Review Workbench, and the Review architecture pass.
+Query: docs sync web review session review conflict payload next_actions client-review
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no
+Note: No project trap covered docs synchronization for module-boundary drift. Update current docs directly and keep historical logs intact where they describe older milestones.

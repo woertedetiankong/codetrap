@@ -1,7 +1,7 @@
 # codetrap Session Mode 与 Post-flight Capture 开发 Spec
 
 Date: 2026-05-20
-Status: v1 CLI implemented on 2026-05-24; v2+ remains planned
+Status: v1 CLI implemented on 2026-05-24; Markdown capture and Web Review Workbench updated on 2026-06-05; v2+ remains planned
 
 ## 1. 背景
 
@@ -17,12 +17,12 @@ codetrap 当前已经具备稳定的踩坑记忆核心：
 ```text
 开始一个目标
 -> 做事时记录 implementation notes
--> 结束时从明确结构化的 post-flight trap notes 里提炼 trap 候选
+-> 通过 `session capture` 或明确结构化的 post-flight trap notes 提炼 trap 候选
 -> quality scorer 判断哪些值得进入 codetrap
 -> 用户确认后保存到 traps.db
 ```
 
-截至 2026-05-31，v1 CLI 闭环已经落地：`session start/note/status/list/show/notes/close/candidates/candidate/accept/reject/delete/prune/cleanup`、explicit candidate note extraction、deterministic quality scorer、candidate conflict check、`--accept-anyway`、`--supersedes`、accepted candidate 写入 `traps.db` 并挂 session evidence。2026-05-26 的产品决策是：普通 failure/test_failure/correction/review notes 不再通过 fallback 模板自动生成候选；需要候选时由用户或 agent 明确写出 `Title/Context/Mistake/Fix` 结构。MCP session tools、playbook export、review/staleness 仍属于后续阶段。
+截至 2026-06-05，v1 CLI 闭环已经落地：`session start/note/capture/status/list/show/notes/close/candidates/candidate/accept/reject/delete/prune/cleanup`、explicit candidate note extraction、deterministic quality scorer、candidate conflict check、`--accept-anyway`、`--supersedes`、accepted candidate 写入 `traps.db` 并挂 session evidence。2026-05-26 的产品决策是：普通 failure/test_failure/correction/review notes 不再通过 fallback 模板自动生成候选；需要候选时由用户或 agent 明确写出 `Title/Context/Mistake/Fix` 结构，优先用 `--trap-markdown -` 通过 `session capture` 放进候选 inbox，`--trap-json` 保留给已经有结构化对象的调用方。2026-06-05 的 Web Review Workbench 已支持接受前编辑候选，Accept / Accept anyway / Supersede 会使用当前可见 draft。MCP session tools、playbook export、review/staleness 仍属于后续阶段。
 
 ## 2. 一句话目标
 
@@ -32,7 +32,7 @@ codetrap 当前已经具备稳定的踩坑记忆核心：
 
 ### 3.1 数据库只保存高质量长期经验
 
-`implementation-notes.md` 可以自动写，`recap.md` 可以自动生成，`candidate-traps.json` 可以从明确结构化的候选 note 自动生成。
+`implementation-notes.md` 可以自动写，`recap.md` 可以自动生成，`candidate-traps.json` 可以从 `session capture --trap-markdown`、`session capture --trap-json` 或明确结构化的候选 note 自动生成。
 
 但真正写入 `.codetrap/traps.db` 必须默认经过用户确认。
 
@@ -247,7 +247,7 @@ codetrap session accept cand-001 --edit-json '{
 }'
 ```
 
-如果接受前发现相似 active trap，默认会拒绝写库并给出 next actions。用户可以明确选择：
+如果接受前发现相似 active trap，默认会拒绝写库。CLI JSON 会通过 CLI presenter 给出 `next_actions`；共享 conflict payload 保持 transport-neutral，Web/API 不返回 CLI 命令。用户可以明确选择：
 
 ```bash
 codetrap session accept cand-001 --accept-anyway
@@ -533,6 +533,7 @@ codetrap session list [--status active|closed|all] [--limit n] [--json]
 codetrap session show <id> [--json]
 codetrap session notes [<id>] [--json]
 codetrap session close [<id>] [--propose-traps] [--json]
+codetrap session capture (--trap-markdown -|--trap-markdown text|--trap-markdown-file file|--trap-json json) [--goal text] [--kind kind] [--source-ref ref] [--related-files a,b] [--json]
 codetrap session candidates [<id>] [--json]
 codetrap session candidate <candidate-id> [--session id] [--json]
 codetrap session accept <candidate-id> [--session id] [--edit-json json] [--accept-anyway] [--supersedes id] [--json]
@@ -597,7 +598,7 @@ codetrap-quality
 skills 的核心规则：
 
 - 可以自动写 session notes。
-- 可以在有明确结构化字段时自动提出 candidate traps。
+- 可以在有明确结构化字段时通过 `session capture --trap-markdown`、`session capture --trap-json` 或 explicit trap note 自动提出 candidate traps。
 - 默认不能自动写 confirmed traps。
 - 写入 traps.db 前必须问用户。
 
@@ -623,16 +624,30 @@ src/lib/trap-quality.ts
   deterministic quality scorer。
 
 src/lib/session-capture.ts
-  从包含 Title/Context/Mistake/Fix 的显式 session note 生成候选 trap 的纯逻辑。
+  candidate draft normalize、`session capture --trap-markdown` / `--trap-json` evidence 构造、
+  显式 session note 候选提取、candidate merge/dedupe 纯逻辑。
+
+src/lib/session-candidate-document.ts
+  candidate-traps.json 的 add/save/conflict/accept/reject/remove 状态转换纯逻辑。
 
 src/lib/session-conflicts.ts
   accept 前搜索并标记相似 active traps。
+
+src/lib/session-review.ts
+  session review payload、accepted-missing review status、accept/reject/cleanup payload、
+  transport-neutral conflict payload 和 CLI-only `sessionCliConflictPayload`。
 
 src/lib/command-requests.ts
   session 命令参数、stdin、edit-json、supersedes、accept-anyway 的 request 标准化。
 
 src/commands/workflow.ts
   增加 session 命令分发；playbook/review 仍属后续阶段。
+
+src/web/client-review.ts
+  Web Review pending-session/queue model 和 candidate draft/request normalization。
+
+src/web/client-script.ts
+  组合 Web modules 与 DOM event wiring；不重复实现 candidate draft normalization。
 ```
 
 遵守现有架构规则：
@@ -640,6 +655,8 @@ src/commands/workflow.ts
 - CLI adapter 保持薄，命令行为放在 `src/commands/workflow.ts` 和 `src/lib/*`。
 - trap 写库继续走 `TrapOperations` / `TrapStore`。
 - candidate accept、session evidence、possible conflict 和 supersede 行为集中在 `SessionOperations`。
+- conflict payload 的 base shape 保持 transport-neutral；CLI `next_actions` 只能由 CLI presenter 添加。
+- Web Review 的可见候选表单是 save/accept/supersede 的 draft source。
 - 不绕过现有 scope policy。
 - 不把 session 临时记录直接混进 trap search。
 
@@ -664,7 +681,7 @@ codetrap session capture --from-review review.md
 
 - codetrap 不主动执行破坏性命令。
 - test output、diff、review text 和 raw correction 默认只进入 session notes/recap，不生成 candidate trap，也不直接进 traps.db。
-- 需要候选时，用户或 agent 应把经验整理成显式 `Title/Context/Mistake/Fix` note；`session close --propose-traps` 只提取这类结构化 note。
+- 需要候选时，用户或 agent 应优先把经验整理成 `session capture --trap-markdown -` 输入；`--trap-json` 保留给已经有结构化对象的调用方，也可以使用显式 `Title/Context/Mistake/Fix` note；`session close --propose-traps` 只从结构化 note 提取候选。
 - 涉及 secret 的文本要提醒用户检查，后续可加 redaction。
 
 ## 11. 上下文体量控制
@@ -898,6 +915,7 @@ keep active search clean
 
 - `session start`
 - `session note`
+- `session capture`
 - `session status/list/show`
 - `session close --propose-traps`
 - explicit candidate note extraction
@@ -996,8 +1014,14 @@ codetrap session note --kind failure \
 bun test src/tests/agent-parser.test.ts 2>&1 | \
   codetrap session note --kind test_failure --stdin
 
-codetrap session note --kind review \
-  --text $'Title: Do not parse nested tool calls with regex\nContext: When implementing agent harness tool-call parsing.\nMistake: Parsing nested tool-call content with regular expressions can truncate or corrupt arguments.\nFix: Use a structured parser or explicit tokenizer with regression tests for nested content.\nTags: agent-harness,parser,tool-calls\nPath globs: src/agent/**'
+cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
+Title: Do not parse nested tool calls with regex
+Context: When implementing agent harness tool-call parsing.
+Mistake: Parsing nested tool-call content with regular expressions can truncate or corrupt arguments.
+Fix: Use a structured parser or explicit tokenizer with regression tests for nested content.
+Tags: agent-harness, parser, tool-calls
+Path globs: src/agent/**
+EOF
 ```
 
 结束：
@@ -1040,7 +1064,7 @@ codetrap search "agent harness tool call parser nested arguments" --mode hybrid 
 已决：
 
 - v1 一个项目只允许一个 active session。
-- candidate trap 由 CLI 根据显式 `Title/Context/Mistake/Fix` session notes 生成，并由 deterministic scorer 评分；普通 raw failure/test_failure/correction/review notes 不再通过 fallback 模板生成候选。
+- candidate trap 由 CLI 根据显式 `Title/Context/Mistake/Fix` session notes 或 `session capture --trap-markdown` / `--trap-json` 输入生成，并由 deterministic scorer 评分；普通 raw failure/test_failure/correction/review notes 不再通过 fallback 模板生成候选。
 - `recap.md` 由 `session close` 基于 notes 和 candidates 生成。
 - conflict detection 第一版使用轻量检索式相似检查，不引入 LLM 判断；accept-time edits 先参与检测，path scope 检测能识别简单 glob overlap。
 

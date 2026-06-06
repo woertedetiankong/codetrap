@@ -1,8 +1,19 @@
 import type { CandidateTrap } from "../domain/session";
-import { buildTrapInput } from "../domain/trap";
 import type { Scope } from "./constants";
 import type { TrapOperations } from "./trap-operations";
+import {
+  capturedCandidateDraft,
+  capturedTrapInput,
+  candidateWithTrapEdits,
+  captureGoal,
+} from "./session-capture";
 import { findCandidateConflicts, type CandidateConflict } from "./session-conflicts";
+import {
+  projectCandidateReviewSummary,
+  sessionCandidateReviewSummary,
+  sessionIndexEntryWithReview,
+  type ProjectCandidateReviewSummary,
+} from "./session-review";
 import type {
   AcceptCandidateResult,
   AddSessionNoteArgs,
@@ -40,6 +51,15 @@ export type SessionPruneRequest = {
   now?: Date;
 };
 
+export type SessionCaptureRequest = {
+  trap: Record<string, unknown>;
+  goal?: string;
+  kind?: string;
+  relatedFiles?: string[];
+  sourceRef?: string;
+  evidenceNote?: string;
+};
+
 export type SessionConflictResult = {
   success: false;
   session_id: string;
@@ -52,6 +72,18 @@ export type SessionAcceptSuccess = AcceptCandidateResult & {
 };
 
 export type SessionAcceptResult = SessionAcceptSuccess | SessionConflictResult;
+
+export type SessionCaptureResult = {
+  success: true;
+  session: ReturnType<SessionStore["getSession"]>;
+  candidate: CandidateTrap;
+  candidate_count: number;
+  candidates_path: string;
+  created_session: boolean;
+  closed_session: boolean;
+  duplicate: boolean;
+  recap_path: string | null;
+};
 
 export class SessionOperations {
   constructor(
@@ -68,11 +100,23 @@ export class SessionOperations {
   }
 
   status() {
-    return this.sessions.status();
+    return {
+      ...this.sessions.status(),
+      candidate_review: this.candidateReviewSummary(),
+    };
   }
 
   listSessions(args: { status?: string; limit?: number } = {}) {
-    return this.sessions.listSessions(args);
+    return this.sessions.listSessions(args).map((session) =>
+      sessionIndexEntryWithReview(session, this.sessions.candidateDocument(session.id).candidates)
+    );
+  }
+
+  candidateReviewSummary(): ProjectCandidateReviewSummary {
+    const sessions = this.sessions.listSessions({ status: "all" }).map((session) =>
+      sessionCandidateReviewSummary(session, this.sessions.candidateDocument(session.id).candidates)
+    );
+    return projectCandidateReviewSummary(sessions);
   }
 
   showSession(id: string) {
@@ -85,6 +129,39 @@ export class SessionOperations {
 
   closeSession(id: string | undefined, proposeTraps: boolean): CloseSessionResult {
     return this.sessions.closeSession(id, proposeTraps);
+  }
+
+  captureCandidate(request: SessionCaptureRequest): SessionCaptureResult {
+    const trap = capturedTrapInput(request.trap);
+    const active = this.sessions.status().session;
+    const createdSession = active === null;
+    const session = active ?? this.sessions.startSession({
+      goal: captureGoal(request.goal, trap.title),
+      module: trap.module,
+      owner: trap.owner,
+    });
+    const captured = this.sessions.addCandidate({
+      sessionId: session.id,
+      draft: capturedCandidateDraft(session, {
+        trap,
+        kind: request.kind,
+        relatedFiles: request.relatedFiles,
+        sourceRef: request.sourceRef,
+        evidenceNote: request.evidenceNote,
+      }),
+    });
+    const closed = createdSession ? this.sessions.closeSession(session.id, false) : null;
+    return {
+      success: true,
+      session: closed?.session ?? captured.session,
+      candidate: captured.candidate,
+      candidate_count: this.sessions.candidateDocument(session.id).candidates.length,
+      candidates_path: captured.candidates_path,
+      created_session: createdSession,
+      closed_session: closed !== null,
+      duplicate: captured.duplicate,
+      recap_path: closed?.recap_path ?? null,
+    };
   }
 
   candidateDocument(id?: string) {
@@ -188,54 +265,6 @@ export class SessionOperations {
       .map((candidate) => candidate.id);
     return this.sessions.removeCandidates(sessionId, missingCandidateIds);
   }
-}
-
-function candidateWithTrapEdits(candidate: CandidateTrap, edit: Record<string, unknown> | undefined): CandidateTrap {
-  return {
-    ...candidate,
-    trap: normalizeCandidateTrap({
-      ...candidate.trap,
-      ...trapEdits(edit),
-    }) as CandidateTrap["trap"],
-  };
-}
-
-function normalizeCandidateTrap(args: Record<string, unknown>) {
-  return buildTrapInput({
-    ...args,
-    tags: stringArray(args.tags),
-    path_globs: stringArray(args.path_globs),
-    module: optionalText(args.module),
-    owner: optionalText(args.owner),
-    before_code: optionalText(args.before_code),
-    after_code: optionalText(args.after_code),
-  });
-}
-
-function stringArray(value: unknown): string[] | undefined {
-  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
-  if (typeof value === "string") {
-    const values = value.split(",").map((item) => item.trim()).filter(Boolean);
-    return values.length > 0 ? values : undefined;
-  }
-  return undefined;
-}
-
-function optionalText(value: unknown): string | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  const text = String(value).trim();
-  return text ? text : null;
-}
-
-function trapEdits(edit: Record<string, unknown> | undefined): Record<string, unknown> {
-  if (!edit) return {};
-  const nested = edit.trap;
-  return isRecord(nested) ? nested : edit;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function candidateRelatedFiles(candidate: CandidateTrap): string[] {

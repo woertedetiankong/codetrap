@@ -634,13 +634,43 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .warning { border-color: color-mix(in srgb, var(--warn), var(--line) 50%); color: var(--warn); }
     .conflict { border-color: color-mix(in srgb, var(--danger), var(--line) 45%); }
     .review-note { border-color: color-mix(in srgb, var(--accent), var(--line) 55%); }
+
+    .review-summary {
+      padding: 10px 12px 0;
+    }
+
+    .review-banner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid color-mix(in srgb, var(--warn), var(--line) 55%);
+      border-radius: 8px;
+      padding: 9px 10px;
+      background: color-mix(in srgb, #fff7d6, var(--surface) 35%);
+      color: #5f4200;
+      font-size: 12px;
+    }
+
     .actions {
       padding: 12px;
       border-top: 1px solid var(--line-soft);
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+      align-items: center;
       background: rgba(255, 255, 255, 0.018);
+    }
+
+    .action-hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+      min-width: 180px;
+    }
+
+    .action-hint.dirty {
+      color: #8a5b00;
     }
 
     .empty {
@@ -754,6 +784,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
           </div>
         </div>
       </div>
+      <div class="review-summary hidden" id="review-summary"></div>
       <div class="scroll">
         <div class="stack" id="candidates"></div>
       </div>

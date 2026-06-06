@@ -22,8 +22,19 @@ When editing a specific area, pass applicability hints:
 codetrap search "<keywords>" --path src/db/repository.ts --module db --json
 ```
 
-After user corrections, repeated test failures, or review feedback, propose a new trap. Only write it after user confirmation:
+After user corrections, repeated test failures, or review feedback, have the agent draft a structured candidate and put it in the session inbox. Do not write directly to the confirmed trap database:
 
 ```bash
-codetrap add --json '{...}' --output-json
+cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
+Title: <durable pitfall>
+Context: <when it triggers>
+Mistake: <what the agent did wrong>
+Fix: <what to do instead>
+EOF
 ```
+
+Use `--trap-json` only when the caller already has a structured object.
+
+Review the candidate with `codetrap session candidate <candidate-id> --session <session-id> --json`, then accept, edit, reject, or supersede it explicitly.
+
+Use `codetrap session status`, `codetrap session list`, `codetrap doctor`, or `codetrap web` to find pending candidates that still need review.
