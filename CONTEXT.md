@@ -201,6 +201,18 @@ Search eval owns the maintainer-only search evaluation fixture shape, determinis
 
 `src/lib/search-eval.ts` is the shared Module for search eval behavior. `scripts/dogfood-eval.ts` should stay a thin CLI Adapter, and `src/tests/search-eval.test.ts` should exercise the same Module instead of duplicating fixture types, embedding vectors, or metric calculations.
 
+### Dogfood Observation
+
+A dogfood observation is a raw record from real codetrap development that describes a pre-edit search or post-flight learning signal. It records the task, query, reviewed top results, judgment, whether the result changed the next action, and a promotion lane.
+
+Dogfood observations are not telemetry. They do not automatically become confirmed Traps or search eval cases.
+
+### Promotion Decision
+
+A promotion decision chooses where a dogfood observation should go next: search eval, trap candidate, product backlog, docs guidance, or no promotion.
+
+Search eval promotion is reserved for representative search-quality behavior with clear expected Trap IDs. Reusable mistake patterns should become Candidate Traps. Product friction should become roadmap or implementation planning.
+
 ### Embedding Index
 
 Embedding index is the Module for semantic trap availability and embedding freshness.

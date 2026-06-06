@@ -22,4 +22,6 @@ Capture the candidate:
 codetrap session capture --trap-markdown-file candidate.md --kind review --json
 ```
 
+Hook-based clients can set `CODETRAP_CANDIDATE_FILE` to a Markdown file with the same fields and run the packaged `post_task` command. The hook must still leave the candidate in the inbox; it must not accept or write a confirmed trap automatically.
+
 Then review it with `codetrap session candidate <candidate-id> --session <session-id> --json` and accept, edit, reject, or supersede it explicitly.

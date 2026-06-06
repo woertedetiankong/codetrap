@@ -1,4 +1,4 @@
-# Implementation Log
+# Trap Markdown Capture Implementation Log
 
 ## Task
 

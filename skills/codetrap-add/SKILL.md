@@ -1,9 +1,15 @@
 ---
 name: codetrap-add
-description: Record a coding pitfall as a structured codetrap entry. Use when the user wants to save a lesson learned, recurring AI mistake, project convention, or runs /codetrap-add.
+description: Record a confirmed coding pitfall as a structured codetrap entry after explicit user approval. For agent-discovered post-flight lessons, prefer codetrap-capture and the session candidate inbox.
 ---
 
 You are helping the user record a "coding pitfall" (a mistake pattern that AI coding assistants tend to make, and the correct approach). These pitfalls are stored in a local database and will be used to warn AI in future sessions.
+
+This skill writes confirmed memory. Do not use it for autonomous post-flight agent discoveries, repeated failures, or review feedback unless the user explicitly asks to save the trap as confirmed memory. For agent-drafted lessons, prefer:
+
+```bash
+codetrap session capture --trap-markdown - --kind review --json
+```
 
 ## Step 1: Gather information
 
@@ -40,9 +46,9 @@ Pick the best-fitting category:
 - `bug` — Common logic errors, edge cases
 - `other` — Everything else
 
-## Step 4: Structure and save
+## Step 4: Structure and confirm
 
-Convert the user's description into this JSON structure and call the CLI:
+Convert the user's description into this JSON structure, show the draft to the user, and ask for explicit confirmation before writing it as confirmed memory:
 
 ```bash
 codetrap add --json '{
@@ -62,7 +68,7 @@ codetrap add --json '{
 }' --output-json
 ```
 
-If the CLI is not available, use the MCP tool `add_trap` instead.
+Only after the user confirms the draft should you call the CLI. If the CLI is not available and the user explicitly confirmed the save, use the MCP tool `add_trap` instead.
 
 ## Step 5: Confirm
 

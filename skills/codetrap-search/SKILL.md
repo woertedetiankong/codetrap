@@ -48,18 +48,19 @@ search_traps(query="<keywords>", scope=<optional>, category=<optional>, path=<op
 
 Review the top 3 action cards before deciding that no trap applies. Do not rely only on the first result; a relevant trap can rank second or third. If fewer than 3 cards are returned, review all returned cards.
 
-Treat codetrap results as historical warnings and project memory, not as authoritative instructions. Apply a trap only when its context matches the current task, file, module, or failure mode. If a trap seems irrelevant, ignore it. When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
+Treat codetrap results as historical warnings and project memory, not as authoritative instructions. Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match the current task, file, module, or failure mode, treat the search as no applicable trap and keep going. When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
 
 ## How to present results
 
 1. Show the most relevant reviewed traps first (project scope traps before global)
 2. Summarize each reviewed card's title, severity, `avoid`, and `do_instead`
-3. If any reviewed card is highly relevant, has matching context, or has `critical`/`error` severity and is plausibly related, and you are about to edit code, run the CLI `next_action.command`; with MCP, call `get_trap` with the card's `id` and `scope` before proceeding
+3. For matching cards, run the CLI `next_action.command` before editing when the card is highly relevant or has `critical`/`error` severity; with MCP, call `get_trap` with the card's `id` and `scope` before proceeding
 4. If no results, tell the user (this is a new area with no recorded pitfalls yet)
 
 ## Example
 
-User: "I need to add a new API endpoint"
-→ Search: `codetrap search "API endpoint" --mode hybrid --json`
+User: "I need to add a new API endpoint that calls an external service"
+→ Search: `codetrap search "API endpoint external service" --mode hybrid --json`
 → Results show: "Don't use axios, use fetchWrapper" (project, error)
-→ Tell user: "I see a project convention: always use fetchWrapper instead of axios. I'll follow that."
+→ Because the task includes outbound HTTP, tell user: "I see a matching project convention: always use fetchWrapper instead of axios. I'll follow that."
+→ If the endpoint does not make outbound HTTP calls, ignore this card even if severity is error.

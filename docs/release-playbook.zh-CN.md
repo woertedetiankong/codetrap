@@ -2,6 +2,8 @@
 
 这份文档是给维护者看的：以后你要发新版本、检查 npm/bun 安装、检查 GitHub Release 二进制，可以按这里一步一步操作。
 
+Agent 安全边界：除非用户明确要求执行发布，不要运行 `git push`、`git tag`、`npm publish`、`gh release create`、`gh workflow run`，也不要修改外部生产服务。
+
 普通用户安装说明见 [Installation](installation.md)。
 
 ## 当前发布渠道
@@ -23,9 +25,9 @@ npm view codetrap version bin dist-tags
 期望看到类似：
 
 ```text
-version = '0.1.6'
+version = '0.1.7'
 bin = { codetrap: 'bin/codetrap' }
-dist-tags = { latest: '0.1.6' }
+dist-tags = { latest: '0.1.7' }
 ```
 
 如果之后已经发布更高版本，实际查询结果应是最新版本。
@@ -33,7 +35,7 @@ dist-tags = { latest: '0.1.6' }
 当前 GitHub Release：
 
 ```bash
-gh release view v0.1.6 --repo woertedetiankong/codetrap
+gh release view v0.1.7 --repo woertedetiankong/codetrap
 ```
 
 ## 普通用户安装命令
@@ -150,11 +152,13 @@ Before non-trivial code edits, check codetrap from the current project cwd:
 codetrap search "<keywords>" --mode hybrid --json
 ```
 
-Review the top 3 action cards before deciding no trap applies. If a card is highly relevant, or has `critical`/`error` severity and is plausibly related, inspect it before editing:
+Review the top 3 action cards, or all returned cards if fewer than 3, before deciding no trap applies. Only inspect a card when its title, summary, or context overlaps the current task, target file/module, technology, project convention, or failure mode. For matching cards, inspect before editing when the card is highly relevant or has `critical`/`error` severity:
 
 ```bash
 codetrap show <id> --scope <project|global> --json
 ```
+
+Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match, treat the search as no applicable trap and keep going.
 
 When a new recurring mistake or project convention is discovered, put a structured draft in the session candidate inbox:
 
@@ -207,7 +211,7 @@ MCP 作为 optional adapter 使用；如果客户端支持传参，tool calls �
 
 ## 发布新版本：完整流程
 
-下面以 `0.1.6` 为例。每次发布前把版本号换成你要发布的新版本。
+下面以 `<version>` 为占位。每次发布前把版本号换成你要发布的新版本，并且只在用户明确批准发布时执行外部写操作。
 
 ### 1. 确认工作区
 
@@ -223,7 +227,7 @@ git status --short
 
 ```json
 {
-  "version": "0.1.6"
+  "version": "<version>"
 }
 ```
 
@@ -231,14 +235,14 @@ git status --short
 
 - npm 同一个版本号只能发布一次。
 - Git tag 也不要重复使用。
-- `package.json` 版本 `0.1.6` 对应 tag `v0.1.6`。
+- `package.json` 版本 `<version>` 对应 tag `v<version>`。
 
 ### 3. 本地验证
 
 ```bash
 bun install --frozen-lockfile
-bun run check:release-version v0.1.6
-bun run release:preflight v0.1.6
+bun run check:release-version v<version>
+bun run release:preflight v<version>
 ```
 
 `release:preflight` 会串联测试、普通 build、多平台 release asset build、当前平台二进制 smoke test、`npm pack --dry-run`，并在当前 `package.json` 版本尚未发布时运行 `npm publish --dry-run --access public`。检查 npm dry-run 输出：
@@ -253,7 +257,7 @@ bun run release:preflight v0.1.6
 rm -rf /tmp/codetrap-pack-test /tmp/codetrap-npm-test
 mkdir -p /tmp/codetrap-pack-test
 npm pack --pack-destination /tmp/codetrap-pack-test
-npm install -g --prefix /tmp/codetrap-npm-test /tmp/codetrap-pack-test/codetrap-0.1.6.tgz
+npm install -g --prefix /tmp/codetrap-npm-test /tmp/codetrap-pack-test/codetrap-<version>.tgz
 /tmp/codetrap-npm-test/bin/codetrap --help
 ```
 
@@ -261,7 +265,7 @@ npm install -g --prefix /tmp/codetrap-npm-test /tmp/codetrap-pack-test/codetrap-
 
 ```bash
 rm -rf /tmp/codetrap-bun-test
-BUN_INSTALL=/tmp/codetrap-bun-test bun add -g /tmp/codetrap-pack-test/codetrap-0.1.6.tgz
+BUN_INSTALL=/tmp/codetrap-bun-test bun add -g /tmp/codetrap-pack-test/codetrap-<version>.tgz
 /tmp/codetrap-bun-test/bin/codetrap --help
 ```
 
@@ -269,15 +273,15 @@ BUN_INSTALL=/tmp/codetrap-bun-test bun add -g /tmp/codetrap-pack-test/codetrap-0
 
 ```bash
 git add .
-git commit -m "Release v0.1.6"
+git commit -m "Release v<version>"
 git push origin main
 ```
 
 ### 7. 创建并推送 tag
 
 ```bash
-git tag v0.1.6
-git push origin v0.1.6
+git tag v<version>
+git push origin v<version>
 ```
 
 推送 tag 后，GitHub Actions 会自动运行 `Release Binaries`，生成 GitHub Release 二进制。
@@ -297,7 +301,7 @@ gh run watch <run-id> --repo woertedetiankong/codetrap --exit-status
 查看 release：
 
 ```bash
-gh release view v0.1.6 --repo woertedetiankong/codetrap --json url,tagName,assets
+gh release view v<version> --repo woertedetiankong/codetrap --json url,tagName,assets
 ```
 
 期望 assets 包含：
@@ -316,7 +320,7 @@ sha256sums.txt
 trusted publisher 已经配置好后，手动触发 npm publish workflow：
 
 ```bash
-gh workflow run npm-publish.yml --repo woertedetiankong/codetrap --ref v0.1.6 -f tag=v0.1.6
+gh workflow run npm-publish.yml --repo woertedetiankong/codetrap --ref v<version> -f tag=v<version>
 ```
 
 查看 workflow：
@@ -341,12 +345,12 @@ npm view codetrap version bin dist-tags --json
 
 ```json
 {
-  "version": "0.1.6",
+  "version": "0.1.7",
   "bin": {
     "codetrap": "bin/codetrap"
   },
   "dist-tags": {
-    "latest": "0.1.6"
+    "latest": "0.1.7"
   }
 }
 ```
@@ -415,7 +419,7 @@ npm 不能覆盖同一个版本。解决方法：
 
 ### GitHub Release 已经有同名 tag
 
-不要复用 tag。换一个新版本，比如从 `v0.1.6` 升到 `v0.1.7`。
+不要复用 tag。换一个新版本，比如从 `v0.1.7` 升到 `v0.1.8`。
 
 ### npm latest 没更新
 

@@ -97,3 +97,8 @@ Track active codetrap implementation work across web, session, search, and agent
 - Web Review Accept, Accept anyway, and Supersede now send the currently visible candidate form as an accept-time edit, so reviewers can polish a candidate and accept it without losing unsaved changes. The action bar shows the draft safety hint.
 - Follow-up TDD architecture pass moved Review queue/draft request modeling into `src/web/client-review.ts` and kept `src/web/client-script.ts` focused on DOM composition. `src/lib/session-review.ts` now keeps the base conflict payload transport-neutral, with CLI `next_actions` added through `sessionCliConflictPayload`.
 - Validation passed with focused Web/Session Review tests, full `bun test src/tests`, `bunx tsc --noEmit`, `bun run eval:dogfood -- report`, and a browser smoke check for the Web Review draft hint.
+
+### 2026-06-06
+
+- Documentation cleanup moved task-scoped handoff/log pairs into `docs/trap-markdown-capture/`, `docs/candidate-review-visibility/`, and `docs/candidate-review-workbench/`.
+- Added a task-specific journal index to `docs/handoff.md` so the root handoff stays the high-level entrypoint while focused follow-up work can jump directly to the relevant task journal.

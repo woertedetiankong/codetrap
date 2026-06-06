@@ -1,7 +1,7 @@
 # codetrap 后续优化路线图
 
 Date: 2026-05-16
-Last updated: 2026-06-05
+Last updated: 2026-06-06
 
 本文记录一次真实使用 codetrap 后得到的改进方向，并归并 Claude Code 和 SemTools
 相关参考对产品定位、agent harness、CLI 体验的启发。测试场景来自
@@ -18,6 +18,11 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 ```
 
 ## 状态快照
+
+2026-06-06 增量：
+
+- 新增 `docs/dogfood-flywheel.md` 作为内部 dogfood 产品迭代飞轮规范：`dogfood-log.md` 保持原始观察，`src/tests/fixtures/search-eval.json` 只接收代表性搜索回归案例，session capture 只接收可复用 trap 候选，roadmap/docs 负责产品和使用指导改进。
+- `dogfood-log.md` 模板增加 promotion lane：`search_eval`、`trap_candidate`、`product_backlog`、`docs_guidance`、`no_promotion`。第一阶段仍然不做自动遥测、不自动挖 `.codetrap`、不新增公开 `codetrap eval` 命令。
 
 2026-06-05 增量：
 
@@ -40,7 +45,7 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 - Candidate accept 已集中到 `SessionOperations`：接受时先应用 `--edit-json`，再做 possible conflict check、写入 `TrapOperations` / `TrapStore`、自动挂 `source_type=conversation` session evidence，并更新 candidate 状态。
 - Candidate quality scorer 和 possible conflict check 已落地；存在相似 active trap 时会把 edited candidate shape 与 conflict diagnostics 写回 `candidate-traps.json`，并要求 `--accept-anyway` 或 `--supersedes <trap-id>`。
 - 2026-05-26 产品决策：`session-capture.ts` 只从显式 `Title`/`Context`/`Mistake`/`Fix` 结构生成 candidate，包括 trap note、Markdown capture 或 JSON capture；raw failure/test output/review/correction 只进入 notes/recap，不再通过 fallback 模板生成候选。
-- Dogfood Eval Flywheel v1 已新增 maintainer script：deterministic report 用固定 eval embedder，live report 用真实 embedding provider，record 命令把 curated query 追加到 repo fixture。
+- Dogfood Eval Flywheel v1 已新增 maintainer script：deterministic report 用固定 eval embedder，live report 用真实 embedding provider，record 命令把 curated query 追加到 repo fixture。后续晋升规则以 `docs/dogfood-flywheel.md` 为准，避免把普通 raw observations 污染成搜索评估集。
 - Session command request normalization 已移入 `src/lib/command-requests.ts`，避免 `workflow.ts` 重复解析 session flags。
 
 仍未完成：
@@ -587,7 +592,7 @@ codetrap repair-scope --apply
 - StickS3 8 条真实 traps 和 8 个真实 query 已加入 `src/tests/fixtures/search-eval.json`。
 - `src/tests/search-eval.test.ts` 对这些 query 锁住 `Recall@3 = 100%` 和 `Recall@5 = 100%`。
 - MRR 已在 eval 测试中计算；通用 title/tag/code-identifier/severity/path/module/owner rerank signals 已落地。
-- Dogfood Eval Flywheel v1 已新增：把真实 codetrap 使用查询整理进 repo fixture，并通过 `bun run eval:dogfood -- report` 做稳定回归，通过 `--live` 用真实 embedding provider 验证本机产品体验。
+- Dogfood Eval Flywheel v1 已新增：把真实 codetrap 使用查询整理进 repo fixture，并通过 `bun run eval:dogfood -- report` 做稳定回归，通过 `--live` 用真实 embedding provider 验证本机产品体验。`docs/dogfood-flywheel.md` 定义 raw observation 到 search eval、trap candidate、product backlog、docs guidance 或 no promotion 的分流规则。
 
 #### 5.1 固化 StickS3 评估集
 
@@ -609,7 +614,7 @@ codetrap repair-scope --apply
 
 #### 5.1.1 Dogfood Eval Flywheel v1
 
-第一版保持 maintainer-only，不新增公开 `codetrap eval` 命令。
+第一版保持 maintainer-only，不新增公开 `codetrap eval` 命令。完整操作规范见 `docs/dogfood-flywheel.md`。
 
 ```bash
 bun run eval:dogfood -- report
@@ -620,6 +625,8 @@ bun run eval:dogfood -- record --json '{"query":"...","mode":"hybrid","goldTrapI
 - deterministic report 使用固定 eval embedder，适合 CI 和回归。
 - live report 使用当前真实 embedding provider；没有 provider 时明确显示 semantic unavailable / hybrid fallback。
 - record 只追加 curated dogfood query，不自动挖本地 `.codetrap` 或 telemetry。
+- `dogfood-log.md` 是原始观察入口；promotion lane 决定观察进入 `search_eval`、`trap_candidate`、`product_backlog`、`docs_guidance` 或 `no_promotion`。
+- 常规 `no_relevant_trap` 不应进入 eval fixture，除非“没有相关结果”本身是需要保护的行为。
 
 #### 5.2 排序改进
 

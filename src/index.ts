@@ -15,8 +15,12 @@ if (args.length === 0) {
 } else if (args[0] === "serve") {
   import("./mcp/server").then((m) => m.start());
 } else if (args[0] === "web") {
-  const { startWebServerFromArgs } = await import("./web/server");
-  await startWebServerFromArgs(args.slice(1));
+  if (args.slice(1).some(isHelpArg)) {
+    showWebHelp();
+  } else {
+    const { startWebServerFromArgs } = await import("./web/server");
+    await startWebServerFromArgs(args.slice(1));
+  }
 } else if (args[0] === "init") {
   const cwd = process.cwd();
   if (findProjectRoot(cwd)) {
@@ -29,6 +33,10 @@ if (args.length === 0) {
 } else {
   const store = new TrapStore(process.cwd());
   await run(args, store);
+}
+
+function isHelpArg(arg: string | undefined): boolean {
+  return arg === "--help" || arg === "-h" || arg === "help";
 }
 
 function showHelp(): void {
@@ -76,4 +84,20 @@ function showHelp(): void {
   console.log("  --from-project-path <path>  Source project path for scope repair/migration");
   console.log("  --to-project-path <path>    Destination project path for scope repair/migration");
   console.log("  --dry-run|--apply       Preview or apply scope repair/migration");
+}
+
+function showWebHelp(): void {
+  console.log("codetrap web — start the local review and trap library console");
+  console.log("");
+  console.log("Usage:");
+  console.log("  codetrap web [--project <path>] [--host <host>] [--port <n>]");
+  console.log("");
+  console.log("Options:");
+  console.log("  --project <path>  Project path to open in the web console");
+  console.log("  --host <host>     Host to bind (default 127.0.0.1)");
+  console.log("  --port <n>        Port to try first (default 4737; next free port is used if busy)");
+  console.log("");
+  console.log("Examples:");
+  console.log("  codetrap web");
+  console.log("  codetrap web --project /path/to/project --port 4789");
 }

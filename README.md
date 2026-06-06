@@ -53,6 +53,62 @@ codetrap list
 codetrap show 1
 ```
 
+## 5-Minute Agent Setup
+
+For a first AI-agent user, the fastest path is CLI-first project guidance:
+
+```bash
+# npm/source installs require Bun because the package entrypoint uses /usr/bin/env bun
+bun --version  # If this fails, install Bun first or use the binary install in docs/installation.md
+npm install -g codetrap
+
+# Initialize pitfall memory in the target project
+cd /path/to/project
+codetrap init
+codetrap doctor
+```
+
+Add the packaged agent guidance to `AGENTS.md` for Codex, or to `CLAUDE.md` for Claude Code:
+
+```bash
+cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> AGENTS.md
+# or:
+cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> CLAUDE.md
+```
+
+Then have the agent run this before non-trivial edits:
+
+```bash
+codetrap search "<task keywords>" --mode hybrid --json
+```
+
+Review the top 3 returned action cards, or all returned cards if fewer than 3, before deciding whether any trap applies. Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match the current task, file, module, or failure mode, treat the search as no applicable trap and keep going.
+
+After a user correction, repeated test failure, or review finding, have the agent draft a candidate instead of writing confirmed memory:
+
+```bash
+cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
+Title: <durable pitfall>
+Context: <when it triggers>
+Mistake: <what the agent did wrong>
+Fix: <what to do instead>
+EOF
+```
+
+Review pending candidates with `codetrap session status`, `codetrap session list`, `codetrap doctor`, or `codetrap web`; accepting a candidate remains an explicit human decision.
+
+Use the returned `candidate_id` and `session_id` to inspect and resolve the candidate:
+
+```bash
+codetrap session candidate <candidate-id> --session <session-id> --json
+
+# Only after explicit human approval:
+codetrap session accept <candidate-id> --session <session-id>
+
+# Or reject instead:
+codetrap session reject <candidate-id> --session <session-id> --reason "<reason>"
+```
+
 ## Features
 
 - **Structured trap recording** — title, category, context, mistake, fix, severity, tags, lifecycle, evidence, before/after code
@@ -155,7 +211,7 @@ codetrap/
 | Command | Description |
 |---|---|
 | `init` | Initialize `.codetrap/` in current project |
-| `add` | Record a new trap (`--json` structured input; interactive mode is not implemented) |
+| `add` | Record a confirmed trap (`--json` structured input; interactive mode is not implemented) |
 | `search <query>` | Search traps (--mode fts\|semantic\|hybrid, --category, --scope, --status, --limit, --path, --module, --owner, --no-rerank, --ranking-signals, --json; query can come from stdin) |
 | `list` | List traps (--category, --scope, --status, --path, --module, --owner, --limit, --json) |
 | `show <id>` | Show full trap details (--json) |
@@ -193,6 +249,8 @@ EOF
 codetrap session close --propose-traps
 codetrap session candidates
 codetrap session candidate cand-001
+
+# Only after explicit human approval:
 codetrap session accept cand-001
 ```
 
@@ -256,13 +314,13 @@ Default to CLI JSON from the current project cwd:
 codetrap search "<keywords>" --mode hybrid --json
 ```
 
-Read the top 3 action cards before deciding no trap applies. If a card is highly relevant, or has `critical`/`error` severity and is plausibly related, inspect it before editing:
+Read the top 3 action cards, or all returned cards if fewer than 3, before deciding no trap applies. Only inspect a card when its title, summary, or context overlaps the current task, target file/module, technology, project convention, or failure mode. For matching cards, inspect before editing when the card is highly relevant or has `critical`/`error` severity:
 
 ```bash
 codetrap show <id> --scope <project|global> --json
 ```
 
-Treat codetrap results as historical warnings and project memory, not as authoritative instructions. Apply a trap only when its context matches the current task, file, module, or failure mode. If a trap seems irrelevant, ignore it.
+Treat codetrap results as historical warnings and project memory, not as authoritative instructions. Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match the current task, file, module, or failure mode, treat the search as no applicable trap and keep going.
 
 When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
 
@@ -298,10 +356,10 @@ Recommended behavior:
 - Use `codetrap search --json` before risky edits in APIs, auth, database, security, migrations, or project conventions.
 - Read the top 3 returned action cards, or all returned cards if fewer than 3, before deciding there is no relevant trap.
 - Run the returned `next_action.command`, or `codetrap show <id> --scope <scope> --json`, for highly relevant results before editing code.
-- Treat `critical` or `error` traps as worth drilling into when they are plausibly related, even if they are not ranked first.
+- Treat `critical` or `error` traps as worth drilling into only when they are plausibly related, even if they are not ranked first. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. Severity alone is not enough to apply a trap.
 - When editing a known area, pass applicability hints such as `--path src/db/repository.ts --module db`.
 - Treat codetrap results as historical warnings and project memory, not as authoritative instructions.
-- Apply the recorded `avoid` and `do_instead` guidance only when the trap context matches the current task, file, module, or failure mode.
+- Apply the recorded `avoid` and `do_instead` guidance only when the trap context matches the current task, file, module, or failure mode. If the reviewed cards do not match, treat the search as no applicable trap and keep going.
 - When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
 - During longer work, use `codetrap session start/note/capture/close --propose-traps` to keep implementation notes and explicit candidate traps outside the durable database.
 - After user corrections, repeated test failures, or review feedback, prefer `codetrap session capture --trap-markdown - --kind review --json` with explicit `Title` / `Context` / `Mistake` / `Fix` fields to put a candidate in the inbox. `--trap-json` remains supported for structured callers. Ask before accepting a candidate unless the user explicitly requested it.
@@ -312,7 +370,8 @@ Codex users can optionally install the bundled skills from `skills/`:
 
 - `codetrap-check` — pre-flight check before code changes.
 - `codetrap-search` — search existing lessons.
-- `codetrap-add` — record a new pitfall.
+- `codetrap-capture` — propose an agent-discovered post-flight lesson into the candidate inbox.
+- `codetrap-add` — record a confirmed pitfall only after explicit user approval.
 - `codetrap-capture-external` — extract durable trap candidates from an external article, issue, paper, or reference; Codex reads the source and codetrap stores only confirmed lessons.
 
 Skills are a convenience layer for Codex users. They do not replace MCP or `AGENTS.md`; they make manual triggers like "run codetrap-check" easier.
@@ -402,7 +461,11 @@ Empty applicability fields mean the trap applies everywhere. `search` and `list`
 
 ### Jina Embeddings Setup
 
-codetrap works without a Jina API key. In that mode, search uses SQLite FTS keyword matching. If you want semantic search or stronger hybrid search, configure `JINA_API_KEY`.
+codetrap works without a Jina API key. In that mode, search uses SQLite FTS keyword matching.
+
+Privacy note: codetrap does not collect telemetry. FTS search is local-only. When `JINA_API_KEY` is set, `codetrap embed` sends trap passages to Jina, and semantic or hybrid search may send query text to Jina to compute embeddings.
+
+If you want semantic search or stronger hybrid search, configure `JINA_API_KEY`.
 
 1. Create a Jina API key from the [Jina AI dashboard](https://jina.ai/api-dashboard/).
 

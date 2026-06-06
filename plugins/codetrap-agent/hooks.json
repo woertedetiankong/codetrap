@@ -5,7 +5,7 @@
     "command": "codetrap search \"$CODETRAP_QUERY\" --mode hybrid --json"
   },
   "post_task": {
-    "description": "After repeated failures or user corrections, propose a structured trap; write only after user confirmation.",
-    "command": "codetrap add --json '{...}' --output-json"
+    "description": "After repeated failures or user corrections, capture a structured trap draft in the session candidate inbox; do not write a confirmed trap automatically.",
+    "command": "codetrap session capture --trap-markdown-file \"$CODETRAP_CANDIDATE_FILE\" --kind review --json"
   }
 }

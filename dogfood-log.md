@@ -1,6 +1,6 @@
 # Dogfood Log
 
-Raw observations from real codetrap use. Keep this lightweight: record every pre-edit search outcome here, then promote only representative cases into `src/tests/fixtures/search-eval.json`.
+Raw observations from real codetrap use. Keep this lightweight: record every pre-edit search outcome here, then use `docs/dogfood-flywheel.md` to decide whether the observation should be promoted.
 
 Judgments:
 
@@ -8,6 +8,16 @@ Judgments:
 - `miss`: A relevant existing trap should have appeared but did not.
 - `noisy_hit`: Results looked plausible but distracted from the task.
 - `no_relevant_trap`: The memory bank had no applicable prior lesson.
+
+Promotion lanes:
+
+- `search_eval`: promote a representative search-quality case into `src/tests/fixtures/search-eval.json`.
+- `trap_candidate`: draft a reusable lesson through `codetrap session capture --trap-markdown - --kind review --json`.
+- `product_backlog`: turn product/workflow friction into roadmap or implementation planning.
+- `docs_guidance`: update AGENTS, README, skills, or docs guidance.
+- `no_promotion`: keep the observation as raw history only.
+
+Legacy entries may use `Promote: no`; new entries should use `Promotion lane:`.
 
 ## Template
 
@@ -25,11 +35,80 @@ Top results:
 
 Judgment:
 Action changed:
-Promote:
+Promotion lane:
+Promotion target:
 Note:
 ```
 
 ## Observations
+
+## 2026-06-06 - Root AGENTS alignment
+
+Task: Align root `AGENTS.md` with the current packaged agent guidance, skills, candidate-review flow, and dogfood promotion lanes.
+Query: AGENTS guidance relevance gate dogfood promotion lane candidate review
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promotion lane: docs_guidance
+Promotion target: Root `AGENTS.md` and onboarding drift test now include the current relevance gate and dogfood promotion lanes.
+Note: This is repo guidance alignment, not a search-quality regression or reusable implementation trap.
+
+## 2026-06-06 - Web help and browser smoke polish
+
+Task: Fix `codetrap web --help` so it shows usage instead of starting the server, and add a browser-level smoke test for the web review console.
+Query: web help command browser smoke playwright review console
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promotion lane: docs_guidance
+Promotion target: Keep web console first-run/review guidance honest after CLI help and browser smoke coverage land.
+Note: This was a small CLI/Web QA polish task; no existing trap applied.
+
+## 2026-06-06 - Agent first-run success polish
+
+Task: Make codetrap release-ready for first AI-agent users by aligning packaged onboarding, plugin hooks, skills, and relevance-gate guidance.
+Query: release first users onboarding install dogfood package local embedding usability
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promotion lane: product_backlog
+Promotion target: Agent first-run release-ready polish implemented from the goal brief.
+Note: This is product onboarding and packaged-guidance consistency work rather than a search-quality regression or reusable implementation trap.
+
+## 2026-06-06 - Dogfood product flywheel spec
+
+Task: Create a documentation-only dogfood product flywheel process for improving codetrap through internal usage observations.
+Query: dogfood flywheel promotion eval trap candidate roadmap docs
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - search/list applicability internals, not relevant to this documentation-only process spec.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promotion lane: no_promotion
+Promotion target: none
+Note: Proceed with a process spec that keeps raw dogfood observations separate from search eval, trap candidates, product backlog, and docs guidance.
 
 ## 2026-06-03 - Knowledge sync after session capture
 

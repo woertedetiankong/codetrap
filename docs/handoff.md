@@ -10,6 +10,13 @@ The current worktree includes three connected milestones through 2026-06-05:
 
 Confirmed trap search remains unchanged: proposed and rejected candidates do not enter `traps.db` or normal search until explicit accept.
 
+## Task-Specific Journals
+
+- Markdown Trap Capture: [handoff](trap-markdown-capture/handoff.md), [implementation log](trap-markdown-capture/implementation-log.md). Use this pair for Markdown-first `session capture` input, deterministic trap field parsing, and candidate-inbox capture behavior.
+- Candidate Review Visibility: [handoff](candidate-review-visibility/handoff.md), [implementation log](candidate-review-visibility/implementation-log.md). Use this pair for pending-candidate counts, CLI/doctor/Web visibility, and the confirmed-search boundary.
+- Candidate Review Workbench: [handoff](candidate-review-workbench/handoff.md), [implementation log](candidate-review-workbench/implementation-log.md). Use this pair for Web Review draft-safe Accept, Accept anyway, Supersede, and Review Module request modeling.
+- Agent First-Run Success: [handoff](agent-first-run-success/handoff.md), [implementation log](agent-first-run-success/implementation-log.md). Use this pair for release-ready agent onboarding guidance, packaged plugin hooks, relevance-gate wording, and asset drift tests.
+
 ## Key Decisions
 
 - Markdown capture is deterministic parsing only; it does not infer lessons from raw logs.

@@ -63,6 +63,8 @@ This method does not require Bun at runtime once release binaries are published.
 
 ### For maintainers
 
+Maintainer-only: agents must not create tags, push, publish packages, or create releases unless the user explicitly requests a release operation.
+
 Release binaries are built by `.github/workflows/release.yml` when a version tag is pushed.
 
 1. Make sure `package.json` has the version you want to release.
@@ -72,11 +74,12 @@ Release binaries are built by `.github/workflows/release.yml` when a version tag
 3. Create and push a matching tag:
 
 ```bash
-git tag v0.1.6
-git push origin v0.1.6
+# Maintainer-only: do not run unless explicitly releasing.
+git tag v<version>
+git push origin v<version>
 ```
 
-The release tag must match `package.json` exactly. For example, package version `0.1.6` must use tag `v0.1.6`.
+The release tag must match `package.json` exactly. For example, package version `<version>` must use tag `v<version>`.
 
 The workflow runs:
 
@@ -162,6 +165,8 @@ Best for long-term use with the published `codetrap` package.
 
 ### For maintainers
 
+Maintainer-only: agents must not create tags, push, publish packages, or create releases unless the user explicitly requests a release operation.
+
 Package publishing is handled by `.github/workflows/npm-publish.yml` when a GitHub Release is published.
 
 Before automated publishing, configure npm trusted publishing:
@@ -179,6 +184,7 @@ If npm does not let you configure trusted publishing before the first version ex
 
 ```bash
 npm pack --dry-run
+# Maintainer-only: do not run unless explicitly publishing.
 npm publish --access public
 ```
 
@@ -189,6 +195,7 @@ The workflow runs:
 ```bash
 bun test src/tests
 npm pack --dry-run
+# Maintainer-only: this is run by the release workflow after explicit release approval.
 npm publish --access public
 ```
 
@@ -225,9 +232,64 @@ bun install
 bun run install:cli
 ```
 
+## 5-Minute Agent Setup
+
+Use this path when the first user is a coding agent such as Codex or Claude Code.
+
+```bash
+bun --version  # If this fails, install Bun first or use Method 2 binary install
+npm install -g codetrap
+cd /path/to/project
+codetrap init
+codetrap doctor
+```
+
+Add the packaged agent guidance to `AGENTS.md` or `CLAUDE.md`:
+
+```bash
+cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> AGENTS.md
+# or:
+cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> CLAUDE.md
+```
+
+Then have the agent run a pre-edit check from the project cwd:
+
+```bash
+codetrap search "<task keywords>" --mode hybrid --json
+```
+
+Review the top 3 returned action cards, or all returned cards if fewer than 3, before deciding whether any trap applies. Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match the current task, file, module, or failure mode, treat the search as no applicable trap and keep going.
+
+After user corrections, repeated test failures, or review feedback, have the agent write a candidate into the review inbox:
+
+```bash
+cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
+Title: <durable pitfall>
+Context: <when it triggers>
+Mistake: <what the agent did wrong>
+Fix: <what to do instead>
+EOF
+```
+
+Use `codetrap session status`, `codetrap session list`, `codetrap doctor`, or `codetrap web` to review pending candidates. Do not accept candidates automatically.
+
+Use the returned `candidate_id` and `session_id` to inspect and resolve the candidate:
+
+```bash
+codetrap session candidate <candidate-id> --session <session-id> --json
+
+# Only after explicit human approval:
+codetrap session accept <candidate-id> --session <session-id>
+
+# Or reject instead:
+codetrap session reject <candidate-id> --session <session-id> --reason "<reason>"
+```
+
 ## Optional: Jina Embeddings
 
 `JINA_API_KEY` is optional. Without it, codetrap still works with SQLite FTS keyword search, and hybrid search falls back to FTS.
+
+Privacy note: codetrap does not collect telemetry. FTS search is local-only. When `JINA_API_KEY` is set, `codetrap embed` sends trap passages to Jina, and semantic or hybrid search may send query text to Jina to compute embeddings.
 
 Create a key from the [Jina AI dashboard](https://jina.ai/api-dashboard/), then set it globally if you want semantic or hybrid search to work from every directory.
 
@@ -295,14 +357,16 @@ codex mcp add codetrap -- "$(bun pm bin -g)/codetrap" serve
 
 Agents can also use the CLI directly from `AGENTS.md`:
 
-```md
+````md
 Before non-trivial code edits, check codetrap from the current project cwd:
 
 codetrap search "<keywords>" --mode hybrid --json
 
-Review the top 3 action cards before deciding no trap applies. If a critical/error result is plausibly related, inspect it before editing:
+Review the top 3 action cards, or all returned cards if fewer than 3, before deciding no trap applies. Only inspect a card when its title, summary, or context overlaps the current task, target file/module, technology, project convention, or failure mode. For matching critical/error results, inspect before editing:
 
 codetrap show <id> --scope <project|global> --json
+
+Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match, treat the search as no applicable trap and keep going.
 
 When editing a known area, pass applicability hints:
 
@@ -345,6 +409,7 @@ Pending candidates are visible from `codetrap session status`, `codetrap session
 Only accepted candidates are written to `traps.db`:
 
 ```bash
+# Only after explicit human approval:
 codetrap session accept <candidate-id>
 ```
 
@@ -353,4 +418,4 @@ codetrap session accept <candidate-id>
 To save a lesson from an external article or reference, let the agent read the source and attach the URL as evidence after the user confirms the trap:
 
 codetrap add_trap_evidence <id> --scope global --source_type article --source_ref "https://example.com/post" --output-json
-```
+````

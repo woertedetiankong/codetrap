@@ -1,4 +1,4 @@
-# Handoff
+# Candidate Review Workbench Handoff
 
 ## Summary
 
@@ -27,7 +27,7 @@ The follow-up architecture pass is also complete: Review candidate draft request
 - `src/tests/web-client-review.test.ts`: covers visible candidate draft normalization and mutation payload construction.
 - `src/tests/session-review.test.ts`: covers neutral conflict payload and CLI next-action rendering.
 - `src/tests/web-console.test.ts`: covers accept-with-inline-edit and confirms Web conflict payloads do not leak CLI `next_actions`.
-- `candidate-review-workbench-implementation-log.md`: recorded agent-team findings, implementation decisions, and validation.
+- `implementation-log.md`: recorded agent-team findings, implementation decisions, and validation.
 
 ## Validation
 

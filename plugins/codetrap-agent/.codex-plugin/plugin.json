@@ -12,12 +12,11 @@
   "license": "MIT",
   "keywords": ["agent", "memory", "cli", "mcp", "pitfalls"],
   "skills": "./skills/",
-  "hooks": "./hooks.json",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "codetrap Agent",
     "shortDescription": "Check local pitfall memory before code changes.",
-    "longDescription": "Installs CLI-first guidance, optional MCP config, and example hooks so coding agents can search codetrap before risky edits, propose new trap captures after failures, and save useful lessons from external references.",
+    "longDescription": "Installs CLI-first guidance and optional MCP config so coding agents can search codetrap before risky edits, propose new trap captures after failures, and save useful lessons from external references. Hook files are packaged as examples, not auto-installed.",
     "developerName": "codetrap maintainers",
     "category": "Productivity",
     "capabilities": ["Tools", "Memory", "Code"],

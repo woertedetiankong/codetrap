@@ -4,7 +4,7 @@
 
 The Candidate Review Visibility Loop is implemented and verified. Pending session candidates are now visible through CLI, doctor, Web API, and the Web Review UI, while confirmed trap storage and search behavior remain unchanged.
 
-This handoff is the compact next-session entrypoint for the visibility pass. The broader historical handoff and log remain in `docs/handoff.md` and `docs/implementation-log.md`; the task-scoped log is `candidate-review-visibility-implementation-log.md`. For the 2026-06-05 Workbench follow-up, also read `candidate-review-workbench-handoff.md`.
+This handoff is the compact next-session entrypoint for the visibility pass. The broader historical handoff and log remain in `../handoff.md` and `../implementation-log.md`; the task-scoped log is `implementation-log.md`. For the 2026-06-05 Workbench follow-up, also read `../candidate-review-workbench/handoff.md`.
 
 Follow-up architecture work deepened the Web Review client by extracting pending-session and queue-state behavior into `src/web/client-review.ts`. The browser script now renders that model instead of owning candidate selection, filtering, and sorting directly.
 
@@ -73,5 +73,5 @@ Follow-up architecture work deepened the Web Review client by extracting pending
 Use this prompt to start the next session:
 
 ```text
-Resume codetrap development from candidate-review-visibility-handoff.md and candidate-review-visibility-implementation-log.md. Preserve unrelated dirty work. First inspect git status and the goal package at goals/candidate-review-visibility/. Continue only within the requested follow-up scope, using SessionOperations and session-review for backend candidate review behavior and src/web/client-review.ts for Web Review state behavior.
+Resume codetrap development from docs/candidate-review-visibility/handoff.md and docs/candidate-review-visibility/implementation-log.md. Preserve unrelated dirty work. First inspect git status and the goal package at goals/candidate-review-visibility/. Continue only within the requested follow-up scope, using SessionOperations and session-review for backend candidate review behavior and src/web/client-review.ts for Web Review state behavior.
 ```
