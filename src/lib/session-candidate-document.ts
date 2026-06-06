@@ -1,5 +1,6 @@
 import type { CandidateTrap } from "../domain/session";
 import type { Scope } from "./constants";
+import { uniqueStrings } from "./string-list";
 import {
   candidateTrapKey,
   createCandidateTrap,
@@ -171,8 +172,4 @@ function findDuplicateCandidate(candidates: CandidateTrap[], candidate: Candidat
 
 function acceptedScope(scope: string): Scope {
   return scope === "project" ? "project" : "global";
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }

@@ -120,10 +120,6 @@ export class TrapSearchPolicy {
     return trapMatchesApplicability(trap, filter);
   }
 
-  filterTraps(traps: Trap[], filter: ApplicabilityFilter): Trap[] {
-    return traps.filter((trap) => this.matchesTrap(trap, filter));
-  }
-
   prepareRetrievedResults(
     results: TrapSearchResult[],
     source: SearchRetrievalSource,

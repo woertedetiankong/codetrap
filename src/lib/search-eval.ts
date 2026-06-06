@@ -3,6 +3,7 @@ import { openDatabase } from "../db/connection";
 import { TrapRepository } from "../db/repository";
 import type { TrapInput, TrapSearchResult } from "../domain/trap";
 import { SEARCH_MODES, type SearchMode } from "./constants";
+import { isRecord } from "./value-types";
 import {
   type EmbeddingConfig,
   type EmbeddingProvider,
@@ -493,9 +494,6 @@ function providerLabel(provider: EmbeddingConfig | null): string {
   return `${provider.provider}/${provider.model}`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function round(value: number): number {
   return Math.round(value * 10000) / 10000;

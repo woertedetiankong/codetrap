@@ -4,8 +4,8 @@ import { CODETRAP_DIR, TRAPS_DB_FILE } from "./constants";
 import type { Scope } from "./constants";
 import type { EmbeddingRuntime } from "./embedding-runtime";
 import type { RankingConfig } from "./search-policy";
-import { findProjectRoot, getGlobalDB, resolveScopePath } from "./scope";
-import { ScopePathResolver } from "./scope-path";
+import { findProjectRoot, getGlobalDB } from "./scope";
+import { resolveScopePath, ScopePathResolver } from "./scope-path";
 
 const scopePath = new ScopePathResolver();
 

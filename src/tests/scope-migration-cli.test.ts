@@ -1,16 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { openDatabase } from "../db/connection";
 import * as queries from "../db/queries";
 import { TrapStore } from "../lib/store";
-import { trap } from "./helpers";
+import { runCli, tempDir, tempProjectDir, trap } from "./helpers";
 
 describe("scope repair and project migration CLI", () => {
   test("repair-scope dry-run lists legacy home project traps without mutating", () => {
-    const home = tempDir("codetrap-home-");
-    const destination = tempProjectDir("codetrap-repair-dest-");
+    const home = tempDir("codetrap-home-", { realpath: true });
+    const destination = tempProjectDir("codetrap-repair-dest-", { realpath: true });
     const legacy = seedLegacyHomeDb(home);
 
     const result = runCli(["repair-scope", "--json"], destination, home);
@@ -53,8 +52,8 @@ describe("scope repair and project migration CLI", () => {
   });
 
   test("repair-scope apply moves project traps, preserves evidence, and leaves global traps", () => {
-    const home = tempDir("codetrap-home-");
-    const destination = tempProjectDir("codetrap-repair-apply-");
+    const home = tempDir("codetrap-home-", { realpath: true });
+    const destination = tempProjectDir("codetrap-repair-apply-", { realpath: true });
     const legacy = seedLegacyHomeDb(home);
 
     const result = runCli(["repair-scope", "--apply", "--json"], destination, home);
@@ -107,9 +106,9 @@ describe("scope repair and project migration CLI", () => {
   });
 
   test("migrate-project apply moves between initialized project databases with backups", () => {
-    const home = tempDir("codetrap-home-");
-    const source = tempProjectDir("codetrap-migrate-source-");
-    const destination = tempProjectDir("codetrap-migrate-dest-");
+    const home = tempDir("codetrap-home-", { realpath: true });
+    const source = tempProjectDir("codetrap-migrate-source-", { realpath: true });
+    const destination = tempProjectDir("codetrap-migrate-dest-", { realpath: true });
     const sourceStore = new TrapStore(source, undefined);
     const destinationStore = new TrapStore(destination, undefined);
     const sourceTrap = sourceStore.add(trap({
@@ -162,10 +161,10 @@ describe("scope repair and project migration CLI", () => {
   });
 
   test("scope migration safety cases return stable CLI outcomes", () => {
-    const home = tempDir("codetrap-home-");
-    const source = tempProjectDir("codetrap-safety-source-");
-    const destination = tempProjectDir("codetrap-safety-dest-");
-    const missingSource = tempDir("codetrap-missing-source-");
+    const home = tempDir("codetrap-home-", { realpath: true });
+    const source = tempProjectDir("codetrap-safety-source-", { realpath: true });
+    const destination = tempProjectDir("codetrap-safety-dest-", { realpath: true });
+    const missingSource = tempDir("codetrap-missing-source-", { realpath: true });
 
     const missing = runCli([
       "migrate-project",
@@ -193,7 +192,7 @@ describe("scope repair and project migration CLI", () => {
     expect(noCandidates.exitCode).toBe(0);
     expect(JSON.parse(noCandidates.stdout).counts.candidates).toBe(0);
 
-    const uninitializedDestination = tempDir("codetrap-uninitialized-dest-");
+    const uninitializedDestination = tempDir("codetrap-uninitialized-dest-", { realpath: true });
     const uninitialized = runCli([
       "migrate-project",
       "--from-project-path",
@@ -250,40 +249,4 @@ function seedLegacyHomeDb(home: string): { projectId: number; globalId: number }
   } finally {
     db.close();
   }
-}
-
-function tempProjectDir(prefix: string): string {
-  const dir = tempDir(prefix);
-  mkdirSync(join(dir, ".codetrap"));
-  return dir;
-}
-
-function tempDir(prefix: string): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), prefix)));
-}
-
-function runCli(args: string[], cwd: string, home: string) {
-  const result = Bun.spawnSync({
-    cmd: ["bun", "run", join(import.meta.dir, "..", "index.ts"), ...args],
-    cwd,
-    env: {
-      ...process.env,
-      HOME: home,
-      USERPROFILE: home,
-      CODETRAP_EMBEDDING_PROVIDER: "",
-      CODETRAP_OLLAMA_MODEL: "",
-      CODETRAP_OLLAMA_ENDPOINT: "",
-      CODETRAP_OLLAMA_DIMENSIONS: "",
-      OLLAMA_HOST: "",
-      JINA_API_KEY: "",
-    },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  return {
-    exitCode: result.exitCode,
-    stdout: new TextDecoder().decode(result.stdout),
-    stderr: new TextDecoder().decode(result.stderr),
-  };
 }

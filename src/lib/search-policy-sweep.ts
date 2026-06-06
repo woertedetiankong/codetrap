@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { TrapSearchResult } from "../domain/trap";
 import { SCOPES, SEARCH_MODES, type Scope, type SearchMode } from "./constants";
+import { isRecord } from "./value-types";
 import {
   defaultEmbeddingRuntime,
   embeddingRuntimeFrom,
@@ -556,9 +557,6 @@ function optionalScore(value: Record<string, unknown>, key: string): number | un
   return number;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function round(value: number): number {
   return Math.round(value * 10000) / 10000;

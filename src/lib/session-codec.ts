@@ -7,6 +7,7 @@ import type {
   SessionNoteCounts,
 } from "../domain/session";
 import { SESSION_NOTE_KINDS } from "../domain/session";
+import { trimOuterBlankLines } from "./text-lines";
 
 export const SESSIONS_DIR = "sessions";
 export const ACTIVE_SESSION_FILE = "active.json";
@@ -227,14 +228,6 @@ function parseNoteBlock(created_at: string, kind: SessionNote["kind"], lines: st
     related_files: relatedFiles,
     source_ref: sourceRef,
   };
-}
-
-function trimOuterBlankLines(lines: string[]): string[] {
-  let start = 0;
-  let end = lines.length;
-  while (start < end && lines[start].trim() === "") start++;
-  while (end > start && lines[end - 1].trim() === "") end--;
-  return lines.slice(start, end);
 }
 
 function formatNoteList(notes: SessionNote[], empty: string): string {

@@ -1,5 +1,6 @@
 import type { CandidateTrap, SessionIndexEntry, SessionMetadata } from "../domain/session";
 import type { Scope } from "./constants";
+import { candidateAcceptedScope } from "./session-candidate-scope";
 import {
   CANDIDATES_FILE,
   NOTES_FILE,
@@ -293,7 +294,7 @@ export function sessionCandidateReview(
   }
 
   const trapId = candidate.accepted_trap_id;
-  const scope = candidate.accepted_scope ?? acceptedScopeFallback(candidate);
+  const scope = candidateAcceptedScope(candidate);
   if (trapId === undefined) {
     return {
       status: "accepted_missing",
@@ -323,8 +324,4 @@ export function sessionCandidateReview(
     trap_status: details.trap.status,
     trap_title: details.trap.title,
   };
-}
-
-function acceptedScopeFallback(candidate: CandidateTrap): Scope {
-  return candidate.trap.scope === "global" ? "global" : "project";
 }

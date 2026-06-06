@@ -2,7 +2,7 @@
 
 ## Task
 
-Implement the Web Embeddings settings experience from `goal-brief-web-embeddings-settings.md`.
+Implement the Web Embeddings settings experience from the historical Web Embeddings settings goal brief.
 
 ## Assumptions
 

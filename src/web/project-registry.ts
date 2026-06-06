@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { CODETRAP_DIR } from "../lib/constants";
-import { findProjectRoot, resolveScopePath } from "../lib/scope";
+import { findProjectRoot } from "../lib/scope";
+import { resolveScopePath } from "../lib/scope-path";
+import { isRecord } from "../lib/value-types";
 
 export const WEB_PROJECTS_FILE = "web-projects.json";
 export const WEB_PROJECTS_VERSION = 1;
@@ -99,8 +101,4 @@ function uniqueProjects(projects: WebProject[]): WebProject[] {
     out.push(project);
   }
   return out;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

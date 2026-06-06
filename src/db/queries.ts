@@ -179,10 +179,6 @@ export function listTrapEvidence(db: Database, trapId: number): TrapEvidence[] {
     .all(trapId) as TrapEvidence[];
 }
 
-export function archiveTrap(db: Database, id: number): boolean {
-  return markTrapArchived(db, id);
-}
-
 export function markTrapArchived(db: Database, id: number): boolean {
   const result = db
     .prepare(
@@ -196,27 +192,6 @@ export function markTrapArchived(db: Database, id: number): boolean {
     )
     .run(id);
   return result.changes > 0;
-}
-
-export function supersedeTrap(
-  db: Database,
-  id: number,
-  supersededById: number,
-  stateKey?: string
-): boolean {
-  if (id === supersededById) return false;
-
-  const oldTrap = getTrap(db, id);
-  const newTrap = getTrap(db, supersededById);
-  if (!oldTrap || !newTrap) return false;
-
-  const key = stateKey ?? oldTrap.state_key ?? newTrap.state_key ?? `trap:${id}`;
-  const tx = db.transaction(() => {
-    markTrapSuperseded(db, id, key);
-    markTrapSuperseding(db, supersededById, id, key);
-  });
-  tx();
-  return true;
 }
 
 export function markTrapSuperseded(db: Database, id: number, stateKey: string): boolean {

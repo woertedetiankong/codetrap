@@ -38,6 +38,7 @@ import {
   sessionRelativeFile,
   SESSIONS_DIR,
 } from "./session-codec";
+import { uniqueStrings } from "./string-list";
 import { mergeCandidateTraps, proposeCandidateTraps, type CandidateDraft } from "./session-capture";
 
 export interface StartSessionArgs {
@@ -58,7 +59,6 @@ export interface CloseSessionResult {
   session: SessionMetadata;
   recap_path: string;
   candidate_count: number;
-  traps_written: number;
 }
 
 export interface AcceptCandidateResult {
@@ -253,7 +253,6 @@ export class SessionStore {
       session: updated,
       recap_path: sessionRelativeFile(updated.id, RECAP_FILE),
       candidate_count: candidates.length,
-      traps_written: 0,
     };
   }
 
@@ -623,8 +622,4 @@ export class SessionStore {
   private candidatesPath(id: string): string {
     return join(this.sessionDir(id), CANDIDATES_FILE);
   }
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }

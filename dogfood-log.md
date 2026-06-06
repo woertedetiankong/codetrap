@@ -592,3 +592,35 @@ Judgment: no_relevant_trap
 Action changed: no
 Promote: no_promotion
 Note: No existing trap covered skill packaging source-of-truth drift. Proceed with the currently installed root skill content as the canonical version and make the plugin bundle the only packaged Codex skill source.
+
+## 2026-06-06 - First code simplification pass
+
+Task: Implement the first safe simplification batch: verified dead code removal, embedding query N+1 reduction, test helper consolidation, and minimal architecture guidance updates.
+Query: code simplification dead code embedding queries test helpers architecture rules
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - relevant as a caution if touching search/list applicability semantics, but not directly applicable to embedding query optimization or test helper consolidation.
+2. #5 Set SQLite busy_timeout before lock-prone startup pragmas - not applicable because this pass should not touch SQLite connection startup, WAL, or schema initialization.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no_promotion
+Note: Proceed with code-evidence-based simplification while avoiding unrelated search applicability and connection-startup behavior changes.
+
+## 2026-06-06 - Remaining simplification goal
+
+Task: Finish the remaining useful simplification work from `docs/simplification-plan.zh-CN.md`, revalidating stale or risky recommendations before editing.
+Query: codetrap simplification module merge dead code duplicate utilities architecture cleanup
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - relevant if this pass touches search/list applicability, `path_globs`, or module/owner filtering.
+2. #5 Set SQLite busy_timeout before lock-prone startup pragmas - relevant if this pass touches `src/db/schema.ts` or migration startup behavior.
+3. No third result.
+
+Judgment: useful_hit
+Action changed: yes
+Promote: no_promotion
+Note: Inspect full traps before edits. Preserve search applicability normalization and avoid changing SQLite connection startup ordering while revalidating schema migration cleanup.

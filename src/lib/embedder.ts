@@ -17,10 +17,6 @@ export interface EmbeddingConfig {
   passageVersion: number;
 }
 
-export interface EmbeddingProfile extends EmbeddingConfig {
-  id: string;
-}
-
 export interface StoredEmbedding {
   trap_id: number;
   profile_id: string;
@@ -222,13 +218,6 @@ export function embeddingConfig(provider: EmbeddingProvider): EmbeddingConfig {
 
 export function embeddingProfileId(config: EmbeddingConfig): string {
   return `${config.provider}:${config.model}:${config.dimensions}:p${config.passageVersion}`;
-}
-
-export function embeddingProfile(config: EmbeddingConfig): EmbeddingProfile {
-  return {
-    ...config,
-    id: embeddingProfileId(config),
-  };
 }
 
 export function encodeEmbedding(embedding: Float32Array): Buffer {

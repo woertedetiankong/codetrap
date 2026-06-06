@@ -3,7 +3,8 @@ import { homedir } from "node:os";
 import { openDatabase } from "../db/connection";
 import { TrapRepository } from "../db/repository";
 import type { TrapExportRecord } from "../domain/trap";
-import { findProjectRoot, resolveScopePath } from "./scope";
+import { findProjectRoot } from "./scope";
+import { resolveScopePath } from "./scope-path";
 import {
   backupScopeDatabase,
   buildScopeMaintenancePaths,

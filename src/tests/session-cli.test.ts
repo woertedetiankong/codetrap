@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { runCli, tempHome, tempProjectDir } from "./helpers";
 
 describe("session CLI", () => {
   test("records a session, proposes candidates, and only writes traps after accept", () => {
     const cwd = tempProjectDir("codetrap-session-cli-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
 
     const start = runCli([
       "session",
@@ -74,7 +74,6 @@ describe("session CLI", () => {
       id: started.id,
       status: "closed",
       candidate_count: 1,
-      traps_written: 0,
     });
     expect(existsSync(join(cwd, ".codetrap", "sessions", started.id, "recap.md"))).toBe(true);
     expect(existsSync(join(cwd, ".codetrap", "sessions", started.id, "candidate-traps.json"))).toBe(true);
@@ -177,7 +176,7 @@ describe("session CLI", () => {
 
   test("keeps raw test failures as notes instead of fallback candidate traps", () => {
     const cwd = tempProjectDir("codetrap-session-stdin-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const started = JSON.parse(runCli([
       "session",
       "start",
@@ -207,7 +206,6 @@ describe("session CLI", () => {
       id: started.id,
       status: "closed",
       candidate_count: 0,
-      traps_written: 0,
     });
 
     const candidates = JSON.parse(runCli(["session", "candidates", started.id, "--json"], cwd, home).stdout);
@@ -216,7 +214,7 @@ describe("session CLI", () => {
 
   test("captures a post-flight candidate in the active session", () => {
     const cwd = tempProjectDir("codetrap-session-capture-active-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const started = JSON.parse(runCli([
       "session",
       "start",
@@ -288,7 +286,7 @@ describe("session CLI", () => {
 
   test("captures a markdown candidate from stdin in the active session", () => {
     const cwd = tempProjectDir("codetrap-session-capture-markdown-stdin-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const started = JSON.parse(runCli([
       "session",
       "start",
@@ -372,7 +370,7 @@ describe("session CLI", () => {
 
   test("captures a markdown file into a closed post-flight session without confirming it", () => {
     const cwd = tempProjectDir("codetrap-session-capture-markdown-file-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const markdownPath = join(cwd, "candidate.md");
     writeFileSync(markdownPath, [
       "Title: Do not search pending Markdown candidates as confirmed traps",
@@ -449,7 +447,7 @@ describe("session CLI", () => {
 
   test("validates markdown capture input selection and content", () => {
     const cwd = tempProjectDir("codetrap-session-capture-markdown-validation-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const trapJson = JSON.stringify({
       title: "JSON trap",
       context: "When validating mixed capture inputs.",
@@ -528,7 +526,7 @@ describe("session CLI", () => {
 
   test("captures into a closed post-flight session when no session is active", () => {
     const cwd = tempProjectDir("codetrap-session-capture-postflight-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
 
     const capture = runCli([
       "session",
@@ -581,7 +579,7 @@ describe("session CLI", () => {
 
   test("close propose-traps merges capture candidates without overwriting reviewed status", () => {
     const cwd = tempProjectDir("codetrap-session-capture-dedupe-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const started = JSON.parse(runCli([
       "session",
       "start",
@@ -651,7 +649,7 @@ describe("session CLI", () => {
 
   test("validates capture trap json before creating candidates", () => {
     const cwd = tempProjectDir("codetrap-session-capture-validation-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
 
     const invalidJson = runCli(["session", "capture", "--trap-json", "{bad", "--json"], cwd, home);
     expect(invalidJson.exitCode).toBe(1);
@@ -693,7 +691,7 @@ describe("session CLI", () => {
 
   test("blocks possible conflicts unless the user accepts lifecycle handling", () => {
     const cwd = tempProjectDir("codetrap-session-conflict-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
 
     const existing = runCli([
       "add",
@@ -797,7 +795,7 @@ describe("session CLI", () => {
 
   test("checks conflicts after accept edits and records diagnostics", () => {
     const cwd = tempProjectDir("codetrap-session-edited-conflict-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
 
     runCli([
       "add",
@@ -881,7 +879,7 @@ describe("session CLI", () => {
 
   test("detects path glob conflicts when a candidate file is covered by an existing glob", () => {
     const cwd = tempProjectDir("codetrap-session-path-conflict-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
 
     runCli([
       "add",
@@ -946,40 +944,3 @@ describe("session CLI", () => {
     });
   });
 });
-
-function tempProjectDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  mkdirSync(join(dir, ".codetrap"));
-  return dir;
-}
-
-function runCli(args: string[], cwd: string, home: string, stdin?: string) {
-  const result = Bun.spawnSync({
-    cmd: ["bun", "run", join(import.meta.dir, "..", "index.ts"), ...args],
-    cwd,
-    env: {
-      ...process.env,
-      HOME: home,
-      USERPROFILE: home,
-      CODETRAP_EMBEDDING_PROVIDER: "",
-      CODETRAP_OLLAMA_MODEL: "",
-      CODETRAP_OLLAMA_ENDPOINT: "",
-      CODETRAP_OLLAMA_DIMENSIONS: "",
-      OLLAMA_HOST: "",
-      JINA_API_KEY: "",
-      CODETRAP_SEARCH_MODE: "",
-      CODETRAP_SEARCH_LIMIT: "",
-      CODETRAP_SEARCH_SCOPE: "",
-      CODETRAP_RERANK: "",
-    },
-    stdin: stdin === undefined ? "ignore" : new TextEncoder().encode(stdin),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  return {
-    exitCode: result.exitCode,
-    stdout: new TextDecoder().decode(result.stdout),
-    stderr: new TextDecoder().decode(result.stderr),
-  };
-}

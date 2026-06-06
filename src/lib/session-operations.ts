@@ -7,6 +7,7 @@ import {
   candidateWithTrapEdits,
   captureGoal,
 } from "./session-capture";
+import { candidateAcceptedScope } from "./session-candidate-scope";
 import { findCandidateConflicts, type CandidateConflict } from "./session-conflicts";
 import {
   projectCandidateReviewSummary,
@@ -24,6 +25,7 @@ import type {
   SessionStore,
   StartSessionArgs,
 } from "./session-store";
+import { uniqueStrings } from "./string-list";
 
 export type SessionAcceptRequest = {
   candidateId: string;
@@ -260,7 +262,7 @@ export class SessionOperations {
       .filter((candidate) => {
         const trapId = candidate.accepted_trap_id;
         if (trapId === undefined) return true;
-        return !this.traps.getTrapDetails(trapId, acceptedScope(candidate));
+        return !this.traps.getTrapDetails(trapId, candidateAcceptedScope(candidate));
       })
       .map((candidate) => candidate.id);
     return this.sessions.removeCandidates(sessionId, missingCandidateIds);
@@ -269,12 +271,4 @@ export class SessionOperations {
 
 function candidateRelatedFiles(candidate: CandidateTrap): string[] {
   return uniqueStrings(candidate.evidence.flatMap((evidence) => evidence.related_files ?? []));
-}
-
-function acceptedScope(candidate: CandidateTrap): Scope {
-  return candidate.accepted_scope ?? (candidate.trap.scope === "global" ? "global" : "project");
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }

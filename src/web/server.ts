@@ -7,6 +7,7 @@ import { TrapOperations } from "../lib/trap-operations";
 import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
 import { toListJson, toTrapDetailsJson } from "../lib/output-json";
+import { isRecord } from "../lib/value-types";
 import {
   reviewedSessionCandidates,
   sessionConflictPayload,
@@ -510,8 +511,4 @@ class WebPayloadError extends Error {
   constructor(public readonly status: number, public readonly payload: Record<string, unknown>) {
     super(String(payload.error ?? "Request failed"));
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

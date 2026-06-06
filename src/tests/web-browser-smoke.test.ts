@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
 import { buildTrapInput } from "../domain/trap";
 import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
@@ -9,14 +7,15 @@ import { TrapOperations } from "../lib/trap-operations";
 import { TrapStore } from "../lib/store";
 import { addWebProject } from "../web/project-registry";
 import { createWebHandler } from "../web/server";
+import { runCliAsync, tempHome, tempProjectDir } from "./helpers";
 
 const TOKEN = "browser-smoke-token";
 
 describe("web command", () => {
   test("web --help prints usage without starting the server", async () => {
-    const cwd = tempProjectDir("codetrap-web-help-");
-    const home = tempHome();
-    const direct = await runCli(["web", "--help"], cwd, home);
+    const cwd = tempProjectDir("codetrap-web-help-", { realpath: true });
+    const home = tempHome("codetrap-web-browser-home-", { realpath: true, initCodetrap: true });
+    const direct = await runCliAsync(["web", "--help"], cwd, home);
     expect(direct.exitCode).toBe(0);
     expect(direct.stdout).toContain("Usage:");
     expect(direct.stdout).toContain("codetrap web [--project <path>]");
@@ -24,7 +23,7 @@ describe("web command", () => {
     expect(direct.stdout).not.toContain("listening on");
     expect(direct.stderr).toBe("");
 
-    const afterOption = await runCli(["web", "--project", cwd, "--help"], cwd, home);
+    const afterOption = await runCliAsync(["web", "--project", cwd, "--help"], cwd, home);
     expect(afterOption.exitCode).toBe(0);
     expect(afterOption.stdout).toContain("Usage:");
     expect(afterOption.stdout).not.toContain("listening on");
@@ -37,8 +36,8 @@ const browserTest = chromePath ? test : test.skip;
 describe("web browser smoke", () => {
   browserTest("loads the review console and renders live project data", async () => {
     const { chromium } = await import("playwright-core");
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-browser-");
+    const home = tempHome("codetrap-web-browser-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-browser-", { realpath: true });
     addWebProject(project, home);
     seedBrowserSmokeData(project, home);
 
@@ -85,37 +84,6 @@ describe("web browser smoke", () => {
 
 async function expectText(locator: { innerText: () => Promise<string> }, expected: string): Promise<void> {
   expect(await locator.innerText()).toContain(expected);
-}
-
-async function runCli(args: string[], cwd: string, home: string): Promise<{
-  exitCode: number | "timeout";
-  stdout: string;
-  stderr: string;
-}> {
-  const proc = Bun.spawn({
-    cmd: ["bun", "run", join(import.meta.dir, "..", "index.ts"), ...args],
-    cwd,
-    env: isolatedEnv(home),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const stdout = new Response(proc.stdout).text();
-  const stderr = new Response(proc.stderr).text();
-  const exitCode = await exitOrTimeout(proc, 1_500);
-  return { exitCode, stdout: await stdout, stderr: await stderr };
-}
-
-async function exitOrTimeout(proc: ReturnType<typeof Bun.spawn>, timeoutMs: number): Promise<number | "timeout"> {
-  let timeout: Timer | undefined;
-  const timed = new Promise<"timeout">((resolve) => {
-    timeout = setTimeout(() => {
-      proc.kill();
-      resolve("timeout");
-    }, timeoutMs);
-  });
-  const result = await Promise.race([proc.exited, timed]);
-  if (timeout) clearTimeout(timeout);
-  return result;
 }
 
 function seedBrowserSmokeData(project: string, home: string): void {
@@ -165,34 +133,4 @@ function chromeExecutablePath(): string | null {
     "/usr/bin/chromium-browser",
   ];
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
-}
-
-function tempHome(): string {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "codetrap-web-browser-home-")));
-  mkdirSync(join(home, ".codetrap"), { recursive: true });
-  return home;
-}
-
-function tempProjectDir(prefix: string): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
-  mkdirSync(join(dir, ".codetrap"));
-  return dir;
-}
-
-function isolatedEnv(home: string): Record<string, string> {
-  return {
-    ...process.env,
-    HOME: home,
-    USERPROFILE: home,
-    CODETRAP_EMBEDDING_PROVIDER: "",
-    CODETRAP_OLLAMA_MODEL: "",
-    CODETRAP_OLLAMA_ENDPOINT: "",
-    CODETRAP_OLLAMA_DIMENSIONS: "",
-    OLLAMA_HOST: "",
-    JINA_API_KEY: "",
-    CODETRAP_SEARCH_MODE: "",
-    CODETRAP_SEARCH_LIMIT: "",
-    CODETRAP_SEARCH_SCOPE: "",
-    CODETRAP_RERANK: "",
-  };
 }

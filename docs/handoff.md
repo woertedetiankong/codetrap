@@ -4,6 +4,7 @@
 
 The current worktree includes three connected milestones through 2026-06-05 plus one maintainer eval addition:
 
+- Remaining Simplification: the stale `docs/simplification-plan.zh-CN.md` recommendations were revalidated against current code. Safe behavior-preserving cleanups were applied, false positives/deferred work were documented in `docs/simplification-remaining-status.zh-CN.md`, and the old plan now carries a historical-plan warning.
 - Markdown Trap Capture: `codetrap session capture` accepts `--trap-markdown -`, inline Markdown, Markdown files, and the existing `--trap-json` path. Markdown is the preferred agent-drafted post-flight entry because it avoids shell-escaped JSON.
 - Candidate Review Visibility + Workbench: pending session candidates are visible through CLI status/list, doctor, `/api/sessions`, and Web Review. In Web Review, Accept, Accept anyway, and Supersede use the currently visible candidate draft so reviewers do not lose unsaved edits.
 - Review architecture pass: Web Review draft/request modeling moved into `src/web/client-review.ts`, and `src/lib/session-review.ts` now keeps base conflict payloads transport-neutral while CLI `next_actions` are added by `sessionCliConflictPayload`.
@@ -18,6 +19,7 @@ Confirmed trap search remains unchanged: proposed and rejected candidates do not
 - Candidate Review Workbench: [handoff](candidate-review-workbench/handoff.md), [implementation log](candidate-review-workbench/implementation-log.md). Use this pair for Web Review draft-safe Accept, Accept anyway, Supersede, and Review Module request modeling.
 - Agent First-Run Success: [handoff](agent-first-run-success/handoff.md), [implementation log](agent-first-run-success/implementation-log.md). Use this pair for release-ready agent onboarding guidance, packaged plugin hooks, relevance-gate wording, and asset drift tests.
 - Web Embeddings Settings: [handoff](web-embeddings-settings/handoff.md), [implementation log](web-embeddings-settings/implementation-log.md). Use this pair for the Web Embeddings/Semantic Search panel, provider switching, and project/global reindex controls.
+- Remaining Simplification Status: [status](simplification-remaining-status.zh-CN.md). Use this for final disposition of each item in the historical simplification plan.
 
 ## Key Decisions
 
@@ -28,6 +30,9 @@ Confirmed trap search remains unchanged: proposed and rejected candidates do not
 - `src/web/client-review.ts` owns Review queue state plus candidate draft/request normalization; `src/web/client-script.ts` composes Web modules and DOM event handling.
 - Web/API 409 conflict payloads should not leak CLI `next_actions`.
 - Search policy sweep remains a maintainer experiment tool, not a public `codetrap` CLI command. Live evals should prefer `scope + id + title` gold targets so id drift can be reported without silently failing title-stable cases. Ranking config overrides pass through `ScopedRepositoryContext` to `TrapRepository`, rather than reopening project/global databases inside the sweep module.
+- `src/lib/embedding-index.ts` was removed because it was only a one-line delegate layer; `TrapRepository` and `SearchService` now call `src/db/embedding-queries.ts` directly.
+- `scope-path` and trap-codec imports should come from their owning modules instead of pass-through re-exports.
+- `SessionOperations`, lifecycle, mutation-result, trap archive, trap-json-fields, FTS query, and search-result-card boundaries were retained because current tests/docs/adapters still give them independent value.
 
 ## Files Changed
 
@@ -37,6 +42,9 @@ Confirmed trap search remains unchanged: proposed and rejected candidates do not
 - `src/lib/session-review.ts`, `src/commands/workflow.ts`: neutral conflict payload split plus CLI conflict presenter.
 - `src/tests/session-cli.test.ts`, `src/tests/cli-json.test.ts`, `src/tests/web-console.test.ts`, `src/tests/web-client-text.test.ts`, `src/tests/web-client-review.test.ts`, `src/tests/session-review.test.ts`: coverage for capture, review visibility, draft-safe accept, Web text, neutral payloads, and CLI next actions.
 - `src/lib/search-policy-sweep.ts`, `scripts/search-policy-sweep.ts`, `src/tests/search-policy-sweep.test.ts`, `src/lib/search-eval.ts`, `src/lib/scope-context.ts`, `src/db/repository.ts`, `package.json`: first-phase fixture/live ranking sweep support, optional ranking injection, Scope Context repository resolution, and maintainer script wiring.
+- `src/db/repository.ts`, `src/lib/search-service.ts`, `src/db/schema.ts`, `src/tests/embedding-profile-storage.test.ts`: remaining simplification cleanup for direct embedding queries and profile-aware migration branch coverage.
+- `src/lib/string-list.ts`, `src/lib/text-lines.ts`, `src/lib/value-types.ts`, `src/lib/session-candidate-scope.ts`: small shared helpers for repeated low-level utility logic.
+- `docs/simplification-remaining-status.zh-CN.md`, `docs/simplification-plan.zh-CN.md`, `CONTEXT.md`, `README.md`, `dogfood-log.md`: final simplification status, stale-plan warning, architecture doc sync, and dogfood observation.
 - `README.md`, `docs/installation.md`, `docs/release-playbook.zh-CN.md`, `plugins/codetrap-agent/`, and codetrap skills: guidance now prefers `session capture --trap-markdown -` for agent-drafted lessons while keeping `--trap-json` for structured callers.
 
 ## Validation
@@ -46,6 +54,7 @@ Confirmed trap search remains unchanged: proposed and rejected candidates do not
 - Candidate Review Workbench pass: `bun test src/tests/web-console.test.ts src/tests/web-client-text.test.ts src/tests/web-client-review.test.ts`, full `bun test src/tests`, `bunx tsc --noEmit`, `bun run eval:dogfood -- report`, plus browser smoke on local Web Review.
 - Architecture TDD pass: `bun test src/tests/web-client-review.test.ts src/tests/session-review.test.ts src/tests/web-console.test.ts src/tests/session-cli.test.ts`, `bunx tsc --noEmit`, full `bun test src/tests`, and `bun run eval:dogfood -- report`.
 - Search policy sweep pass: `bun test src/tests/search-policy-sweep.test.ts`, `bunx tsc --noEmit`, `bun run eval:search-policy -- fixture`, live sweep against `/Users/superstorm/Documents/Code/esp32`, full `bun test src/tests`, `bun run eval:dogfood -- report`, and `git diff --check`.
+- Remaining simplification pass: `bunx tsc --noEmit`, `bun test src/tests`, `git diff --check`, and `bun run eval:dogfood -- report` all passed. Targeted migration/scope/session/search tests also passed before the full run.
 
 ## Known Risks
 

@@ -3,8 +3,6 @@ import { homedir } from "node:os";
 import { CODETRAP_DIR, TRAPS_DB_FILE } from "./constants";
 import { defaultScopePathResolver, resolveScopePath, ScopePathResolver } from "./scope-path";
 
-export { resolveScopePath, ScopePathResolver } from "./scope-path";
-
 export function getGlobalDir(homeDir = homedir()): string {
   const dir = defaultScopePathResolver.join(homeDir, CODETRAP_DIR);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });

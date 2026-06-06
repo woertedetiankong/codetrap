@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findProjectRoot, resolveScopePath, ScopePathResolver } from "../lib/scope";
+import { findProjectRoot } from "../lib/scope";
+import { resolveScopePath, ScopePathResolver } from "../lib/scope-path";
 
 describe("project root detection", () => {
   test("does not treat the global home .codetrap directory as a project root", () => {

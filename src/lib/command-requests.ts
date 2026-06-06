@@ -6,6 +6,7 @@ import {
   DEFAULT_OLLAMA_MODEL,
 } from "./embedder";
 import { capturedTrapMarkdownInput } from "./session-capture";
+import { uniqueStrings as uniqueStringList } from "./string-list";
 import type { SearchTrapsArgs, ListTrapsArgs } from "./trap-operations";
 
 type RawArgs = Record<string, unknown>;
@@ -402,7 +403,7 @@ function readMarkdownFile(path: string, input: SessionCaptureInput | undefined):
 }
 
 function uniqueStrings(values: string[]): string[] | undefined {
-  const unique = [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  const unique = uniqueStringList(values);
   return unique.length > 0 ? unique : undefined;
 }
 

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { CODETRAP_DIR, SCOPES, SEARCH_MODES, type Scope, type SearchMode } from "./constants";
+import { isRecord } from "./value-types";
 
 export type CodetrapConfig = {
   search?: {
@@ -148,8 +149,4 @@ function parseEmbeddingProvider(value: string): EmbeddingProviderSetting {
 function parsePositiveInt(value: number, label: string): number {
   if (Number.isInteger(value) && value > 0) return value;
   throw new Error(`Invalid ${label}: expected a positive integer.`);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

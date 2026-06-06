@@ -8,7 +8,10 @@ import {
   SCOPES,
   SEVERITIES,
 } from "./constants";
+import { uniqueStrings } from "./string-list";
+import { trimOuterBlankLines } from "./text-lines";
 import { scoreCandidateTrap } from "./trap-quality";
+import { isRecord } from "./value-types";
 
 export type CandidateDraft = Pick<CandidateTrap, "trap" | "evidence">;
 
@@ -267,11 +270,7 @@ function isTrapMarkdownField(value: string): boolean {
 }
 
 function trimFieldLines(lines: string[]): string {
-  let start = 0;
-  let end = lines.length;
-  while (start < end && lines[start].trim() === "") start++;
-  while (end > start && lines[end - 1].trim() === "") end--;
-  return lines.slice(start, end).join("\n").trim();
+  return trimOuterBlankLines(lines).join("\n").trim();
 }
 
 function normalizeCandidateTrap(
@@ -360,12 +359,4 @@ function trapEdits(edit: Record<string, unknown> | undefined): Record<string, un
   if (!edit) return {};
   const nested = edit.trap;
   return isRecord(nested) ? nested : edit;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }

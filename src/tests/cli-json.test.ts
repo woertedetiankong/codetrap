@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openDatabase } from "../db/connection";
 import * as queries from "../db/queries";
+import { runCli, tempHome, tempProjectDir } from "./helpers";
 
 describe("CLI JSON contract", () => {
   test("search/show/list/stats expose parseable agent-facing JSON", () => {
     const cwd = tempProjectDir("codetrap-cli-json-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
 
     const add = runCli([
       "add",
@@ -98,7 +98,7 @@ describe("CLI JSON contract", () => {
 
   test("search --json reads stdin only when no positional query is provided", () => {
     const cwd = tempProjectDir("codetrap-cli-stdin-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     runCli([
       "add",
       "--json",
@@ -127,7 +127,7 @@ describe("CLI JSON contract", () => {
 
   test("doctor --json reports scope and embedding health", () => {
     const cwd = tempProjectDir("codetrap-cli-doctor-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const result = runCli(["doctor", "--json"], cwd, home);
     expect(result.exitCode).toBe(0);
 
@@ -157,7 +157,7 @@ describe("CLI JSON contract", () => {
 
   test("doctor --json reports configured but unreachable Ollama as unavailable", () => {
     const cwd = tempProjectDir("codetrap-cli-doctor-ollama-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const configDir = join(home, ".codetrap");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(join(configDir, "config.json"), JSON.stringify({
@@ -192,7 +192,7 @@ describe("CLI JSON contract", () => {
 
   test("doctor --json reports pending session candidate review work", () => {
     const cwd = tempProjectDir("codetrap-cli-doctor-candidates-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const capture = runCli([
       "session",
       "capture",
@@ -236,7 +236,7 @@ describe("CLI JSON contract", () => {
 
   test("embeddings management commands expose config and profile status JSON", () => {
     const cwd = tempProjectDir("codetrap-cli-embeddings-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const use = runCli([
       "embeddings",
       "use",
@@ -294,7 +294,7 @@ describe("CLI JSON contract", () => {
 
   test("doctor --json reports project-scoped traps stranded in the global database", () => {
     const cwd = tempProjectDir("codetrap-cli-doctor-misscoped-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     mkdirSync(join(home, ".codetrap"), { recursive: true });
     const db = openDatabase(join(home, ".codetrap", "traps.db"));
     try {
@@ -348,7 +348,7 @@ describe("CLI JSON contract", () => {
 
   test("mutation commands expose machine-readable JSON results", () => {
     const cwd = tempProjectDir("codetrap-cli-mutation-json-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     const add = runCli([
       "add",
       "--json",
@@ -431,7 +431,7 @@ describe("CLI JSON contract", () => {
 
   test("config defaults and applicability filters shape search results", () => {
     const cwd = tempProjectDir("codetrap-cli-config-");
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
+    const home = tempHome();
     mkdirSync(join(home, ".codetrap"), { recursive: true });
     writeFileSync(join(home, ".codetrap", "config.json"), JSON.stringify({
       search: {
@@ -495,40 +495,3 @@ describe("CLI JSON contract", () => {
     expect(cards[0].ranking_signals.map((signal: { code: string }) => signal.code)).toContain("path_scope_match");
   });
 });
-
-function tempProjectDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  mkdirSync(join(dir, ".codetrap"));
-  return dir;
-}
-
-function runCli(args: string[], cwd: string, home: string, stdin?: string) {
-  const result = Bun.spawnSync({
-    cmd: ["bun", "run", join(import.meta.dir, "..", "index.ts"), ...args],
-    cwd,
-    env: {
-      ...process.env,
-      HOME: home,
-      USERPROFILE: home,
-      CODETRAP_EMBEDDING_PROVIDER: "",
-      CODETRAP_OLLAMA_MODEL: "",
-      CODETRAP_OLLAMA_ENDPOINT: "",
-      CODETRAP_OLLAMA_DIMENSIONS: "",
-      OLLAMA_HOST: "",
-      JINA_API_KEY: "",
-      CODETRAP_SEARCH_MODE: "",
-      CODETRAP_SEARCH_LIMIT: "",
-      CODETRAP_SEARCH_SCOPE: "",
-      CODETRAP_RERANK: "",
-    },
-    stdin: stdin === undefined ? "ignore" : new TextEncoder().encode(stdin),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  return {
-    exitCode: result.exitCode,
-    stdout: new TextDecoder().decode(result.stdout),
-    stderr: new TextDecoder().decode(result.stderr),
-  };
-}

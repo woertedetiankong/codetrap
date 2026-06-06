@@ -195,12 +195,8 @@ function migrateEmbeddingProfiles(db: Database): void {
     );
   `);
 
-  if (!tableExists(db, "trap_embeddings")) {
-    createProfileAwareEmbeddingsTable(db);
-    return;
-  }
-
-  if (columnExists(db, "trap_embeddings", "profile_id")) {
+  const hasTrapEmbeddings = tableExists(db, "trap_embeddings");
+  if (!hasTrapEmbeddings || columnExists(db, "trap_embeddings", "profile_id")) {
     createProfileAwareEmbeddingsTable(db);
     return;
   }

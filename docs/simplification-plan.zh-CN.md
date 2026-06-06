@@ -1,5 +1,7 @@
 # Codetrap 项目简化方案（完整版）
 
+> 2026-06-06 复核状态：本文是历史分析计划，不再是可直接执行的任务清单。最终逐项结论见 `docs/simplification-remaining-status.zh-CN.md`。其中若干“死代码”判断已被当前代码、测试、脚本或文档证明为误报；后续 agent 必须以当前源码和状态文档为准，不要按本文逐项删除。
+
 基于对项目全部 65 个 TypeScript 源文件、33 个测试文件的**逐行阅读分析**，以下是完整的简化方案。
 
 > 分析方法：4 路并行 deep-read agent，每路负责约 10 个文件的逐行阅读，覆盖全部 36 个核心模块。上一版方案中未深读的 `workflow.ts`、`queries.ts`、`schema.ts`、`search-policy.ts`、`session-store.ts`、`web/` 系列等全部在此版中覆盖。

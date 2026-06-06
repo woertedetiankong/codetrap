@@ -130,7 +130,7 @@ codetrap/
 ├── src/
 │   ├── index.ts              CLI entry point
 │   ├── mcp-server.ts         MCP server entry point
-│   ├── commands/router.ts    Thin CLI adapter + renderer
+│   ├── commands/router.ts    Optional thin CLI adapter + renderer
 │   ├── commands/workflow.ts  CLI command behavior
 │   ├── commands/command-result.ts  CLI command results + rendering
 │   ├── mcp/
@@ -148,6 +148,7 @@ codetrap/
 │   │   ├── session-codec.ts  Session JSON/Markdown/candidate file conversion
 │   │   ├── session-capture.ts Candidate draft normalization, extraction, and merge policy
 │   │   ├── session-candidate-document.ts Candidate document transition rules
+│   │   ├── session-candidate-scope.ts Candidate accepted-scope fallback
 │   │   ├── session-conflicts.ts Candidate vs active-trap conflict checks
 │   │   ├── trap-quality.ts   Deterministic candidate quality scoring
 │   │   ├── command-requests.ts CLI/MCP request normalization helpers
@@ -155,7 +156,6 @@ codetrap/
 │   │   ├── scope-context.ts  cwd/project/global DB context + repo selection
 │   │   ├── scope-migration.ts Safe project trap scope repair/migration
 │   │   ├── doctor.ts         Scope and embedding health diagnostics
-│   │   ├── embedding-index.ts Semantic candidate and embedding freshness interface
 │   │   ├── embedding-runtime.ts Embedding provider runtime/config/status
 │   │   ├── embedding-health.ts  Fresh/stale/missing embedding summaries
 │   │   ├── embedding-management.ts Embedding profile command output
@@ -168,6 +168,9 @@ codetrap/
 │   │   ├── trap-json-fields.ts Tags/path/evidence JSON array codec
 │   │   ├── trap-codec.ts     Storage/JSON/archive/import shape conversion
 │   │   ├── trap-mutation-result.ts Mutation result + scope fallback semantics
+│   │   ├── string-list.ts    Shared string list de-duping
+│   │   ├── text-lines.ts     Shared line trimming helpers
+│   │   ├── value-types.ts    Shared runtime value guards
 │   │   ├── trap-scope-match.ts Path/module/owner applicability matching
 │   │   ├── trap-archive.ts   Import/export compatibility
 │   │   ├── trap-transfer.ts  DB-to-DB transfer for scope migration

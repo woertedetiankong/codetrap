@@ -620,7 +620,6 @@ function cmdSessionClose(args: string[], sessions: SessionOperations): CommandRe
     ...sessionPayload(result.session),
     recap_path: result.recap_path,
     candidate_count: result.candidate_count,
-    traps_written: result.traps_written,
   };
   if (opts.json !== undefined) return jsonResult(payload);
   const lines = [

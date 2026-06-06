@@ -20,22 +20,21 @@ import {
 } from "../lib/embedding-runtime";
 import { runEmbeddingJob } from "../lib/embedding-job";
 import { passageFieldsChanged } from "../lib/trap-search-document";
+import * as embeddingQueries from "./embedding-queries";
 import * as queries from "./queries";
 import type { TrapStatus } from "../lib/constants";
 import { TrapSearchPolicy } from "../lib/search-policy";
 import type { RankingConfig } from "../lib/search-policy";
-import { DatabaseEmbeddingIndex } from "../lib/embedding-index";
 import { archiveTrapLifecycle, supersedeTrapLifecycle } from "../lib/trap-lifecycle";
 import type { EmbeddingProfileSummary } from "./embedding-queries";
 
 export type TrapStats = ReturnType<typeof queries.getStats>;
-export type EmbeddingStateCounts = ReturnType<DatabaseEmbeddingIndex["stateCounts"]>;
+export type EmbeddingStateCounts = ReturnType<typeof embeddingQueries.getEmbeddingStateCounts>;
 export type TrapRecordInsert = queries.TrapRecordInsert;
 
 export class TrapRepository {
   private readonly searchService: SearchService;
   private readonly searchPolicy = new TrapSearchPolicy();
-  private readonly embeddingIndex: DatabaseEmbeddingIndex;
   private readonly embeddings: EmbeddingRuntime;
 
   constructor(
@@ -45,7 +44,6 @@ export class TrapRepository {
   ) {
     this.embeddings = embeddingRuntimeFrom(embeddings);
     this.searchService = new SearchService(db, this.embeddings, ranking);
-    this.embeddingIndex = new DatabaseEmbeddingIndex(db);
   }
 
   add(input: TrapInput): number {
@@ -88,7 +86,7 @@ export class TrapRepository {
   update(id: number, input: TrapUpdate): boolean {
     const success = queries.updateTrap(this.db, id, input);
     if (success && passageFieldsChanged(input)) {
-      this.embeddingIndex.delete(id);
+      embeddingQueries.deleteEmbedding(this.db, id);
     }
     return success;
   }
@@ -123,11 +121,11 @@ export class TrapRepository {
   }
 
   embeddingStats(config: EmbeddingConfig | null, opts: { scope?: string; status?: TrapStatus | "all" } = {}): EmbeddingStateCounts {
-    return this.embeddingIndex.stateCounts(config, opts);
+    return embeddingQueries.getEmbeddingStateCounts(this.db, config, opts);
   }
 
   embeddingProfiles(opts: { scope?: string; status?: TrapStatus | "all" } = {}): EmbeddingProfileSummary[] {
-    return this.embeddingIndex.profiles(opts);
+    return embeddingQueries.listEmbeddingProfiles(this.db, opts);
   }
 
   exportAll(): TrapExportRecord[] {
@@ -159,22 +157,22 @@ export class TrapRepository {
   }
 
   getEmbedding(trapId: number, config?: EmbeddingConfig): StoredEmbedding | null {
-    return this.embeddingIndex.get(trapId, config);
+    return embeddingQueries.getEmbedding(this.db, trapId, config);
   }
 
   upsertEmbedding(record: StoredEmbedding): void {
-    this.embeddingIndex.save(record);
+    embeddingQueries.upsertEmbedding(this.db, record);
   }
 
   deleteEmbedding(trapId: number): void {
-    this.embeddingIndex.delete(trapId);
+    embeddingQueries.deleteEmbedding(this.db, trapId);
   }
 
   getTrapsNeedingEmbeddings(
     config: EmbeddingConfig,
     opts: { scope?: string; category?: string; status?: TrapStatus | "all"; force?: boolean; limit?: number } = {}
   ): Trap[] {
-    return this.embeddingIndex.trapsNeedingEmbeddings(config, opts);
+    return embeddingQueries.getTrapsNeedingEmbeddings(this.db, config, opts);
   }
 
   async ensureEmbeddings(opts: { scope?: string; category?: string; limit?: number; force?: boolean; batchSize?: number } = {}): Promise<{
@@ -188,10 +186,10 @@ export class TrapRepository {
 
     return runEmbeddingJob(
       {
-        countEmbeddable: (countOpts) => this.embeddingIndex.countEmbeddable(countOpts),
+        countEmbeddable: (countOpts) => embeddingQueries.countEmbeddableTraps(this.db, countOpts),
         trapsNeedingEmbeddings: (config, jobOpts) =>
-          this.embeddingIndex.trapsNeedingEmbeddings(config, jobOpts),
-        saveEmbedding: (record) => this.embeddingIndex.save(record),
+          embeddingQueries.getTrapsNeedingEmbeddings(this.db, config, jobOpts),
+        saveEmbedding: (record) => embeddingQueries.upsertEmbedding(this.db, record),
       },
       provider,
       opts

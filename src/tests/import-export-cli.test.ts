@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { TrapStore } from "../lib/store";
-import { trap } from "./helpers";
+import { runCli, tempHome, tempProjectDir, trap } from "./helpers";
 
 describe("import/export and CLI evidence handling", () => {
   test("exported traps preserve evidence when imported with remapped trap ids", () => {
@@ -62,28 +59,11 @@ describe("import/export and CLI evidence handling", () => {
   });
 
   test("add_trap_evidence --json reports malformed JSON without a stack trace", () => {
-    const home = mkdtempSync(join(tmpdir(), "codetrap-home-"));
-    const result = Bun.spawnSync({
-      cmd: ["bun", "run", join(import.meta.dir, "..", "index.ts"), "add_trap_evidence", "1", "--json", "{"],
-      cwd: tempProjectDir("codetrap-cli-json-"),
-      env: {
-        ...process.env,
-        HOME: home,
-        USERPROFILE: home,
-      },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const stderr = new TextDecoder().decode(result.stderr);
+    const home = tempHome();
+    const result = runCli(["add_trap_evidence", "1", "--json", "{"], tempProjectDir("codetrap-cli-json-"), home);
 
     expect(result.exitCode).toBe(1);
-    expect(stderr.trim().startsWith("Error:")).toBe(true);
-    expect(stderr).not.toContain(" at ");
+    expect(result.stderr.trim().startsWith("Error:")).toBe(true);
+    expect(result.stderr).not.toContain(" at ");
   });
 });
-
-function tempProjectDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  mkdirSync(join(dir, ".codetrap"));
-  return dir;
-}

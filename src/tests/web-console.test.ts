@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildTrapInput } from "../domain/trap";
 import { TrapStore } from "../lib/store";
@@ -9,13 +8,14 @@ import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
 import { addWebProject, loadWebProjectRegistry, resolveWebProjectRoot, webProjectsPath } from "../web/project-registry";
 import { createWebHandler } from "../web/server";
+import { tempDir, tempHome, tempProjectDir } from "./helpers";
 
 const TOKEN = "test-token";
 
 describe("web project registry", () => {
   test("loads, saves, and resolves manually added projects from absolute paths", () => {
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-project-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-project-", { realpath: true });
     const nested = join(project, "src", "nested");
     mkdirSync(nested, { recursive: true });
 
@@ -29,8 +29,8 @@ describe("web project registry", () => {
   });
 
   test("rejects paths that do not belong to an initialized codetrap project", () => {
-    const home = tempHome();
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), "codetrap-web-uninit-")));
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const dir = tempDir("codetrap-web-uninit-", { realpath: true });
 
     expect(() => addWebProject(dir, home)).toThrow("No initialized codetrap project");
   });
@@ -38,8 +38,8 @@ describe("web project registry", () => {
 
 describe("web API", () => {
   test("requires the launch token for API routes", async () => {
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-token-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-token-", { realpath: true });
     addWebProject(project, home);
     const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
 
@@ -52,8 +52,8 @@ describe("web API", () => {
   });
 
   test("lists trap library entries across project and global scopes with filters", async () => {
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-library-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-library-", { realpath: true });
     addWebProject(project, home);
     const traps = new TrapOperations(new TrapStore(project, undefined, home));
 
@@ -138,8 +138,8 @@ describe("web API", () => {
   test("embedding settings API exposes status and preserves unrelated config on provider switch", async () => {
     const originalJinaApiKey = process.env.JINA_API_KEY;
     delete process.env.JINA_API_KEY;
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-embeddings-use-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-embeddings-use-", { realpath: true });
     addWebProject(project, home);
     writeFileSync(join(home, ".codetrap", "config.json"), JSON.stringify({
       search: {
@@ -222,8 +222,8 @@ describe("web API", () => {
   });
 
   test("embedding reindex API refreshes project and global profile status", async () => {
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-embeddings-reindex-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-embeddings-reindex-", { realpath: true });
     addWebProject(project, home);
     const traps = new TrapOperations(new TrapStore(project, undefined, home));
     traps.addTrap({ ...trapInput({
@@ -322,8 +322,8 @@ describe("web API", () => {
   });
 
   test("session list API exposes pending candidate review counts", async () => {
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-session-review-counts-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-session-review-counts-", { realpath: true });
     addWebProject(project, home);
     const { sessionId } = seedCandidateSession(project, 2, home);
     const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
@@ -351,8 +351,8 @@ describe("web API", () => {
   });
 
   test("saves candidate drafts and resets conflict diagnostics", async () => {
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-save-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-save-", { realpath: true });
     addWebProject(project, home);
     const { sessionId, traps } = seedCandidateSession(project, 1, home);
     traps.addTrap({ ...existingProjectTrap() });
@@ -405,8 +405,8 @@ describe("web API", () => {
   });
 
   test("accepts, rejects, accepts anyway, and supersedes through the API", async () => {
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-actions-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-actions-", { realpath: true });
     addWebProject(project, home);
     const { sessionId, traps } = seedCandidateSession(project, 3, home);
     traps.addTrap({ ...existingProjectTrap() });
@@ -453,8 +453,8 @@ describe("web API", () => {
   });
 
   test("accepts candidate draft edits through the API", async () => {
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-accept-edit-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-accept-edit-", { realpath: true });
     addWebProject(project, home);
     const { sessionId, traps } = seedCandidateSession(project, 1, home);
     const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
@@ -497,8 +497,8 @@ describe("web API", () => {
   });
 
   test("candidate list reports accepted traps that were later deleted", async () => {
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-reviewed-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-reviewed-", { realpath: true });
     addWebProject(project, home);
     const { sessionId, traps } = seedCandidateSession(project, 1, home);
     const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
@@ -539,8 +539,8 @@ describe("web API", () => {
   });
 
   test("deletes sessions through the web API", async () => {
-    const home = tempHome();
-    const project = tempProjectDir("codetrap-web-session-delete-");
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-session-delete-", { realpath: true });
     addWebProject(project, home);
     const { sessionId } = seedCandidateSession(project, 1, home);
     const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
@@ -622,18 +622,6 @@ function api(
     headers,
     body,
   }));
-}
-
-function tempHome(): string {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "codetrap-web-home-")));
-  mkdirSync(join(home, ".codetrap"), { recursive: true });
-  return home;
-}
-
-function tempProjectDir(prefix: string): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
-  mkdirSync(join(dir, ".codetrap"));
-  return dir;
 }
 
 function startFakeOllama(): { port: number; stop: () => void } {

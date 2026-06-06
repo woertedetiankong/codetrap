@@ -137,5 +137,3 @@ export function toStatsJson(stats: TrapStatsResult, embeddings?: EmbeddingStatsR
 export function toDoctorJson(input: DoctorReport): DoctorReport {
   return input;
 }
-
-export { toTrapEvidenceJson, toTrapJson, type JsonTrap, type JsonTrapEvidence };

@@ -10,8 +10,8 @@ import {
   type StoredEmbedding,
 } from "../lib/embedder";
 import type { EmbeddingStateCounts } from "../lib/embedding-health";
-import { embeddingIsFresh, passageHashForTrap } from "../lib/trap-search-document";
-import { countTraps, listTraps } from "./queries";
+import { passageHashForTrap } from "../lib/trap-search-document";
+import { countTraps } from "./queries";
 
 type TrapEmbeddingRow = {
   trap_id: number;
@@ -37,6 +37,14 @@ export type EmbeddingProfileSummary = {
 
 type EmbeddingProfileRow = Omit<EmbeddingProfileSummary, "embedding_count"> & {
   embedding_count: number;
+};
+
+type TrapEmbeddingStateRow = Trap & {
+  embedding_passage_hash: string | null;
+};
+
+type TrapAnyEmbeddingStateRow = Trap & {
+  has_embedding: number;
 };
 
 export function getEmbedding(
@@ -169,22 +177,11 @@ export function getTrapsNeedingEmbeddings(
   config: EmbeddingConfig,
   opts: { scope?: string; category?: string; status?: TrapStatus | "all"; force?: boolean; limit?: number } = {}
 ): Trap[] {
-  const traps = listTraps(db, {
-    scope: opts.scope,
-    category: opts.category,
-    status: opts.status,
-    limit: 100000,
-  });
-  const needed: Trap[] = [];
-
-  for (const trap of traps) {
-    const embedding = getEmbedding(db, trap.id, config);
-    if (opts.force || !embeddingIsFresh(trap, embedding, config)) {
-      needed.push(trap);
-    }
-  }
-
-  return needed.slice(0, opts.limit ?? needed.length);
+  const rows = trapEmbeddingStateRows(db, config, opts);
+  const needed = opts.force
+    ? rows
+    : rows.filter((row) => row.embedding_passage_hash !== passageHashForTrap(row));
+  return needed.map(rowToTrap).slice(0, opts.limit ?? needed.length);
 }
 
 export function countEmbeddableTraps(
@@ -199,24 +196,20 @@ export function getEmbeddingStateCounts(
   config: EmbeddingConfig | null,
   opts: { scope?: string; category?: string; status?: TrapStatus | "all" } = {}
 ): EmbeddingStateCounts {
-  const traps = listTraps(db, {
-    scope: opts.scope,
-    category: opts.category,
-    status: opts.status,
-    limit: 100000,
-  });
+  if (!config) return getAnyEmbeddingStateCounts(db, opts);
+
+  const rows = trapEmbeddingStateRows(db, config, opts);
   const counts: EmbeddingStateCounts = {
-    total: traps.length,
+    total: rows.length,
     fresh: 0,
     stale: 0,
     missing: 0,
   };
 
-  for (const trap of traps) {
-    const embedding = getEmbedding(db, trap.id, config ?? undefined);
-    if (!embedding) {
+  for (const row of rows) {
+    if (!row.embedding_passage_hash) {
       counts.missing++;
-    } else if (config && embeddingIsFresh(trap, embedding, config)) {
+    } else if (row.embedding_passage_hash === passageHashForTrap(row)) {
       counts.fresh++;
     } else {
       counts.stale++;
@@ -284,4 +277,93 @@ function rowToStoredEmbedding(row: TrapEmbeddingRow): StoredEmbedding {
     embedding: decodeEmbedding(row.embedding),
     updated_at: row.updated_at,
   };
+}
+
+function getAnyEmbeddingStateCounts(
+  db: Database,
+  opts: { scope?: string; category?: string; status?: TrapStatus | "all" } = {}
+): EmbeddingStateCounts {
+  const rows = trapAnyEmbeddingStateRows(db, opts);
+  const stale = rows.filter((row) => row.has_embedding > 0).length;
+  return {
+    total: rows.length,
+    fresh: 0,
+    stale,
+    missing: rows.length - stale,
+  };
+}
+
+function trapEmbeddingStateRows(
+  db: Database,
+  config: EmbeddingConfig,
+  opts: { scope?: string; category?: string; status?: TrapStatus | "all" } = {}
+): TrapEmbeddingStateRow[] {
+  const conditions: string[] = [];
+  const filterParams = trapFilterParams(conditions, opts, "t");
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  return db
+    .query(`
+      SELECT
+        t.*,
+        e.passage_hash AS embedding_passage_hash
+      FROM traps t
+      LEFT JOIN trap_embeddings e
+        ON e.trap_id = t.id
+       AND e.profile_id = ?
+      ${where}
+      ORDER BY t.updated_at DESC
+      LIMIT 100000
+    `)
+    .all(embeddingProfileId(config), ...filterParams) as TrapEmbeddingStateRow[];
+}
+
+function trapAnyEmbeddingStateRows(
+  db: Database,
+  opts: { scope?: string; category?: string; status?: TrapStatus | "all" } = {}
+): TrapAnyEmbeddingStateRow[] {
+  const conditions: string[] = [];
+  const params = trapFilterParams(conditions, opts, "t");
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  return db
+    .query(`
+      SELECT
+        t.*,
+        EXISTS (
+          SELECT 1
+          FROM trap_embeddings e
+          WHERE e.trap_id = t.id
+        ) AS has_embedding
+      FROM traps t
+      ${where}
+      ORDER BY t.updated_at DESC
+      LIMIT 100000
+    `)
+    .all(...params) as TrapAnyEmbeddingStateRow[];
+}
+
+function trapFilterParams(
+  conditions: string[],
+  opts: { scope?: string; category?: string; status?: TrapStatus | "all" },
+  alias: string
+): SQLQueryBindings[] {
+  const params: SQLQueryBindings[] = [];
+  const prefix = `${alias}.`;
+  if (opts.category) {
+    conditions.push(`${prefix}category = ?`);
+    params.push(opts.category);
+  }
+  if (opts.scope) {
+    conditions.push(`${prefix}scope = ?`);
+    params.push(opts.scope);
+  }
+  if (opts.status !== "all") {
+    conditions.push(`${prefix}status = ?`);
+    params.push(opts.status ?? DEFAULT_TRAP_STATUS);
+  }
+  return params;
+}
+
+function rowToTrap(row: TrapEmbeddingStateRow): Trap {
+  const { embedding_passage_hash: _embeddingPassageHash, ...trap } = row;
+  return trap as Trap;
 }

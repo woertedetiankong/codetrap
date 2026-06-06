@@ -193,7 +193,7 @@ Chinese and mixed-language search are implemented through derived `search_text`,
 
 Search policy owns retrieval filter planning, applicability filtering, overfetch decisions, semantic thresholding, generic reranking, ranking signals, RRF fusion, final ranking, and hybrid fallback diagnostics.
 
-`src/lib/search-policy.ts` sits behind `SearchService`. Retrieval Modules fetch FTS or semantic candidates from storage/index adapters, while the policy Module decides storage pushdown filters, path/module/owner applicability, candidate limits, exact title/tag/code identifier boosts, severity boosts, and whether ranking signals or diagnostics are exposed.
+`src/lib/search-policy.ts` sits behind `SearchService`. Retrieval Modules fetch FTS or semantic candidates from storage modules, while the policy Module decides storage pushdown filters, path/module/owner applicability, candidate limits, exact title/tag/code identifier boosts, severity boosts, and whether ranking signals or diagnostics are exposed.
 
 ### Search Eval
 
@@ -213,11 +213,11 @@ A promotion decision chooses where a dogfood observation should go next: search 
 
 Search eval promotion is reserved for representative search-quality behavior with clear expected Trap IDs. Reusable mistake patterns should become Candidate Traps. Product friction should become roadmap or implementation planning.
 
-### Embedding Index
+### Embedding Queries
 
-Embedding index is the Module for semantic trap availability and embedding freshness.
+Embedding queries are the single-database SQL operations for semantic trap availability, profile storage, and embedding freshness.
 
-`src/lib/embedding-index.ts` owns the index-facing Interface for fresh semantic candidates, embeddable counts, traps needing embeddings, and embedding state counts. Provider-specific embedding calls stay behind `EmbeddingProvider`; raw SQL stays in `src/db/embedding-queries.ts`.
+`src/db/embedding-queries.ts` owns fresh semantic candidates, embeddable counts, traps needing embeddings, embedding profile summaries, and embedding state counts. `TrapRepository` and `SearchService` call this Module directly. Provider-specific embedding calls stay behind `EmbeddingProvider`.
 
 ### Embedding Runtime
 
@@ -240,7 +240,8 @@ The CLI is optimized for direct terminal use.
 - `add` and `edit` accept structured `--json` input; use `--output-json` for their machine-readable mutation output. `delete/archive/supersede/import --json` and `add_trap_evidence --output-json` also return machine-readable mutation results.
 - `add_trap_evidence`, `archive_trap`, and `supersede_trap` expose evidence and lifecycle operations.
 - `repair-scope` and `migrate-project` safely move project-scoped traps between DB files. They default to dry-run, require `--apply` to mutate, back up DBs first, and never move true global traps.
-- `src/commands/router.ts` is the thin CLI Adapter. Command behavior lives in `src/commands/workflow.ts`, which returns `CommandResult` values before terminal rendering.
+- CLI entrypoints should stay thin. Command behavior lives in `src/commands/workflow.ts`, which returns `CommandResult` values before terminal rendering; `src/commands/router.ts` is an optional thin adapter/result-rendering convenience, not a required architecture boundary.
+- Dead-code cleanup should search all real caller surfaces before deleting exports, including maintainer scripts, tests, package scripts, docs, plugins, and agent assets. Small single-importer Modules should be kept when they encode a named concept, tricky invariant, adapter seam, or focused test surface; otherwise they may be merged when deletion concentrates behavior.
 
 ### MCP Server
 
@@ -292,6 +293,10 @@ src/
   lib/
     constants.ts        -- categories, severities, defaults
     command-requests.ts -- CLI/MCP command request normalization
+    string-list.ts      -- shared string list de-duping
+    text-lines.ts       -- shared line trimming helpers
+    value-types.ts      -- shared runtime value guards
+    session-candidate-scope.ts -- candidate accepted-scope fallback
     scope.ts            -- scope resolution (walk up to .codetrap/)
     scope-path.ts       -- cross-platform path normalization for scope paths
     scope-context.ts    -- cwd/project/global DB diagnostic facts
@@ -310,7 +315,6 @@ src/
     trap-lifecycle.ts   -- Trap lifecycle transition semantics
     output-json.ts      -- shared CLI/MCP JSON presenters
     doctor.ts           -- doctor diagnostic report
-    embedding-index.ts  -- semantic candidate and embedding freshness Interface
     embedding-runtime.ts -- embedding provider runtime, config, setup actions, and Adapter seam
     embedding-health.ts -- embedding freshness and fallback summaries
     trap-archive.ts     -- Trap archive import/export compatibility
@@ -325,9 +329,10 @@ src/
     connection.ts       -- openDatabase, PRAGMA, schema init
     schema.ts           -- schema versioning, migration
     queries.ts          -- raw SQL operations
+    embedding-queries.ts -- semantic candidate/profile/freshness SQL operations
     repository.ts       -- TrapRepository class wrapping queries
   commands/
-    router.ts           -- thin CLI adapter and result renderer
+    router.ts           -- optional thin CLI adapter and result renderer
     workflow.ts         -- CLI command workflow behavior
   mcp/
     server.ts           -- MCP server (stdio transport)
@@ -383,7 +388,7 @@ Based on `docs/codetrap-optimization-roadmap.zh-CN.md`.
 - MCP resource `?cwd=` project resolution.
 - Codex plugin/onboarding scaffold and release preflight script.
 - External lesson capture via `codetrap-capture-external` skill plus `article` trap evidence source type.
-- Architecture deepening for Search Policy, Trap Shape Codec, Scope Context, Trap Mutation Result, CLI Command Workflow, Scope Path, Command Request, Scope Maintenance, Embedding Index, and Trap Lifecycle.
+- Architecture deepening for Search Policy, Trap Shape Codec, Scope Context, Trap Mutation Result, CLI Command Workflow, Scope Path, Command Request, Scope Maintenance, Embedding Queries, and Trap Lifecycle.
 
 **Next priorities:**
 - Add local embedding provider after CLI JSON, evals, and doctor remain stable.
