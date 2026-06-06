@@ -14,6 +14,7 @@ import {
   embeddingRuntimeFrom,
   type EmbeddingRuntimeInput,
 } from "./embedding-runtime";
+import type { RankingConfig } from "./search-policy";
 
 export type PhaseGate = "phase0" | "phase1" | "phase4" | "dogfood";
 export const DOGFOOD_JUDGMENTS = ["useful_hit", "miss", "noisy_hit", "no_relevant_trap"] as const;
@@ -83,6 +84,10 @@ export type SearchEvalReport = {
   next_actions: SearchEvalNextAction[];
 };
 
+export type SearchEvalDetailedReport = Omit<SearchEvalReport, "mode" | "fixture" | "next_actions"> & {
+  cases: EvalCaseReport[];
+};
+
 export type RecordDogfoodResult = {
   success: true;
   fixture: string;
@@ -135,10 +140,20 @@ export async function reportDogfood(fixturePath: string, live: boolean): Promise
 
 export async function evaluateSearchFixture(
   fixture: EvalFixture,
-  embeddings: EmbeddingRuntimeInput
+  embeddings: EmbeddingRuntimeInput,
+  ranking?: RankingConfig
 ): Promise<Omit<SearchEvalReport, "mode" | "fixture" | "next_actions">> {
+  const { cases: _cases, ...report } = await evaluateSearchFixtureCases(fixture, embeddings, ranking);
+  return report;
+}
+
+export async function evaluateSearchFixtureCases(
+  fixture: EvalFixture,
+  embeddings: EmbeddingRuntimeInput,
+  ranking?: RankingConfig
+): Promise<SearchEvalDetailedReport> {
   const runtime = embeddingRuntimeFrom(embeddings);
-  const repo = fixtureRepository(fixture, runtime);
+  const repo = fixtureRepository(fixture, runtime, ranking);
 
   let providerError: string | null = null;
   if (runtime.available()) {
@@ -148,7 +163,7 @@ export async function evaluateSearchFixture(
       providerError = errorMessage(error);
     }
   }
-  const searchRepo = providerError ? fixtureRepository(fixture, undefined) : repo;
+  const searchRepo = providerError ? fixtureRepository(fixture, undefined, ranking) : repo;
 
   const cases: EvalCaseReport[] = [];
   let hybridFallbackCount = 0;
@@ -195,6 +210,7 @@ export async function evaluateSearchFixture(
     failures,
     misses,
     noisy_hits: noisyHits,
+    cases,
   };
 }
 
@@ -315,8 +331,8 @@ function formatNextActions(actions: SearchEvalNextAction[]): string[] {
   return actions.map((action) => `  - ${action.command} # ${action.reason}`);
 }
 
-function fixtureRepository(fixture: EvalFixture, embeddings: EmbeddingRuntimeInput): TrapRepository {
-  const repo = new TrapRepository(openDatabase(":memory:"), embeddings);
+function fixtureRepository(fixture: EvalFixture, embeddings: EmbeddingRuntimeInput, ranking?: RankingConfig): TrapRepository {
+  const repo = new TrapRepository(openDatabase(":memory:"), embeddings, ranking);
   for (const trap of fixture.traps) repo.add(trap);
   return repo;
 }

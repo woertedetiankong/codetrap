@@ -20,7 +20,7 @@ Polish codetrap for first AI-agent users by aligning packaged guidance, hooks, s
 - Standardized the relevance gate across README, install docs, release guidance, plugin template, and codetrap-check/search skills: severity alone is not enough, and non-matching reviewed cards should be treated as no applicable trap.
 - Tightened the relevance gate after read-only red-team review: "plausibly related" now requires concrete overlap in path/module/owner, technology/API, project convention, or failure mode, and the codetrap-search example is conditional on outbound HTTP.
 - Made the 5-minute setup path more directly executable: added Bun prerequisite checks, npm global template copy commands, and concrete candidate inspect/accept/reject commands with explicit human-approval comments.
-- Added root `skills/codetrap-capture/SKILL.md` for agent post-flight candidates, and changed root `codetrap-add` to require explicit user approval before confirmed writes.
+- Added `codetrap-capture` for agent post-flight candidates, and changed `codetrap-add` to require explicit user approval before confirmed writes.
 - Removed top-level `hooks` from the plugin manifest so hook files remain packaged examples without risking plugin manifest validation drift.
 - Added Jina privacy wording: FTS is local-only, and Jina-backed embed/search may send trap passages or semantic query text to Jina when `JINA_API_KEY` is set.
 - Labeled maintainer release/publish commands as explicit-approval-only, changed release playbook examples to `<version>` placeholders where appropriate, and synchronized current published examples to `0.1.7`.

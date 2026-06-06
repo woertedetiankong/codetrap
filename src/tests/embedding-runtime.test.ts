@@ -88,6 +88,13 @@ describe("embedding runtime", () => {
     const runtime = defaultEmbeddingRuntime({ CODETRAP_EMBEDDING_PROVIDER: "jina" } as NodeJS.ProcessEnv, {});
 
     expect(runtime.available()).toBe(false);
+    expect(runtime.status()).toMatchObject({
+      available: false,
+      provider: "jina",
+      model: "jina-embeddings-v5-text-small",
+      dimensions: 1024,
+      profile_id: "jina:jina-embeddings-v5-text-small:1024:p1",
+    });
     expect(runtime.setupAction()).toMatchObject({
       command: "export JINA_API_KEY=<your-jina-api-key>",
     });

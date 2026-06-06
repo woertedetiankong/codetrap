@@ -23,6 +23,7 @@ import { passageFieldsChanged } from "../lib/trap-search-document";
 import * as queries from "./queries";
 import type { TrapStatus } from "../lib/constants";
 import { TrapSearchPolicy } from "../lib/search-policy";
+import type { RankingConfig } from "../lib/search-policy";
 import { DatabaseEmbeddingIndex } from "../lib/embedding-index";
 import { archiveTrapLifecycle, supersedeTrapLifecycle } from "../lib/trap-lifecycle";
 import type { EmbeddingProfileSummary } from "./embedding-queries";
@@ -39,10 +40,11 @@ export class TrapRepository {
 
   constructor(
     private readonly db: Database,
-    embeddings?: EmbeddingRuntimeInput
+    embeddings?: EmbeddingRuntimeInput,
+    ranking?: RankingConfig
   ) {
     this.embeddings = embeddingRuntimeFrom(embeddings);
-    this.searchService = new SearchService(db, this.embeddings);
+    this.searchService = new SearchService(db, this.embeddings, ranking);
     this.embeddingIndex = new DatabaseEmbeddingIndex(db);
   }
 

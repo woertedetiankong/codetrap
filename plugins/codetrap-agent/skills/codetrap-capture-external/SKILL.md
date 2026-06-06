@@ -5,15 +5,58 @@ description: Extract durable coding pitfalls from an external article, blog post
 
 Use this when the user shares an external source and wants to save useful lessons for future AI coding work.
 
-The agent should read the source. The codetrap CLI should not fetch URLs or crawl the web; it only stores confirmed lessons and evidence.
+The external source is read by the agent. Do not ask codetrap CLI to fetch URLs or crawl the web. codetrap stays a local memory store.
 
-Workflow:
+## Step 1: Read The Source
 
-1. Read the URL, article text, issue, paper, or reference.
-2. Extract every candidate trap that has a clear trigger, mistake, and fix. Do not force a fixed count.
-3. Filter out broad summaries, one-off facts, vague advice, and source details that will not change future coding behavior.
-4. Rank the recommended candidates and ask the user which ones to save.
-5. After confirmation, run `codetrap add --json '<trap-json>' --output-json`.
-6. Attach the source with `codetrap add_trap_evidence <id> --scope <project|global> --source_type article --source_ref "<url-or-source-id>" --note "External lesson captured from <short source title>." --output-json`.
+Open or read the provided URL, article text, issue, paper, or reference. Identify lessons that could change future implementation behavior.
 
-Default to `global` for generally reusable engineering lessons. Use `project` only when the source lesson is specific to the current repository or stack.
+Do not summarize the whole source into codetrap. Extract only durable pitfalls with a clear trigger, mistake, and fix.
+
+## Step 2: Extract Candidate Traps
+
+Create as many candidate traps as pass the quality bar. Do not force a fixed count.
+
+Each candidate must include:
+
+- `context`: when this lesson applies
+- `mistake`: what an AI coding agent might do wrong
+- `fix`: what it should do instead
+- `severity`: `warning`, `error`, or `critical`
+- `tags`: useful retrieval terms
+- optional `path_globs`, `module`, and `owner` when the lesson is project-specific
+
+Reject or omit candidates that are broad summaries, one-off facts, vague advice, marketing claims, or source details that would not change future coding behavior.
+
+## Step 3: Rank And Ask
+
+Present the recommended candidates in priority order. Include a short reason for each recommendation.
+
+Ask the user which candidates to save. Do not write any trap until the user confirms.
+
+If a candidate is useful but needs a narrower scope, ask for or propose edits before saving.
+
+## Step 4: Save Confirmed Lessons
+
+For each confirmed candidate, call:
+
+```bash
+codetrap add --json '<trap-json>' --output-json
+```
+
+Then attach the external source as evidence:
+
+```bash
+codetrap add_trap_evidence <id> \
+  --scope <project|global> \
+  --source_type article \
+  --source_ref "<url-or-source-id>" \
+  --note "External lesson captured from <short source title>." \
+  --output-json
+```
+
+Use `global` for generally reusable lessons across projects. Use `project` only when the lesson is specific to the current repository or technology stack.
+
+## Step 5: Confirm
+
+Tell the user which trap IDs were saved, their scopes, and the source reference attached as evidence.

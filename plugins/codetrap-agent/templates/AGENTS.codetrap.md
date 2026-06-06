@@ -19,7 +19,7 @@ When codetrap results conflict with the current source of truth for the task (us
 When editing a specific area, pass applicability hints:
 
 ```bash
-codetrap search "<keywords>" --path src/db/repository.ts --module db --json
+codetrap search "<keywords>" --path path/to/file --module module-name --json
 ```
 
 After user corrections, repeated test failures, or review feedback, have the agent draft a structured candidate and put it in the session inbox. Do not write directly to the confirmed trap database:
@@ -38,3 +38,18 @@ Use `--trap-json` only when the caller already has a structured object.
 Review the candidate with `codetrap session candidate <candidate-id> --session <session-id> --json`, then accept, edit, reject, or supersede it explicitly.
 
 Use `codetrap session status`, `codetrap session list`, `codetrap doctor`, or `codetrap web` to find pending candidates that still need review.
+
+
+## Codetrap Dogfood Eval
+
+After each pre-edit codetrap search, record whether the search was:
+- useful_hit
+- miss
+- noisy_hit
+- no_relevant_trap
+
+Record the observation in `dogfood-log.md` with the task, query, mode, top results, judgment, whether the result changed the next action, and the promotion lane.
+
+When a real query should reliably find an existing trap, save it as a live eval case with query, mode, scope, and gold target.
+
+Do not promote every observation. Only promote representative cases that protect search quality.

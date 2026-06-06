@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildTrapInput } from "../domain/trap";
@@ -133,6 +133,192 @@ describe("web API", () => {
     expect(detailPayload.trap.tags).toEqual(["web", "api"]);
     expect(detailPayload.trap.path_globs).toEqual(["src/web/**"]);
     expect(detailPayload.evidence[0].related_files).toEqual(["src/web/static.ts"]);
+  });
+
+  test("embedding settings API exposes status and preserves unrelated config on provider switch", async () => {
+    const originalJinaApiKey = process.env.JINA_API_KEY;
+    delete process.env.JINA_API_KEY;
+    const home = tempHome();
+    const project = tempProjectDir("codetrap-web-embeddings-use-");
+    addWebProject(project, home);
+    writeFileSync(join(home, ".codetrap", "config.json"), JSON.stringify({
+      search: {
+        mode: "fts",
+        limit: 7,
+        rerank: false,
+      },
+    }));
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+
+    try {
+      const ollama = await api(handler, "/api/embeddings/use", {
+        method: "POST",
+        body: {
+          projectRoot: project,
+          provider: "ollama",
+          endpoint: "http://127.0.0.1:1",
+        },
+      });
+      expect(ollama.status).toBe(200);
+      const ollamaPayload = await ollama.json();
+      expect(ollamaPayload.embeddings).toMatchObject({
+        provider: "ollama",
+        endpoint: "http://127.0.0.1:1",
+        model: "qwen3-embedding:0.6b",
+        dimensions: 1024,
+      });
+      expect(ollamaPayload.status.runtime).toMatchObject({
+        available: false,
+        provider: "ollama",
+        model: "qwen3-embedding:0.6b",
+        profile_id: "ollama:qwen3-embedding:0.6b:1024:p1",
+      });
+      expect(JSON.parse(readFileSync(join(home, ".codetrap", "config.json"), "utf-8"))).toMatchObject({
+        search: {
+          mode: "fts",
+          limit: 7,
+          rerank: false,
+        },
+        embeddings: {
+          provider: "ollama",
+          endpoint: "http://127.0.0.1:1",
+        },
+      });
+
+      const jina = await api(handler, "/api/embeddings/use", {
+        method: "POST",
+        body: {
+          projectRoot: project,
+          provider: "jina",
+        },
+      });
+      expect(jina.status).toBe(200);
+      const jinaPayload = await jina.json();
+      expect(jinaPayload.embeddings).toEqual({ provider: "jina" });
+      expect(jinaPayload.status.runtime).toMatchObject({
+        available: false,
+        provider: "jina",
+        model: "jina-embeddings-v5-text-small",
+        dimensions: 1024,
+        profile_id: "jina:jina-embeddings-v5-text-small:1024:p1",
+        setup_action: {
+          command: "export JINA_API_KEY=<your-jina-api-key>",
+        },
+      });
+
+      const status = await api(handler, `/api/embeddings?project=${encodeURIComponent(project)}`);
+      expect(status.status).toBe(200);
+      expect((await status.json()).runtime).toMatchObject({
+        available: false,
+        provider: "jina",
+      });
+    } finally {
+      if (originalJinaApiKey === undefined) {
+        delete process.env.JINA_API_KEY;
+      } else {
+        process.env.JINA_API_KEY = originalJinaApiKey;
+      }
+    }
+  });
+
+  test("embedding reindex API refreshes project and global profile status", async () => {
+    const home = tempHome();
+    const project = tempProjectDir("codetrap-web-embeddings-reindex-");
+    addWebProject(project, home);
+    const traps = new TrapOperations(new TrapStore(project, undefined, home));
+    traps.addTrap({ ...trapInput({
+      title: "Reindex project embeddings",
+      category: "api",
+      scope: "project",
+      context: "When semantic search uses project traps.",
+      mistake: "Leaving the active profile empty hides semantic candidates.",
+      fix: "Generate project embeddings for the active profile.",
+      severity: "warning",
+    }) });
+    traps.addTrap({ ...trapInput({
+      title: "Reindex global embeddings",
+      category: "api",
+      scope: "global",
+      context: "When semantic search includes global traps.",
+      mistake: "Forgetting global embeddings leaves shared traps keyword-only.",
+      fix: "Generate global embeddings for the active profile.",
+      severity: "warning",
+    }) });
+    const ollama = startFakeOllama();
+    try {
+      const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+      await api(handler, "/api/embeddings/use", {
+        method: "POST",
+        body: {
+          projectRoot: project,
+          provider: "ollama",
+          endpoint: `http://127.0.0.1:${ollama.port}`,
+          model: "qwen3-embedding:0.6b",
+          dimensions: 3,
+        },
+      });
+
+      const projectReindex = await api(handler, "/api/embeddings/reindex", {
+        method: "POST",
+        body: {
+          projectRoot: project,
+          scope: "project",
+        },
+      });
+      expect(projectReindex.status).toBe(200);
+      const projectPayload = await projectReindex.json();
+      expect(projectPayload.result).toMatchObject({
+        generated: 1,
+        skipped: 0,
+        batches: 1,
+      });
+      expect(projectPayload.status.project).toMatchObject({
+        total: 1,
+        fresh: 1,
+        stale: 0,
+        missing: 0,
+      });
+      expect(projectPayload.status.project.profiles).toEqual([
+        expect.objectContaining({
+          id: "ollama:qwen3-embedding:0.6b:3:p1",
+          provider: "ollama",
+          model: "qwen3-embedding:0.6b",
+          dimensions: 3,
+          embedding_count: 1,
+        }),
+      ]);
+      expect(projectPayload.status.global).toMatchObject({
+        total: 1,
+        fresh: 0,
+        missing: 1,
+      });
+
+      const globalReindex = await api(handler, "/api/embeddings/reindex", {
+        method: "POST",
+        body: {
+          projectRoot: project,
+          scope: "global",
+        },
+      });
+      expect(globalReindex.status).toBe(200);
+      const globalPayload = await globalReindex.json();
+      expect(globalPayload.result.scopes).toEqual([
+        {
+          scope: "global",
+          generated: 1,
+          skipped: 0,
+          batches: 1,
+        },
+      ]);
+      expect(globalPayload.status.global).toMatchObject({
+        total: 1,
+        fresh: 1,
+        stale: 0,
+        missing: 0,
+      });
+    } finally {
+      ollama.stop();
+    }
   });
 
   test("session list API exposes pending candidate review counts", async () => {
@@ -448,4 +634,38 @@ function tempProjectDir(prefix: string): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   mkdirSync(join(dir, ".codetrap"));
   return dir;
+}
+
+function startFakeOllama(): { port: number; stop: () => void } {
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      if (url.pathname === "/api/tags") {
+        return Response.json({
+          models: [{ name: "qwen3-embedding:0.6b" }],
+        });
+      }
+      if (url.pathname === "/api/embed") {
+        const body = await request.json() as { input?: unknown; dimensions?: unknown };
+        const inputs = Array.isArray(body.input) ? body.input : [body.input];
+        const dimensions = typeof body.dimensions === "number" ? body.dimensions : 3;
+        const embeddings = inputs.map((_input, index) =>
+          Array.from({ length: dimensions }, (_value, dimension) => dimension === index % dimensions ? 1 : 0)
+        );
+        return Response.json({ embeddings });
+      }
+      return Response.json({ error: "not found" }, { status: 404 });
+    },
+  });
+  const port = server.port;
+  if (port === undefined) {
+    server.stop(true);
+    throw new Error("Fake Ollama server did not expose a port.");
+  }
+  return {
+    port,
+    stop: () => server.stop(true),
+  };
 }

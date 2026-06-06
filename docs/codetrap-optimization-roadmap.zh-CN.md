@@ -32,7 +32,7 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 - `src/lib/session-review.ts` 成为 CLI/Web 共享的 session review contract，统一 accept/reject/cleanup payload、accepted-missing trap review shape 和 transport-neutral conflict payload；CLI `next_actions` 由 `sessionCliConflictPayload` 单独添加。
 - `src/web/client-review.ts` 负责 Review queue state 和 candidate draft/request normalization；`src/web/client-script.ts` 只组合 Web modules 与 DOM event wiring。
 - `src/lib/embedding-runtime.ts` 已抽出 embedding provider runtime：provider selection、config/status、setup action 和 unavailable error 由一个模块负责，Jina 与 Ollama 都是实际 provider。
-- Agent guidance、README、install docs、release playbook、skills/plugin templates 已改成 post-flight 候选先走 `session capture`，confirmed trap 仍需要显式 accept 或用户确认后的外部来源写入。
+- Agent guidance、README、install docs、release playbook、plugin skills/templates 已改成 post-flight 候选先走 `session capture`，confirmed trap 仍需要显式 accept 或用户确认后的外部来源写入。
 
 2026-06-03 增量：
 
@@ -59,7 +59,7 @@ AGENTS.md + CLI --json 应该能覆盖 agent 使用 codetrap 的主路径。
 已完成：
 
 - Phase 1 核心：`search/show/list/stats --json`、stdin query、CLI `next_action.command`、`add/edit --output-json`、JSON stdout 与 stderr 分层。
-- Phase 2 核心：README、AGENTS 模板、`codetrap-check` / `codetrap-search` skills 已改成 CLI-first；top 3 review 规则已写入项目指导。
+- Phase 2 核心：README、AGENTS 模板、plugin-bundled `codetrap-check` / `codetrap-search` skills 已改成 CLI-first；top 3 review 规则已写入项目指导。
 - Phase 3 主要项：MCP tool 已支持可选 `cwd`；CLI/MCP 共用 `src/lib/output-json.ts`；MCP tools/resources 通过 `TrapOperations` 和共享 presenter 输出 JSON。
 - Phase 4：home/global `.codetrap` 不再被误判为 project root；新增 `codetrap doctor` 与 `doctor --json`；scope 回归测试覆盖 home/global、nested project、home 外项目；`repair-scope` / `migrate-project` 已支持 dry-run、`--apply`、backup 与 JSON 输出；迁移实现已收敛到 `scope-migration` + `trap-transfer` 两个深模块。
 - Phase 5 部分：StickS3 8 条真实 traps/queries 已加入 `src/tests/fixtures/search-eval.json`，并在测试里锁住 Recall@3 / Recall@5。
@@ -363,7 +363,7 @@ codetrap delete <id> --scope project --json
 
 - 项目根 `AGENTS.md` 已默认推荐 `codetrap search "<keywords>" --mode hybrid --json`。
 - README 的 agent integration 已改成 CLI-first，MCP 是 optional adapter。
-- `skills/codetrap-check/SKILL.md` 和 `skills/codetrap-search/SKILL.md` 已改成 CLI 优先、MCP 可选。
+- `plugins/codetrap-agent/skills/codetrap-check/SKILL.md` 和 `plugins/codetrap-agent/skills/codetrap-search/SKILL.md` 已改成 CLI 优先、MCP 可选。
 - top 3 action cards review 规则已写入 AGENTS/README/skills。
 - `critical` / `error` 且相关时下钻 `show --json` 的规则已写入 AGENTS/README/skills。
 - 用户纠正、重复测试失败或 review feedback 后，agent-drafted 候选应先进入 `codetrap session capture --trap-markdown - --kind review --json`，再由用户决定 accept/edit/reject/supersede；`--trap-json` 保留给已经有结构化对象的调用方。
@@ -395,7 +395,7 @@ Do not accept the candidate automatically.
 
 #### 2.2 Skill 文档改成 CLI-first
 
-现有 `codetrap-check` / `codetrap-search` / `codetrap-add` skills 可以改成：
+插件内 `codetrap-check` / `codetrap-search` / `codetrap-add` skills 可以改成：
 
 ```text
 Default path:
@@ -809,7 +809,7 @@ codetrap 可以作为完整 agent harness 的一层分发：
 codetrap CLI
   + CLI-first AGENTS.md / CLAUDE.md template
   + optional MCP server
-  + codetrap-check / codetrap-search / codetrap-add skills
+  + codetrap-agent plugin skills
   + hook examples
   + doctor / onboarding
 ```

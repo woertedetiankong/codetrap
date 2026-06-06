@@ -102,3 +102,9 @@ Track active codetrap implementation work across web, session, search, and agent
 
 - Documentation cleanup moved task-scoped handoff/log pairs into `docs/trap-markdown-capture/`, `docs/candidate-review-visibility/`, and `docs/candidate-review-workbench/`.
 - Added a task-specific journal index to `docs/handoff.md` so the root handoff stays the high-level entrypoint while focused follow-up work can jump directly to the relevant task journal.
+- Task: add a first-phase search policy sweep tool with fixture and live project modes.
+- Preflight codetrap search for `search eval live project ranking sweep config fixture cwd` returned trap #3 about absolute path/applicability handling. The implementation will keep live project resolution explicit through `cwd`, use scope-aware matching, and add live-mode regression coverage instead of relying only on fixture IDs.
+- Implemented `eval:search-policy` as a maintainer script rather than a public CLI command. Fixture mode reuses the deterministic eval fixture; live mode resolves a project/global DB from `--cwd` and supports either a queries file or a single `--query` with `--gold-id` / `--gold-title`.
+- Live gold matching intentionally accepts exact `scope + id` hits and title fallback hits, while warning on `gold_id_drift`. This keeps real SQLite id movement visible without making live evals brittle.
+- Follow-up TDD architecture pass added a failing live global eval from a non-project cwd, then moved live sweep repository selection through `ScopedRepositoryContext`. The sweep tool now keeps ranking experiments in the eval module while leaving cwd/home/project/global resolution in the existing Scope Context boundary.
+- Validation passed with targeted sweep tests, `bunx tsc --noEmit`, `bun run eval:search-policy -- fixture`, a live sweep against `/Users/superstorm/Documents/Code/esp32`, full `bun test src/tests`, `bun run eval:dogfood -- report`, and `git diff --check`.

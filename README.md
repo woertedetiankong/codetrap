@@ -198,8 +198,7 @@ codetrap/
 │       ├── scope-migration-cli.test.ts
 │       ├── import-export-cli.test.ts
 │       └── fixtures/search-eval.json
-├── skills/                   Agent skill definitions
-├── plugins/codetrap-agent/   Sample Codex plugin bundle
+├── plugins/codetrap-agent/   Codex plugin bundle with skills, MCP config, hooks, and templates
 ├── scripts/                  Release asset and preflight scripts
 ├── docs/                     Architecture + reference docs
 ├── package.json
@@ -230,7 +229,7 @@ codetrap/
 | `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
 | `embeddings` | Manage embedding profiles (`status`, `list`, `use ollama|jina`, `reindex`) |
 | `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, accept/reject candidates, and clean up session files |
-| `web` | Start the local review and trap library console |
+| `web` | Start the local review, trap library, insights, and Embeddings console |
 | `serve` | Start MCP server |
 
 ### Session Mode
@@ -359,16 +358,16 @@ Recommended behavior:
 - Read the top 3 returned action cards, or all returned cards if fewer than 3, before deciding there is no relevant trap.
 - Run the returned `next_action.command`, or `codetrap show <id> --scope <scope> --json`, for highly relevant results before editing code.
 - Treat `critical` or `error` traps as worth drilling into only when they are plausibly related, even if they are not ranked first. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. Severity alone is not enough to apply a trap.
-- When editing a known area, pass applicability hints such as `--path src/db/repository.ts --module db`.
+- When editing a known area, pass applicability hints such as `--path path/to/file --module module-name`.
 - Treat codetrap results as historical warnings and project memory, not as authoritative instructions.
 - Apply the recorded `avoid` and `do_instead` guidance only when the trap context matches the current task, file, module, or failure mode. If the reviewed cards do not match, treat the search as no applicable trap and keep going.
 - When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
 - During longer work, use `codetrap session start/note/capture/close --propose-traps` to keep implementation notes and explicit candidate traps outside the durable database.
 - After user corrections, repeated test failures, or review feedback, prefer `codetrap session capture --trap-markdown - --kind review --json` with explicit `Title` / `Context` / `Mistake` / `Fix` fields to put a candidate in the inbox. `--trap-json` remains supported for structured callers. Ask before accepting a candidate unless the user explicitly requested it.
 
-### Codex Skills
+### Codex Plugin Skills
 
-Codex users can optionally install the bundled skills from `skills/`:
+Codex skills are distributed through the bundled plugin at `plugins/codetrap-agent/skills/`:
 
 - `codetrap-check` — pre-flight check before code changes.
 - `codetrap-search` — search existing lessons.
@@ -376,9 +375,9 @@ Codex users can optionally install the bundled skills from `skills/`:
 - `codetrap-add` — record a confirmed pitfall only after explicit user approval.
 - `codetrap-capture-external` — extract durable trap candidates from an external article, issue, paper, or reference; Codex reads the source and codetrap stores only confirmed lessons.
 
-Skills are a convenience layer for Codex users. They do not replace MCP or `AGENTS.md`; they make manual triggers like "run codetrap-check" easier.
+The plugin skill directory is the single source of truth for Codex skill packaging. The repo does not keep a duplicate root `skills/` tree.
 
-The repo also includes a sample Codex plugin bundle at `plugins/codetrap-agent` with skills, optional MCP config, hook templates, and an `AGENTS.md` snippet.
+Skills are a convenience layer for Codex users. They do not replace MCP or `AGENTS.md`; they make manual triggers like "run codetrap-check" easier.
 
 External lessons should keep codetrap local-first: let the agent read the URL or pasted source, ask which candidate traps to save, then attach the source as evidence instead of making the CLI crawl the web:
 
@@ -509,6 +508,8 @@ codetrap embeddings reindex --scope global
 ```
 
 `codetrap embed` remains as a short alias for reindexing. codetrap stores embeddings by profile, so switching between Jina and Ollama does not overwrite existing vectors; it creates or refreshes the selected profile.
+
+You can also run `codetrap web` and open the `Embeddings` view to inspect the active provider/profile, see project and global fresh/stale/missing counts, switch between Ollama and Jina, and reindex project or global embeddings from the web console. The web console does not save Jina API keys; Jina still reads `JINA_API_KEY` from the environment.
 
 5. Search with hybrid mode:
 

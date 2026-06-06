@@ -170,7 +170,7 @@ Qdrant 中存两份数据：文档元数据（用于变更检测）和行嵌入�
 - Include a ## References section at the end
 ```
 
-**codetrap 的原始现状**：MCP tools 有 description，但 Skill 文件（`skills/codetrap-check/SKILL.md`）中的指导比较笼统。没有"何时用 search_traps vs get_trap vs list_traps"的决策树。
+**codetrap 的原始现状**：MCP tools 有 description，但 Skill 文件（现在由 `plugins/codetrap-agent/skills/codetrap-check/SKILL.md` 分发）中的指导比较笼统。没有"何时用 search_traps vs get_trap vs list_traps"的决策树。
 
 **2026-05-17 已落地**：
 

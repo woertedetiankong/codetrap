@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL, EmbeddingProviderUnavailableError } from "../lib/embedder";
 import { CATEGORIES, SCOPES, SEVERITIES } from "../lib/constants";
+import { loadCodetrapConfig, type EmbeddingProviderSetting, type EmbeddingSettings } from "../lib/config";
 import { TrapStore } from "../lib/store";
 import { TrapOperations } from "../lib/trap-operations";
 import { SessionOperations } from "../lib/session-operations";
@@ -169,6 +171,56 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     return jsonResponse(toTrapDetailsJson(details));
   }
 
+  if (request.method === "GET" && url.pathname === "/api/embeddings") {
+    const projectRoot = projectRootFromQuery(url, context);
+    const status = await trapStore(projectRoot, context.home).embeddingStatus();
+    return jsonResponse({
+      project_root: projectRoot,
+      settings: loadCodetrapConfig(context.home).embeddings ?? null,
+      ...status,
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/embeddings/use") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const embeddings = embeddingSettingsFromBody(body);
+    const written = trapStore(projectRoot, context.home).configureEmbeddings(embeddings);
+    const refreshed = await trapStore(projectRoot, context.home).embeddingStatus();
+    return jsonResponse({
+      success: true,
+      project_root: projectRoot,
+      path: written.path,
+      config: written.config,
+      embeddings: written.config.embeddings ?? embeddings,
+      settings: written.config.embeddings ?? embeddings,
+      next_actions: embeddingReindexActions(projectRoot),
+      status: refreshed,
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/embeddings/reindex") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const scope = scopeBodyField(body, "scope");
+    const store = trapStore(projectRoot, context.home);
+    try {
+      const result = await store.ensureEmbeddings({ scope });
+      return jsonResponse({
+        success: true,
+        project_root: projectRoot,
+        scope,
+        result,
+        status: await store.embeddingStatus(),
+      });
+    } catch (error) {
+      if (error instanceof EmbeddingProviderUnavailableError) {
+        throw new WebHttpError(400, error.message);
+      }
+      throw error;
+    }
+  }
+
   if (request.method === "POST" && url.pathname === "/api/candidate/save") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
@@ -252,7 +304,11 @@ function sessionOperations(projectRoot: string, home?: string): { traps: TrapOpe
 }
 
 function trapOperations(projectRoot: string, home?: string): TrapOperations {
-  return new TrapOperations(new TrapStore(projectRoot, undefined, home));
+  return new TrapOperations(trapStore(projectRoot, home));
+}
+
+function trapStore(projectRoot: string, home?: string): TrapStore {
+  return new TrapStore(projectRoot, undefined, home);
 }
 
 function registerInitialProject(options: WebServerOptions): string | null {
@@ -363,6 +419,46 @@ function optionalNumberBodyField(body: Record<string, unknown>, key: string): nu
     throw new WebHttpError(400, `${key} must be an integer.`);
   }
   return value;
+}
+
+function scopeBodyField(body: Record<string, unknown>, key: string): "project" | "global" {
+  const value = stringBodyField(body, key);
+  if (value === "project" || value === "global") return value;
+  throw new WebHttpError(400, `${key} must be project or global.`);
+}
+
+function embeddingSettingsFromBody(body: Record<string, unknown>): EmbeddingSettings {
+  const provider = embeddingProviderBodyField(body, "provider");
+  if (provider === "jina") {
+    return { provider };
+  }
+  return {
+    provider,
+    endpoint: optionalStringBodyField(body, "endpoint") ?? DEFAULT_OLLAMA_ENDPOINT,
+    model: optionalStringBodyField(body, "model") ?? DEFAULT_OLLAMA_MODEL,
+    dimensions: optionalNumberBodyField(body, "dimensions") ?? DEFAULT_OLLAMA_DIMENSIONS,
+  };
+}
+
+function embeddingProviderBodyField(body: Record<string, unknown>, key: string): EmbeddingProviderSetting {
+  const value = stringBodyField(body, key);
+  if (value === "ollama" || value === "jina") return value;
+  throw new WebHttpError(400, `${key} must be ollama or jina.`);
+}
+
+function embeddingReindexActions(_projectRoot: string): { scope: "project" | "global"; command: string; reason: string }[] {
+  return [
+    {
+      scope: "project",
+      command: "codetrap embeddings reindex --scope project",
+      reason: "Generate project embeddings for the selected profile.",
+    },
+    {
+      scope: "global",
+      command: "codetrap embeddings reindex --scope global",
+      reason: "Generate global embeddings for the selected profile.",
+    },
+  ];
 }
 
 function booleanBodyField(body: Record<string, unknown>, key: string): boolean {

@@ -33,7 +33,6 @@
     "src/web",
     "src/index.ts",
     "src/mcp-server.ts",
-    "skills",
     "plugins",
     ".agents/plugins/marketplace.json",
     "scripts",
@@ -52,6 +51,7 @@
     "release:preflight": "bun run scripts/release-preflight.ts",
     "check:release-version": "bun run scripts/check-release-version.ts",
     "eval:dogfood": "bun run scripts/dogfood-eval.ts",
+    "eval:search-policy": "bun run scripts/search-policy-sweep.ts",
     "build": "bun build ./src/index.ts --compile --outfile dist/codetrap && bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve",
     "build:cli": "bun build ./src/index.ts --compile --outfile dist/codetrap",
     "build:serve": "bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve"

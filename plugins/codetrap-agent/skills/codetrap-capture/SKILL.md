@@ -1,6 +1,6 @@
 ---
 name: codetrap-capture
-description: Propose a new codetrap after repeated failures, user corrections, or review feedback.
+description: Propose a new codetrap candidate after repeated failures, user corrections, or review feedback without writing confirmed memory automatically.
 ---
 
 Use this after a task exposes a recurring mistake pattern. Draft a candidate trap with:

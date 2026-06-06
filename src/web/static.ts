@@ -315,7 +315,11 @@ export const WEB_INDEX_HTML = `<!doctype html>
       box-shadow: 0 1px 2px var(--shadow), 0 12px 30px rgba(15, 118, 110, 0.12);
     }
 
-    .rail > .bar { padding-left: 58px; }
+    .rail > .bar {
+      align-items: flex-start;
+      flex-direction: column;
+      padding-left: 58px;
+    }
     .queue > .bar { padding-right: 58px; }
     .shell.rail-collapsed .detail > .bar { padding-left: 58px; }
     .shell.queue-collapsed .detail > .bar { padding-right: 58px; }
@@ -369,6 +373,19 @@ export const WEB_INDEX_HTML = `<!doctype html>
       justify-content: flex-end;
       gap: 8px;
       flex-wrap: wrap;
+      flex: 1;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .main-nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: min(100%, 240px);
+    }
+
+    .main-nav button {
+      width: 100%;
     }
 
     .title {
@@ -491,6 +508,64 @@ export const WEB_INDEX_HTML = `<!doctype html>
       gap: 8px;
       padding: 12px;
       border-bottom: 1px solid var(--line-soft);
+    }
+
+    .settings-form {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(255, 255, 255, 0.54);
+    }
+
+    .settings-form .segmented {
+      justify-self: start;
+    }
+
+    .provider-fields {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .status-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--faint);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--faint), transparent 78%);
+    }
+
+    .status-dot.available {
+      background: var(--ok);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok), transparent 80%);
+    }
+
+    .status-dot.unavailable {
+      background: var(--warn);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn), transparent 80%);
+    }
+
+    .profile-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .profile-row {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px;
+      background: rgba(255, 255, 255, 0.68);
+      display: grid;
+      gap: 6px;
+      overflow-wrap: anywhere;
     }
 
     .metric {
@@ -708,7 +783,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     @media (max-width: 520px) {
       .bar { align-items: flex-start; flex-direction: column; }
       .rail-actions { justify-content: flex-start; }
-      .filter-grid, .summary-grid, .detail-kv { grid-template-columns: 1fr; }
+      .filter-grid, .summary-grid, .detail-kv, .provider-fields { grid-template-columns: 1fr; }
       .project-form { grid-template-columns: 1fr auto; }
     }
   </style>
@@ -730,10 +805,11 @@ export const WEB_INDEX_HTML = `<!doctype html>
           <div class="subtle" id="app-subtitle">review console</div>
         </div>
         <div class="rail-actions">
-          <div class="segmented" aria-label="Main view">
+          <div class="segmented main-nav" aria-label="Main view">
             <button type="button" class="active" data-main-view="review">Review</button>
             <button type="button" data-main-view="library">Library</button>
             <button type="button" data-main-view="insights">Insights</button>
+            <button type="button" data-main-view="embeddings">Embeddings</button>
           </div>
           <div class="segmented" aria-label="Language">
             <button type="button" data-locale="en">EN</button>

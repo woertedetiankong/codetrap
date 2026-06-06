@@ -10,6 +10,11 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
     const initialLocale = savedLocale === "zh" ? "zh" : "en";
     const savedSidebarCollapsed = localStorage.getItem("codetrap-sidebar-collapsed") === "true";
     const savedQueueCollapsed = localStorage.getItem("codetrap-queue-collapsed") === "true";
+    const EMBEDDING_DEFAULTS = {
+      endpoint: "http://127.0.0.1:11434",
+      model: "qwen3-embedding:0.6b",
+      dimensions: "1024"
+    };
 
     const TEXT = ${textJson};
 
@@ -29,6 +34,11 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       trapSort: "updated",
       insightTraps: [],
       insightFilters: { scope: "", status: "all" },
+      embeddingStatus: null,
+      embeddingSettings: null,
+      embeddingProviderDraft: "ollama",
+      embeddingOllama: { ...EMBEDDING_DEFAULTS },
+      embeddingReindexing: null,
       projectRoot: null,
       sessionId: null,
       candidateId: null,
@@ -71,6 +81,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       document.querySelector("[data-main-view='review']").textContent = t("nav.review");
       document.querySelector("[data-main-view='library']").textContent = t("nav.library");
       document.querySelector("[data-main-view='insights']").textContent = t("nav.insights");
+      document.querySelector("[data-main-view='embeddings']").textContent = t("nav.embeddings");
       document.querySelectorAll("[data-locale]").forEach((button) => {
         button.classList.toggle("active", button.dataset.locale === state.locale);
       });
@@ -127,6 +138,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.candidates = [];
         state.traps = [];
         state.insightTraps = [];
+        state.embeddingStatus = null;
+        state.embeddingSettings = null;
         renderSessions();
         renderActiveView();
         return;
@@ -140,6 +153,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         await loadTraps();
       } else if (state.mainView === "insights") {
         await loadInsightTraps();
+      } else if (state.mainView === "embeddings") {
+        await loadEmbeddings();
       } else {
         await loadCandidates();
       }
@@ -213,6 +228,26 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       }
     }
 
+    async function loadEmbeddings() {
+      if (!state.projectRoot) {
+        state.embeddingStatus = null;
+        state.embeddingSettings = null;
+        if (state.mainView === "embeddings") {
+          renderEmbeddingsView();
+          renderEmbeddingsDetail();
+        }
+        return;
+      }
+      const data = await api("/api/embeddings?project=" + encodeURIComponent(state.projectRoot));
+      state.embeddingStatus = data;
+      state.embeddingSettings = data.settings || null;
+      syncEmbeddingDraftFromStatus(data);
+      if (state.mainView === "embeddings") {
+        renderEmbeddingsView();
+        renderEmbeddingsDetail();
+      }
+    }
+
     function renderMainViewButtons() {
       document.querySelectorAll("[data-main-view]").forEach((button) => {
         button.classList.toggle("active", button.dataset.mainView === state.mainView);
@@ -235,6 +270,13 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         hideReviewSummary();
         renderInsightsView();
         renderInsightDetail();
+      } else if (state.mainView === "embeddings") {
+        el("queue-title").textContent = t("title.embeddings");
+        el("detail-title").textContent = t("title.embeddingDetail");
+        el("candidate-tabs").classList.add("hidden");
+        hideReviewSummary();
+        renderEmbeddingsView();
+        renderEmbeddingsDetail();
       } else {
         el("queue-title").textContent = t("title.candidateInbox");
         el("detail-title").textContent = t("title.candidateDetail");
@@ -259,6 +301,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           state.trapKey = null;
           state.trapDetails = {};
           state.insightTraps = [];
+          state.embeddingStatus = null;
+          state.embeddingSettings = null;
           renderProjects();
           await loadSessions();
         });
@@ -619,6 +663,267 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           <span class="subtle">\${escapeHtml(trap.updated_at || trap.created_at || "")}</span>
         </button>
       \`).join("") : '<div class="empty">' + escapeHtml(t("empty.noTraps")) + '</div>';
+    }
+
+    function syncEmbeddingDraftFromStatus(status) {
+      const settings = status?.settings || null;
+      const runtime = status?.runtime || null;
+      const provider = settings?.provider || runtime?.provider || "ollama";
+      state.embeddingProviderDraft = provider === "jina" ? "jina" : "ollama";
+      if (state.embeddingProviderDraft === "ollama") {
+        state.embeddingOllama = {
+          endpoint: settings?.endpoint || EMBEDDING_DEFAULTS.endpoint,
+          model: settings?.model || runtime?.model || EMBEDDING_DEFAULTS.model,
+          dimensions: String(settings?.dimensions || runtime?.dimensions || EMBEDDING_DEFAULTS.dimensions)
+        };
+      }
+    }
+
+    function renderEmbeddingsView() {
+      if (state.mainView !== "embeddings") return;
+      const status = state.embeddingStatus;
+      const runtime = status?.runtime || null;
+      const project = status?.project || null;
+      const global = status?.global || null;
+      const provider = runtime?.provider || state.embeddingProviderDraft || "";
+      const providerLabel = provider ? valueLabel(provider) : t("embedding.notConfigured");
+      el("queue-title").textContent = t("title.embeddings");
+      el("candidate-tabs").classList.add("hidden");
+      el("queue-meta").textContent = state.projectRoot && status
+        ? t("meta.embeddingCounts", {
+            provider: providerLabel,
+            projectFresh: project?.fresh ?? 0,
+            projectTotal: project?.total ?? 0,
+            globalFresh: global?.fresh ?? 0,
+            globalTotal: global?.total ?? 0
+          })
+        : t(state.projectRoot ? "embedding.notConfigured" : "meta.noProject");
+
+      if (!state.projectRoot) {
+        el("candidates").innerHTML = '<div class="empty">' + escapeHtml(t("meta.selectProject")) + '</div>';
+        return;
+      }
+
+      el("candidates").innerHTML = \`
+        <div class="summary-grid">
+          \${metric(t("metric.activeProvider"), providerLabel, runtimeStateLabel(runtime))}
+          \${metric(t("metric.activeProfile"), shortProfileId(runtime?.profile_id), runtime?.profile_id || t("embedding.noProfile"))}
+          \${metric(t("metric.projectFresh"), embeddingFreshValue(project), embeddingNeedsReindex(project))}
+          \${metric(t("metric.globalFresh"), embeddingFreshValue(global), embeddingNeedsReindex(global))}
+        </div>
+        <form class="settings-form" id="embedding-form">
+          <div class="status-line">
+            <span class="status-dot \${runtime?.available ? "available" : "unavailable"}" aria-hidden="true"></span>
+            <span class="pill \${runtime?.available ? "accepted" : "warn"}">\${escapeHtml(runtimeStateLabel(runtime))}</span>
+            \${runtime?.profile_id ? '<span class="pill scope">' + escapeHtml(t("embedding.activeProfile")) + '</span>' : ''}
+          </div>
+          <div class="segmented" id="embedding-provider-tabs" aria-label="\${escapeAttr(t("label.provider"))}">
+            <button type="button" data-embedding-provider="ollama" class="\${state.embeddingProviderDraft === "ollama" ? "active" : ""}">\${escapeHtml(valueLabel("ollama"))}</button>
+            <button type="button" data-embedding-provider="jina" class="\${state.embeddingProviderDraft === "jina" ? "active" : ""}">\${escapeHtml(valueLabel("jina"))}</button>
+          </div>
+          <div class="provider-fields \${state.embeddingProviderDraft === "ollama" ? "" : "hidden"}">
+            <div class="field"><label for="embedding-endpoint">\${escapeHtml(t("label.endpoint"))}</label><input id="embedding-endpoint" value="\${escapeAttr(state.embeddingOllama.endpoint)}" placeholder="\${escapeAttr(t("placeholder.endpoint"))}"></div>
+            <div class="field"><label for="embedding-model">\${escapeHtml(t("label.model"))}</label><input id="embedding-model" value="\${escapeAttr(state.embeddingOllama.model)}" placeholder="\${escapeAttr(t("placeholder.model"))}"></div>
+            <div class="field"><label for="embedding-dimensions">\${escapeHtml(t("label.dimensions"))}</label><input id="embedding-dimensions" type="number" min="1" step="1" value="\${escapeAttr(state.embeddingOllama.dimensions)}"></div>
+          </div>
+          <div class="warning \${state.embeddingProviderDraft === "jina" ? "" : "hidden"}">\${escapeHtml(t("hint.jinaEnv"))}</div>
+          <button type="submit" class="primary">\${escapeHtml(t("action.useProvider"))}</button>
+        </form>
+        <div class="section">
+          <div class="title">\${escapeHtml(t("title.reindex"))}</div>
+          <div class="subtle">\${escapeHtml(t("hint.reindexAfterSwitch"))}</div>
+          <div class="actions" style="padding:0;border-top:0;background:transparent">
+            <button type="button" id="embedding-reindex-project" \${state.embeddingReindexing ? "disabled" : ""}>\${escapeHtml(t("action.reindexProject"))}</button>
+            <button type="button" id="embedding-reindex-global" \${state.embeddingReindexing ? "disabled" : ""}>\${escapeHtml(t("action.reindexGlobal"))}</button>
+          </div>
+        </div>
+      \`;
+      bindEmbeddingsControls();
+    }
+
+    function renderEmbeddingsDetail() {
+      if (state.mainView !== "embeddings") return;
+      const status = state.embeddingStatus;
+      const runtime = status?.runtime || null;
+      el("detail-title").textContent = t("title.embeddingDetail");
+      el("detail-meta").textContent = state.projectRoot
+        ? t("meta.embeddingDetail", {
+            profile: runtime?.profile_id || t("embedding.noProfile"),
+            state: runtimeStateLabel(runtime)
+          })
+        : t("meta.selectProject");
+
+      if (!state.projectRoot) {
+        el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("meta.selectProject")) + '</div>';
+        return;
+      }
+      if (!status) {
+        el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("empty.noData")) + '</div>';
+        return;
+      }
+
+      el("detail").innerHTML = \`
+        <div class="scroll">
+          <div class="section">
+            <div class="title">\${escapeHtml(t("title.currentProfile"))}</div>
+            <div class="detail-kv">
+              \${kv(t("label.provider"), runtime?.provider ? valueLabel(runtime.provider) : t("embedding.notConfigured"))}
+              \${kv(t("label.model"), runtime?.model || "-")}
+              \${kv(t("label.dimensions"), runtime?.dimensions ?? "-")}
+              \${kv(t("label.profileId"), runtime?.profile_id || t("embedding.noProfile"))}
+              \${kv(t("label.available"), runtimeStateLabel(runtime))}
+              \${kv(t("label.setupAction"), runtime?.setup_action?.command || "-")}
+            </div>
+            \${runtime?.setup_action ? '<div class="warning">' + escapeHtml(runtime.setup_action.reason) + '</div>' : ''}
+          </div>
+          \${renderEmbeddingScopeDetail("project", status.project)}
+          \${renderEmbeddingScopeDetail("global", status.global)}
+        </div>
+      \`;
+    }
+
+    function bindEmbeddingsControls() {
+      document.querySelectorAll("[data-embedding-provider]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.embeddingProviderDraft = button.dataset.embeddingProvider === "jina" ? "jina" : "ollama";
+          renderEmbeddingsView();
+        });
+      });
+      const endpoint = el("embedding-endpoint");
+      if (endpoint) endpoint.addEventListener("input", () => state.embeddingOllama.endpoint = endpoint.value);
+      const model = el("embedding-model");
+      if (model) model.addEventListener("input", () => state.embeddingOllama.model = model.value);
+      const dimensions = el("embedding-dimensions");
+      if (dimensions) dimensions.addEventListener("input", () => state.embeddingOllama.dimensions = dimensions.value);
+      const form = el("embedding-form");
+      if (form) {
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          await useEmbeddingProvider();
+        });
+      }
+      const project = el("embedding-reindex-project");
+      if (project) project.addEventListener("click", () => reindexEmbeddings("project"));
+      const global = el("embedding-reindex-global");
+      if (global) global.addEventListener("click", () => reindexEmbeddings("global"));
+    }
+
+    async function useEmbeddingProvider() {
+      if (!state.projectRoot) return;
+      const body = {
+        projectRoot: state.projectRoot,
+        provider: state.embeddingProviderDraft
+      };
+      if (state.embeddingProviderDraft === "ollama") {
+        const dimensions = Number.parseInt(state.embeddingOllama.dimensions, 10);
+        if (!Number.isInteger(dimensions) || dimensions <= 0) {
+          showStatus(t("status.invalidDimensions"), true);
+          return;
+        }
+        body.endpoint = state.embeddingOllama.endpoint || EMBEDDING_DEFAULTS.endpoint;
+        body.model = state.embeddingOllama.model || EMBEDDING_DEFAULTS.model;
+        body.dimensions = dimensions;
+      }
+      try {
+        const data = await api("/api/embeddings/use", {
+          method: "POST",
+          body: JSON.stringify(body)
+        });
+        state.embeddingSettings = data.settings || data.embeddings || null;
+        state.embeddingStatus = {
+          project_root: data.project_root,
+          settings: state.embeddingSettings,
+          ...data.status
+        };
+        syncEmbeddingDraftFromStatus(state.embeddingStatus);
+        renderEmbeddingsView();
+        renderEmbeddingsDetail();
+        showStatus(t("status.embeddingProviderSaved"));
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    }
+
+    async function reindexEmbeddings(scope) {
+      if (!state.projectRoot || state.embeddingReindexing) return;
+      state.embeddingReindexing = scope;
+      renderEmbeddingsView();
+      try {
+        const data = await api("/api/embeddings/reindex", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: state.projectRoot, scope })
+        });
+        state.embeddingStatus = {
+          project_root: data.project_root,
+          settings: state.embeddingSettings,
+          ...data.status
+        };
+        renderEmbeddingsView();
+        renderEmbeddingsDetail();
+        showStatus(t("status.embeddingsReindexed", {
+          generated: data.result?.generated ?? 0,
+          skipped: data.result?.skipped ?? 0
+        }));
+      } catch (error) {
+        showStatus(error.message, true);
+      } finally {
+        state.embeddingReindexing = null;
+        renderEmbeddingsView();
+      }
+    }
+
+    function renderEmbeddingScopeDetail(scope, status) {
+      const title = scope === "project" ? t("title.projectEmbeddings") : t("title.globalEmbeddings");
+      if (!status) {
+        return \`<div class="section"><div class="title">\${escapeHtml(title)}</div><div class="empty">\${escapeHtml(t("empty.noData"))}</div></div>\`;
+      }
+      return \`<div class="section">
+        <div class="title">\${escapeHtml(title)}</div>
+        <div class="detail-kv">
+          \${kv(t("label.total"), status.total)}
+          \${kv(t("label.fresh"), status.fresh)}
+          \${kv(t("label.stale"), status.stale)}
+          \${kv(t("label.missing"), status.missing)}
+        </div>
+        <div class="title">\${escapeHtml(t("title.storedProfiles"))}</div>
+        <div class="profile-list">\${renderEmbeddingProfiles(status.profiles || [])}</div>
+      </div>\`;
+    }
+
+    function renderEmbeddingProfiles(profiles) {
+      return profiles.length ? profiles.map((profile) => \`
+        <div class="profile-row">
+          <div class="row-title">\${escapeHtml(profile.id)}</div>
+          <div class="meta">
+            <span class="pill">\${escapeHtml(valueLabel(profile.provider))}</span>
+            <span class="pill">\${escapeHtml(profile.model)}</span>
+            <span class="pill">\${escapeHtml(String(profile.dimensions))}d</span>
+            <span class="pill">\${escapeHtml(t("label.count"))}: \${escapeHtml(profile.embedding_count)}</span>
+          </div>
+          <div class="subtle">\${escapeHtml(profile.updated_at || "-")}</div>
+        </div>
+      \`).join("") : '<div class="empty">' + escapeHtml(t("empty.noProfiles")) + '</div>';
+    }
+
+    function runtimeStateLabel(runtime) {
+      if (!runtime?.provider) return t("embedding.notConfigured");
+      return runtime.available ? t("embedding.available") : t("embedding.unavailable");
+    }
+
+    function embeddingFreshValue(status) {
+      if (!status) return "-";
+      return String(status.fresh || 0) + "/" + String(status.total || 0);
+    }
+
+    function embeddingNeedsReindex(status) {
+      if (!status || status.total === 0) return t("embedding.noProfile");
+      return status.fresh === status.total ? t("embedding.activeProfile") : t("embedding.profileNeedsReindex");
+    }
+
+    function shortProfileId(profileId) {
+      if (!profileId) return "-";
+      const parts = profileId.split(":");
+      return parts.length >= 4 ? parts[0] + " / " + parts[1] : profileId;
     }
 
     function metric(label, value, detail) {
@@ -1137,6 +1442,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           await loadTraps();
         } else if (state.mainView === "insights") {
           await loadInsightTraps();
+        } else if (state.mainView === "embeddings") {
+          await loadEmbeddings();
         } else {
           await loadCandidates();
         }
@@ -1164,6 +1471,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.trapKey = null;
         state.trapDetails = {};
         state.insightTraps = [];
+        state.embeddingStatus = null;
+        state.embeddingSettings = null;
         el("project-path").value = "";
         renderProjects();
         await loadSessions();

@@ -32,7 +32,8 @@ export type EmbeddingRuntimeStatus = {
 export class EmbeddingRuntime {
   constructor(
     private readonly adapter?: EmbeddingProvider,
-    private readonly setupProvider: EmbeddingProviderSetting = "ollama"
+    private readonly setupProvider: EmbeddingProviderSetting = "ollama",
+    private readonly configuredConfig: EmbeddingConfig | null = null
   ) {}
 
   static fromEnvironment(
@@ -45,7 +46,8 @@ export class EmbeddingRuntime {
     }
     if (provider === "jina") {
       const apiKey = env.JINA_API_KEY;
-      return new EmbeddingRuntime(apiKey ? new JinaEmbedder(apiKey) : undefined, "jina");
+      const configuredConfig = embeddingConfig(new JinaEmbedder(apiKey ?? ""));
+      return new EmbeddingRuntime(apiKey ? new JinaEmbedder(apiKey) : undefined, "jina", configuredConfig);
     }
 
     const apiKey = env.JINA_API_KEY;
@@ -62,7 +64,7 @@ export class EmbeddingRuntime {
   }
 
   config(): EmbeddingConfig | null {
-    return this.adapter ? embeddingConfig(this.adapter) : null;
+    return this.adapter ? embeddingConfig(this.adapter) : this.configuredConfig;
   }
 
   requireProvider(message?: string): EmbeddingProvider {

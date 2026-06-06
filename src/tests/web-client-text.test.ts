@@ -10,6 +10,11 @@ describe("web client text", () => {
     expect(WEB_INDEX_HTML).toContain("data-delete-session");
     expect(WEB_INDEX_HTML).toContain('id="review-summary"');
     expect(WEB_INDEX_HTML).toContain("reviewSummary.pending");
+    expect(WEB_INDEX_HTML).toContain("\"nav.embeddings\"");
+    expect(WEB_INDEX_HTML).toContain('data-main-view="embeddings"');
+    expect(WEB_INDEX_HTML).toContain('id="embedding-form"');
+    expect(WEB_INDEX_HTML).toContain('id="embedding-reindex-project"');
+    expect(WEB_INDEX_HTML).toContain("JINA_API_KEY");
   });
 
   test("embeds desktop pane splitters in the web shell", () => {

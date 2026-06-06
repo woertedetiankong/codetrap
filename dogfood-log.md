@@ -42,6 +42,57 @@ Note:
 
 ## Observations
 
+## 2026-06-06 - Web Embeddings settings
+
+Task: Add a Web Embeddings settings experience with provider status, Ollama/Jina switching, and project/global reindex controls.
+Query: web embeddings settings provider reindex semantic search
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promotion lane: product_backlog
+Promotion target: Web Embeddings settings goal implementation.
+Note: This is a new product surface built on existing embedding runtime/profile primitives, not a search-quality regression or reusable trap candidate.
+
+## 2026-06-06 - Generic packaged AGENTS snippet
+
+Task: Make the packaged `AGENTS.codetrap.md` snippet generic enough for users to paste into external project `AGENTS.md` files.
+Query: AGENTS codetrap template dogfood eval generic path guidance
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - partially relevant to keeping `--path` guidance generic and not tied to one repository path.
+2. #5 Set SQLite busy_timeout before lock-prone startup pragmas - unrelated to documentation/template guidance.
+3. No third result.
+
+Judgment: useful_hit
+Action changed: yes
+Promotion lane: docs_guidance
+Promotion target: Packaged AGENTS template, README, installation docs, and onboarding asset test.
+Note: The search reinforced removing the codetrap-specific `src/db/repository.ts --module db` example from the copyable snippet and replacing it with generic `path/to/file --module module-name` guidance plus dogfood observation fields.
+
+## 2026-06-06 - Search policy sweep tool
+
+Task: Add a first-phase search policy sweep tool with fixture and live project modes.
+Query: search eval live project ranking sweep config fixture cwd
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - relevant to live project cwd/scope handling and matching real project DB search results.
+2. No second result.
+3. No third result.
+
+Judgment: useful_hit
+Action changed: yes
+Promotion lane: no_promotion
+Promotion target: none
+Note: Applied the trap by keeping live mode cwd-driven and scope-aware, adding tests for real project DB resolution plus title fallback/id drift, then tightening the architecture so live eval uses `ScopedRepositoryContext` for project/global resolution. No new eval fixture promotion needed.
+
 ## 2026-06-06 - Root AGENTS alignment
 
 Task: Align root `AGENTS.md` with the current packaged agent guidance, skills, candidate-review flow, and dogfood promotion lanes.
@@ -525,3 +576,19 @@ Judgment: noisy_hit
 Action changed: no
 Promote: no
 Note: The returned trap was about path/module applicability filtering rather than embedding profile storage. Proceeded with a schema v6 migration, profile-aware freshness checks, and CLI management commands while leaving search applicability policy unchanged.
+
+## 2026-06-06 - Single Plugin Skill Source
+
+Task: Move the five root Codex skills into the codetrap-agent plugin bundle and remove the duplicate root `skills/` tree.
+Query: skills plugin bundle distribution root skills drift parity documentation
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no_promotion
+Note: No existing trap covered skill packaging source-of-truth drift. Proceed with the currently installed root skill content as the canonical version and make the plugin bundle the only packaged Codex skill source.

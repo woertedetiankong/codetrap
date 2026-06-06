@@ -324,6 +324,8 @@ codetrap embeddings reindex --scope global
 
 `codetrap embed` remains as a short alias for reindexing. codetrap stores embeddings by profile, so switching between Jina and Ollama does not overwrite existing vectors; it creates or refreshes the selected profile.
 
+You can also run `codetrap web` and open the `Embeddings` view to inspect the active provider/profile, see project and global fresh/stale/missing counts, switch between Ollama and Jina, and reindex project or global embeddings from the web console. The web console does not save Jina API keys; Jina still reads `JINA_API_KEY` from the environment.
+
 Then search:
 
 ```bash
@@ -367,7 +369,7 @@ Apply a trap only when its context matches the current task, file, module, or fa
 
 When editing a known area, pass applicability hints:
 
-codetrap search "<keywords>" --path src/db/repository.ts --module db --json
+codetrap search "<keywords>" --path path/to/file --module module-name --json
 
 To capture a post-flight lesson from agent work:
 
