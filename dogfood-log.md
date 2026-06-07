@@ -624,3 +624,19 @@ Judgment: useful_hit
 Action changed: yes
 Promote: no_promotion
 Note: Inspect full traps before edits. Preserve search applicability normalization and avoid changing SQLite connection startup ordering while revalidating schema migration cleanup.
+
+## 2026-06-06 - Release package update
+
+Task: Prepare the next package release from `v0.1.7` to `v0.1.8` using `docs/release-playbook.zh-CN.md`.
+Query: release version npm publish package
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no_promotion
+Note: No existing trap covered release package version prep. Proceed with the release playbook, keep external write operations gated, and verify npm version availability before preflight.
