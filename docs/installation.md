@@ -252,38 +252,9 @@ cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md
 cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> CLAUDE.md
 ```
 
-Then have the agent run a pre-edit check from the project cwd:
+The packaged template is the source of truth for exact agent behavior. It tells agents to run CLI JSON checks before non-trivial edits, inspect only relevant action cards, keep post-flight lessons in the session candidate inbox, and require explicit human approval before accepting a candidate into `traps.db`.
 
-```bash
-codetrap search "<task keywords>" --mode hybrid --json
-```
-
-Review the top 3 returned action cards, or all returned cards if fewer than 3, before deciding whether any trap applies. Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match the current task, file, module, or failure mode, treat the search as no applicable trap and keep going.
-
-After user corrections, repeated test failures, or review feedback, have the agent write a candidate into the review inbox:
-
-```bash
-cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
-Title: <durable pitfall>
-Context: <when it triggers>
-Mistake: <what the agent did wrong>
-Fix: <what to do instead>
-EOF
-```
-
-Use `codetrap session status`, `codetrap session list`, `codetrap doctor`, or `codetrap web` to review pending candidates. Do not accept candidates automatically.
-
-Use the returned `candidate_id` and `session_id` to inspect and resolve the candidate:
-
-```bash
-codetrap session candidate <candidate-id> --session <session-id> --json
-
-# Only after explicit human approval:
-codetrap session accept <candidate-id> --session <session-id>
-
-# Or reject instead:
-codetrap session reject <candidate-id> --session <session-id> --reason "<reason>"
-```
+For a quick manual check, agents can run `codetrap search "<task keywords>" --mode hybrid --json` from the project cwd.
 
 ## Optional: Local Ollama Embeddings
 
@@ -354,67 +325,10 @@ If your MCP client does not inherit your shell `PATH`, use the absolute path:
 codex mcp add codetrap -- "$(bun pm bin -g)/codetrap" serve
 ```
 
-Agents can also use the CLI directly from `AGENTS.md`:
-
-````md
-Before non-trivial code edits, check codetrap from the current project cwd:
-
-codetrap search "<keywords>" --mode hybrid --json
-
-Review the top 3 action cards, or all returned cards if fewer than 3, before deciding no trap applies. Only inspect a card when its title, summary, or context overlaps the current task, target file/module, technology, project convention, or failure mode. For matching critical/error results, inspect before editing:
-
-codetrap show <id> --scope <project|global> --json
-
-Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match, treat the search as no applicable trap and keep going.
-
-When editing a known area, pass applicability hints:
-
-codetrap search "<keywords>" --path path/to/file --module module-name --json
-
-To capture a post-flight lesson from agent work:
+MCP is optional. Agents can also use the CLI directly when the project guidance tells them when to call it. Use the packaged template as the source of truth for that guidance:
 
 ```bash
-cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
-Title: <durable pitfall>
-Context: <when it triggers>
-Mistake: <what the agent did wrong>
-Fix: <what to do instead>
-EOF
+cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> AGENTS.md
 ```
 
-`--trap-json` remains available for callers that already have a structured object:
-
-```bash
-codetrap session capture --trap-json '{...}' --kind review --json
-```
-
-For longer implementation work, keep temporary notes and explicit candidate traps in session files first:
-
-```bash
-codetrap session start "<goal>"
-codetrap session note --kind decision --text "<what changed and why>"
-cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
-Title: <durable pitfall>
-Context: <when it triggers>
-Mistake: <what the agent did wrong>
-Fix: <what to do instead>
-EOF
-codetrap session close --propose-traps
-codetrap session candidates
-```
-
-Pending candidates are visible from `codetrap session status`, `codetrap session list`, `codetrap doctor`, and `codetrap web`.
-
-Only accepted candidates are written to `traps.db`:
-
-```bash
-# Only after explicit human approval:
-codetrap session accept <candidate-id>
-```
-
-`codetrap session accept --edit-json ...` applies the edit before conflict detection. If a possible active-trap conflict is found, the candidate remains proposed and records conflict diagnostics until you choose `--accept-anyway`, `--supersedes <trap-id>`, or reject it.
-
-To save a lesson from an external article or reference, let the agent read the source and attach the URL as evidence after the user confirms the trap:
-
-codetrap add_trap_evidence <id> --scope global --source_type article --source_ref "https://example.com/post" --output-json
-````
+That template covers pre-edit search, applicability hints, candidate capture/review, and optional MCP usage. Update `plugins/codetrap-agent/templates/AGENTS.codetrap.md` when guidance changes instead of duplicating a second AGENTS block in installation docs.

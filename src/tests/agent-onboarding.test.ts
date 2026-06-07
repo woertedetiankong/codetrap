@@ -54,20 +54,28 @@ describe("agent first-run onboarding assets", () => {
   });
 
   test("agent guidance includes a relevance gate for noisy search results", () => {
-    const guidanceFiles = [
-      "README.md",
-      "docs/installation.md",
-      "docs/release-playbook.zh-CN.md",
+    const canonicalGuidanceFiles = [
       "plugins/codetrap-agent/templates/AGENTS.codetrap.md",
       "plugins/codetrap-agent/skills/codetrap-check/SKILL.md",
       "plugins/codetrap-agent/skills/codetrap-search/SKILL.md",
     ];
 
-    for (const file of guidanceFiles) {
+    for (const file of canonicalGuidanceFiles) {
       const text = read(file);
       expect(text, file).toContain("Severity alone is not enough");
       expect(text, file).toContain("concrete overlap in target path/module/owner");
       expect(text, file).toContain("no applicable trap");
+    }
+
+    const pointerDocs = [
+      "README.md",
+      "docs/installation.md",
+      "docs/release-playbook.zh-CN.md",
+    ];
+
+    for (const file of pointerDocs) {
+      const text = read(file);
+      expect(text, file).toContain("plugins/codetrap-agent/templates/AGENTS.codetrap.md");
     }
   });
 

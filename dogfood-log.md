@@ -640,3 +640,19 @@ Judgment: no_relevant_trap
 Action changed: no
 Promote: no_promotion
 Note: No existing trap covered release package version prep. Proceed with the release playbook, keep external write operations gated, and verify npm version availability before preflight.
+
+## 2026-06-06 - Agent guidance source of truth
+
+Task: Make README, installation docs, and the release playbook point to `plugins/codetrap-agent/templates/AGENTS.codetrap.md` as the source of truth instead of duplicating AGENTS guidance.
+Query: README AGENTS template drift documentation source of truth
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - not applicable because this task only changes documentation pointers and does not touch search/list applicability filtering or scoped trap storage.
+2. No second result.
+3. No third result.
+
+Judgment: noisy_hit
+Action changed: no
+Promote: no_promotion
+Note: The returned trap looked plausible because the docs mention applicability hints, but it did not match the documentation source-of-truth drift being fixed.

@@ -141,38 +141,23 @@ codetrap embed --scope global
 
 ### CLI-first 接入（推荐）
 
-优先把下面片段放进项目的 `AGENTS.md` 或 `CLAUDE.md`：
+优先把随包分发的模板追加到项目的 `AGENTS.md` 或 `CLAUDE.md`。不要在 README、安装文档或发布手册里维护第二份完整规则；`plugins/codetrap-agent/templates/AGENTS.codetrap.md` 是 agent 项目指导的唯一权威来源。
 
-````md
-## Codetrap
-
-Before non-trivial code edits, check codetrap from the current project cwd:
+用户通过 npm 安装时：
 
 ```bash
-codetrap search "<keywords>" --mode hybrid --json
+cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> AGENTS.md
+# 或：
+cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> CLAUDE.md
 ```
 
-Review the top 3 action cards, or all returned cards if fewer than 3, before deciding no trap applies. Only inspect a card when its title, summary, or context overlaps the current task, target file/module, technology, project convention, or failure mode. For matching cards, inspect before editing when the card is highly relevant or has `critical`/`error` severity:
+从源码仓库维护模板时：
 
 ```bash
-codetrap show <id> --scope <project|global> --json
+cat plugins/codetrap-agent/templates/AGENTS.codetrap.md >> AGENTS.md
 ```
 
-Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match, treat the search as no applicable trap and keep going.
-
-When a new recurring mistake or project convention is discovered, put a structured draft in the session candidate inbox:
-
-```bash
-cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
-Title: <durable pitfall>
-Context: <when it triggers>
-Mistake: <what the agent did wrong>
-Fix: <what to do instead>
-EOF
-```
-
-Do not accept it automatically. Tell the user the returned candidate id and session id, then ask whether to accept, edit, reject, or supersede it.
-````
+模板覆盖 CLI-first 预编辑搜索、top cards 相关性判断、applicability hints、session candidate capture/review，以及 MCP 可选接入。以后 guidance 变化时先改模板，再让 README/安装文档/发布手册只指向模板。
 
 ### MCP（可选）
 

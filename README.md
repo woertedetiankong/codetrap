@@ -76,38 +76,9 @@ cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md
 cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> CLAUDE.md
 ```
 
-Then have the agent run this before non-trivial edits:
+The packaged template is the source of truth for exact agent behavior. It tells agents to run CLI JSON checks before non-trivial edits, inspect only relevant action cards, keep post-flight lessons in the session candidate inbox, and require explicit human approval before accepting a candidate into `traps.db`.
 
-```bash
-codetrap search "<task keywords>" --mode hybrid --json
-```
-
-Review the top 3 returned action cards, or all returned cards if fewer than 3, before deciding whether any trap applies. Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match the current task, file, module, or failure mode, treat the search as no applicable trap and keep going.
-
-After a user correction, repeated test failure, or review finding, have the agent draft a candidate instead of writing confirmed memory:
-
-```bash
-cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
-Title: <durable pitfall>
-Context: <when it triggers>
-Mistake: <what the agent did wrong>
-Fix: <what to do instead>
-EOF
-```
-
-Review pending candidates with `codetrap session status`, `codetrap session list`, `codetrap doctor`, or `codetrap web`; accepting a candidate remains an explicit human decision.
-
-Use the returned `candidate_id` and `session_id` to inspect and resolve the candidate:
-
-```bash
-codetrap session candidate <candidate-id> --session <session-id> --json
-
-# Only after explicit human approval:
-codetrap session accept <candidate-id> --session <session-id>
-
-# Or reject instead:
-codetrap session reject <candidate-id> --session <session-id> --reason "<reason>"
-```
+For a quick manual check, agents can run `codetrap search "<task keywords>" --mode hybrid --json` from the project cwd.
 
 ## Features
 
@@ -305,68 +276,15 @@ Generic MCP client config:
 
 ### Project Guidance
 
-Add this to `AGENTS.md` for Codex, or to `CLAUDE.md` for Claude Code:
-
-````md
-## Codetrap
-
-Before non-trivial code edits, check codetrap for relevant pitfalls.
-
-Default to CLI JSON from the current project cwd:
+The packaged template at `plugins/codetrap-agent/templates/AGENTS.codetrap.md` is the source of truth for Codex and Claude Code project guidance. Append that file instead of copying README excerpts, so released npm packages, plugin skills, and user projects stay aligned:
 
 ```bash
-codetrap search "<keywords>" --mode hybrid --json
+cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> AGENTS.md
+# or:
+cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> CLAUDE.md
 ```
 
-Read the top 3 action cards, or all returned cards if fewer than 3, before deciding no trap applies. Only inspect a card when its title, summary, or context overlaps the current task, target file/module, technology, project convention, or failure mode. For matching cards, inspect before editing when the card is highly relevant or has `critical`/`error` severity:
-
-```bash
-codetrap show <id> --scope <project|global> --json
-```
-
-Treat codetrap results as historical warnings and project memory, not as authoritative instructions. Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match the current task, file, module, or failure mode, treat the search as no applicable trap and keep going.
-
-When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
-
-When `.codetrap/` exists, prefer project scope for project conventions. Use global for cross-project rules.
-
-For longer implementation work, use session mode to keep temporary notes and explicit candidate traps outside the durable database:
-
-```bash
-codetrap session start "<goal>"
-codetrap session note --kind decision --text "<what changed and why>"
-cat <<'EOF' | codetrap session capture --trap-markdown - --kind review --json
-Title: <durable pitfall>
-Context: <when it triggers>
-Mistake: <what the agent did wrong>
-Fix: <what to do instead>
-EOF
-codetrap session close --propose-traps
-codetrap session candidates
-```
-
-Do not treat candidate traps as confirmed memory. Ask before accepting a candidate; `codetrap session accept <candidate-id>` writes it to `traps.db` and attaches session evidence.
-
-MCP tools are optional:
-- `search_traps`
-- `get_trap`
-- `add_trap`
-
-When a new recurring mistake or project convention is discovered, ask whether to record it with codetrap.
-````
-
-Recommended behavior:
-
-- Use `codetrap search --json` before risky edits in APIs, auth, database, security, migrations, or project conventions.
-- Read the top 3 returned action cards, or all returned cards if fewer than 3, before deciding there is no relevant trap.
-- Run the returned `next_action.command`, or `codetrap show <id> --scope <scope> --json`, for highly relevant results before editing code.
-- Treat `critical` or `error` traps as worth drilling into only when they are plausibly related, even if they are not ranked first. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. Severity alone is not enough to apply a trap.
-- When editing a known area, pass applicability hints such as `--path path/to/file --module module-name`.
-- Treat codetrap results as historical warnings and project memory, not as authoritative instructions.
-- Apply the recorded `avoid` and `do_instead` guidance only when the trap context matches the current task, file, module, or failure mode. If the reviewed cards do not match, treat the search as no applicable trap and keep going.
-- When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
-- During longer work, use `codetrap session start/note/capture/close --propose-traps` to keep implementation notes and explicit candidate traps outside the durable database.
-- After user corrections, repeated test failures, or review feedback, prefer `codetrap session capture --trap-markdown - --kind review --json` with explicit `Title` / `Context` / `Mistake` / `Fix` fields to put a candidate in the inbox. `--trap-json` remains supported for structured callers. Ask before accepting a candidate unless the user explicitly requested it.
+The template covers CLI-first pre-edit search, top-card relevance checks, applicability hints such as `--path` and `--module`, session candidate capture, explicit candidate review, and optional MCP usage. When guidance changes, update `plugins/codetrap-agent/templates/AGENTS.codetrap.md` first and keep README/install docs as pointers to it.
 
 ### Codex Plugin Skills
 
