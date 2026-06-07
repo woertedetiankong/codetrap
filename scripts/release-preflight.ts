@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 const tag = process.argv[2] ?? process.env.RELEASE_TAG;
 const packageJson = await Bun.file("package.json").json() as { name?: string; version?: string };
 const published = await packageVersionExists(packageJson.name, packageJson.version);
@@ -10,6 +13,18 @@ const commands: { name: string; cmd: string[]; optional?: boolean }[] = [
   { name: "build", cmd: ["bun", "run", "build"] },
   { name: "build release assets", cmd: ["bun", "run", "build:release"] },
   { name: "smoke test release binary", cmd: [hostBinaryPath(), "--help"] },
+  {
+    name: "smoke test release binary Codex setup",
+    cmd: [
+      hostBinaryPath(),
+      "setup",
+      "codex",
+      "--dry-run",
+      "--json",
+      "--codex-home",
+      join(tmpdir(), "codetrap-release-preflight-codex-home"),
+    ],
+  },
   { name: "npm pack dry-run", cmd: ["npm", "pack", "--dry-run"] },
   ...(!published ? [{ name: "npm publish dry-run", cmd: ["npm", "publish", "--dry-run", "--access", "public"] }] : []),
 ];

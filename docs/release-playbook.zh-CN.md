@@ -146,28 +146,36 @@ codetrap embed --scope global
 用户通过 npm 安装时：
 
 ```bash
-cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> AGENTS.md
-# 或：
-cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> CLAUDE.md
+codetrap setup codex
 ```
+
+`codetrap setup codex` 会安装随包分发的 Codex skills，必要时初始化 `.codetrap/`，并写入 `AGENTS.md`。它默认不配置 MCP；只有用户明确运行 `codetrap setup codex --mcp` 时才配置 MCP。
 
 从源码仓库维护模板时：
 
 ```bash
 cat plugins/codetrap-agent/templates/AGENTS.codetrap.md >> AGENTS.md
+# codetrap 维护者如需 dogfood eval，再追加：
+cat plugins/codetrap-agent/templates/AGENTS.codetrap-maintainer.md >> AGENTS.md
 ```
 
-模板覆盖 CLI-first 预编辑搜索、top cards 相关性判断、applicability hints、session candidate capture/review，以及 MCP 可选接入。以后 guidance 变化时先改模板，再让 README/安装文档/发布手册只指向模板。
+通用模板覆盖 CLI-first 预编辑搜索、top cards 相关性判断、applicability hints、session candidate capture/review，以及 MCP 可选接入。维护者模板只放 codetrap dogfood eval 协议，避免普通外部用户项目继承 codetrap 仓库自己的评估流程。以后 guidance 变化时先改模板，再让 README/安装文档/发布手册只指向模板。
 
 ### MCP（可选）
 
 Codex：
 
 ```bash
+codetrap setup codex --mcp
+```
+
+或者手动添加：
+
+```bash
 codex mcp add codetrap -- codetrap serve
 ```
 
-如果 shell PATH 没被 MCP 客户端继承，用绝对路径：
+如果 shell PATH 没被 MCP 客户端继承，手动添加时用绝对路径：
 
 ```bash
 codex mcp add codetrap -- "$(bun pm bin -g)/codetrap" serve

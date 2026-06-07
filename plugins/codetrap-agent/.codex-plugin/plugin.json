@@ -1,6 +1,6 @@
 {
   "name": "codetrap-agent",
-  "version": "0.1.2",
+  "version": "0.1.9",
   "description": "CLI-first codetrap integration bundle for coding agents.",
   "author": {
     "name": "codetrap maintainers",

@@ -64,16 +64,16 @@ npm install -g codetrap
 
 # Initialize pitfall memory in the target project
 cd /path/to/project
-codetrap init
+codetrap setup codex
 codetrap doctor
 ```
 
-Add the packaged agent guidance to `AGENTS.md` for Codex, or to `CLAUDE.md` for Claude Code:
+`codetrap setup codex` installs the bundled Codex skills into `~/.codex/skills`, initializes `.codetrap/` when needed, and writes `AGENTS.md`. It does not configure MCP by default.
+
+To also configure Codex MCP, opt in explicitly:
 
 ```bash
-cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> AGENTS.md
-# or:
-cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> CLAUDE.md
+codetrap setup codex --mcp
 ```
 
 The packaged template is the source of truth for exact agent behavior. It tells agents to run CLI JSON checks before non-trivial edits, inspect only relevant action cards, keep post-flight lessons in the session candidate inbox, and require explicit human approval before accepting a candidate into `traps.db`.
@@ -198,6 +198,7 @@ codetrap/
 | `import` | Import traps from JSON (--json) |
 | `stats` | Show database statistics (--json includes embedding health) |
 | `doctor` | Diagnose cwd, scope, database paths, trap counts, and embedding health (--json) |
+| `setup codex` | Install Codex skills and project guidance; MCP is opt-in with `--mcp` |
 | `repair-scope` | Move legacy mis-scoped project traps into the current project (dry-run by default, `--apply` to mutate, `--json`) |
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
@@ -253,13 +254,27 @@ For AI coding agents, use the CLI as the default integration path:
 
 CLI and project guidance are the main path. MCP should stay thin and share the same store/search behavior.
 
-### MCP Setup
+### Codex Setup
 
-Codex:
+Default setup installs skills and project guidance without MCP:
+
+```bash
+codetrap setup codex
+```
+
+MCP is optional. To configure it too, opt in explicitly:
+
+```bash
+codetrap setup codex --mcp
+```
+
+You can also add MCP manually:
 
 ```bash
 codex mcp add codetrap -- codetrap serve
 ```
+
+### MCP Setup
 
 Generic MCP client config:
 
@@ -285,6 +300,8 @@ cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md
 ```
 
 The template covers CLI-first pre-edit search, top-card relevance checks, applicability hints such as `--path` and `--module`, session candidate capture, explicit candidate review, and optional MCP usage. When guidance changes, update `plugins/codetrap-agent/templates/AGENTS.codetrap.md` first and keep README/install docs as pointers to it.
+
+codetrap maintainers working on this repository can also append `plugins/codetrap-agent/templates/AGENTS.codetrap-maintainer.md` to add the dogfood eval protocol. Ordinary user projects should use only `AGENTS.codetrap.md`.
 
 ### Codex Plugin Skills
 

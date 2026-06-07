@@ -656,3 +656,67 @@ Judgment: noisy_hit
 Action changed: no
 Promote: no_promotion
 Note: The returned trap looked plausible because the docs mention applicability hints, but it did not match the documentation source-of-truth drift being fixed.
+
+## 2026-06-06 - Plugin version and dogfood template split
+
+Task: Sync the codetrap-agent plugin version with `package.json` and split codetrap maintainer dogfood guidance out of the general `AGENTS.codetrap.md` template.
+Query: plugin version sync AGENTS dogfood template external user maintainer
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - not applicable because this task changes plugin metadata, documentation templates, and onboarding tests, not search/list applicability behavior.
+2. No second result.
+3. No third result.
+
+Judgment: noisy_hit
+Action changed: no
+Promote: no_promotion
+Note: The result was a plausible search-policy warning but did not overlap the plugin version or template split work.
+
+## 2026-06-06 - Codex setup command
+
+Task: Add `codetrap setup codex` so Codex skills and AGENTS guidance install by default while MCP configuration remains opt-in with `--mcp`.
+Query: setup codex command plugin skill install AGENTS MCP optional
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no_promotion
+Note: No existing trap covered Codex setup command behavior. Keep the command explicit, make MCP opt-in, and test that dry-run does not mutate files.
+
+## 2026-06-06 - Release package update for Codex setup
+
+Task: Publish the Codex setup command and plugin/template cleanup as `codetrap@0.1.9`.
+Query: release 0.1.9 package version plugin setup codex publish
+Mode: hybrid
+
+Top results:
+1. No results returned.
+2. No second result.
+3. No third result.
+
+Judgment: no_relevant_trap
+Action changed: no
+Promote: no_promotion
+Note: No existing trap covered this release bump. Verify both `package.json` and `plugins/codetrap-agent/.codex-plugin/plugin.json` use the same version before preflight.
+
+## 2026-06-06 - Release binary Codex setup assets
+
+Task: Make `codetrap setup codex` work from compiled release binaries, not only from npm installs with the plugin directory on disk.
+Query: compiled binary plugin assets setup codex release preflight
+Mode: hybrid
+
+Top results:
+1. #3 Applicability filters must normalize absolute paths and empty scope fields - not applicable because this task changes bundled setup assets and release smoke coverage, not search/list applicability behavior.
+2. No second result.
+3. No third result.
+
+Judgment: noisy_hit
+Action changed: no
+Promote: no_promotion
+Note: The result did not overlap asset embedding or release binary smoke tests. Add a release preflight check for `setup codex --dry-run --json` so compiled binaries cannot ship with missing setup assets unnoticed.

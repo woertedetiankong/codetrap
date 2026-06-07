@@ -17,6 +17,7 @@ import {
   type EmbeddingsUseResult,
 } from "../lib/embedding-management";
 import { searchDefaultsFromConfig } from "../lib/config";
+import { formatCodexSetupText, runCodexSetup } from "../lib/codex-setup";
 import { SessionStore } from "../lib/session-store";
 import { SessionOperations, type SessionConflictResult } from "../lib/session-operations";
 import {
@@ -110,6 +111,8 @@ export async function executeCommand(strip: string[], store: TrapStore): Promise
       return cmdStats(args, operations);
     case "doctor":
       return cmdDoctor(args, store, operations);
+    case "setup":
+      return cmdSetup(args);
     case "repair-scope":
       return cmdScopeMigration("repair-scope", args, operations);
     case "migrate-project":
@@ -123,7 +126,7 @@ export async function executeCommand(strip: string[], store: TrapStore): Promise
     default:
       return errorResult([
         `Unknown command: ${sub}`,
-        "Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, repair-scope, migrate-project, embed, embeddings, session",
+        "Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, setup, repair-scope, migrate-project, embed, embeddings, session",
       ].join("\n"));
   }
 }
@@ -368,6 +371,31 @@ async function cmdDoctor(args: string[], store: TrapStore, operations: TrapOpera
   return opts.json !== undefined
     ? jsonResult(report)
     : textResult(formatDoctorText(report));
+}
+
+function cmdSetup(args: string[]): CommandResult {
+  const sub = args[0];
+  const rest = args.slice(1);
+  if (sub !== "codex") {
+    return errorResult("Usage: codetrap setup codex [--mcp] [--no-agents] [--agents-file AGENTS.md] [--codex-home <path>] [--dry-run] [--json]");
+  }
+  const { opts } = parseArgs(rest);
+  try {
+    const result = runCodexSetup({
+      cwd: process.cwd(),
+      codexHome: opts["codex-home"],
+      agentsFile: opts["agents-file"],
+      installMcp: opts.mcp !== undefined,
+      skipAgents: opts["no-agents"] !== undefined,
+      dryRun: opts["dry-run"] !== undefined,
+    });
+    if (opts.json !== undefined) return jsonResult(result, result.success ? 0 : 1);
+    return result.success
+      ? textResult(formatCodexSetupText(result))
+      : errorResult(formatCodexSetupText(result));
+  } catch (error) {
+    return errorFrom(error);
+  }
 }
 
 function cmdScopeMigration(

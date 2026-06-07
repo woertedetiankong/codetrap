@@ -240,16 +240,16 @@ Use this path when the first user is a coding agent such as Codex or Claude Code
 bun --version  # If this fails, install Bun first or use Method 2 binary install
 npm install -g codetrap
 cd /path/to/project
-codetrap init
+codetrap setup codex
 codetrap doctor
 ```
 
-Add the packaged agent guidance to `AGENTS.md` or `CLAUDE.md`:
+`codetrap setup codex` installs the bundled Codex skills into `~/.codex/skills`, initializes `.codetrap/` when needed, and writes `AGENTS.md`. It appends the packaged source-of-truth template at `plugins/codetrap-agent/templates/AGENTS.codetrap.md`. It does not configure MCP by default.
+
+To also configure Codex MCP, opt in explicitly:
 
 ```bash
-cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> AGENTS.md
-# or:
-cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> CLAUDE.md
+codetrap setup codex --mcp
 ```
 
 The packaged template is the source of truth for exact agent behavior. It tells agents to run CLI JSON checks before non-trivial edits, inspect only relevant action cards, keep post-flight lessons in the session candidate inbox, and require explicit human approval before accepting a candidate into `traps.db`.
@@ -313,7 +313,13 @@ If no embedding provider is configured:
 
 ## Optional: Codex MCP
 
-If the `codetrap` command is on your `PATH`, add it to Codex as an MCP server:
+MCP is optional. `codetrap setup codex` does not configure MCP unless you pass `--mcp`:
+
+```bash
+codetrap setup codex --mcp
+```
+
+You can also add MCP manually if the `codetrap` command is on your `PATH`:
 
 ```bash
 codex mcp add codetrap -- codetrap serve
@@ -325,10 +331,4 @@ If your MCP client does not inherit your shell `PATH`, use the absolute path:
 codex mcp add codetrap -- "$(bun pm bin -g)/codetrap" serve
 ```
 
-MCP is optional. Agents can also use the CLI directly when the project guidance tells them when to call it. Use the packaged template as the source of truth for that guidance:
-
-```bash
-cat "$(npm root -g)/codetrap/plugins/codetrap-agent/templates/AGENTS.codetrap.md" >> AGENTS.md
-```
-
-That template covers pre-edit search, applicability hints, candidate capture/review, and optional MCP usage. Update `plugins/codetrap-agent/templates/AGENTS.codetrap.md` when guidance changes instead of duplicating a second AGENTS block in installation docs.
+Agents can also use the CLI directly when the project guidance tells them when to call it. `codetrap setup codex` installs that guidance in `AGENTS.md`.
