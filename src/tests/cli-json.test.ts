@@ -12,7 +12,7 @@ describe("CLI JSON contract", () => {
 
     const add = runCli([
       "add",
-      "--json",
+      "--input-json",
       JSON.stringify({
         title: "Use fetchWrapper for HTTP requests",
         category: "api",
@@ -49,7 +49,7 @@ describe("CLI JSON contract", () => {
     const search = runCli(["search", "fetchWrapper", "--mode", "fts", "--scope", "project", "--json"], cwd, home);
     expect(search.exitCode).toBe(0);
     expect(search.stderr).toBe("");
-    const cards = JSON.parse(search.stdout);
+    const cards = JSON.parse(search.stdout).results;
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({
       trap_id: 1,
@@ -101,7 +101,7 @@ describe("CLI JSON contract", () => {
     const home = tempHome();
     runCli([
       "add",
-      "--json",
+      "--input-json",
       JSON.stringify({
         title: "CLI flags must not become query text",
         category: "bug",
@@ -116,13 +116,77 @@ describe("CLI JSON contract", () => {
 
     const search = runCli(["search", "--mode", "fts", "--scope", "project", "--json"], cwd, home, "parseArgs");
     expect(search.exitCode).toBe(0);
-    const cards = JSON.parse(search.stdout);
+    const cards = JSON.parse(search.stdout).results;
     expect(cards[0].title).toBe("CLI flags must not become query text");
 
     const empty = runCli(["search", "--json"], cwd, home, "");
     expect(empty.exitCode).toBe(1);
     expect(empty.stdout).toBe("");
     expect(empty.stderr).toContain("Usage: codetrap search");
+  });
+
+  test("boolean flags never swallow positionals and --flag=value works", () => {
+    const cwd = tempProjectDir("codetrap-cli-flags-");
+    const home = tempHome();
+    runCli([
+      "add",
+      "--input-json",
+      JSON.stringify({
+        title: "Flag parser keeps the query",
+        category: "bug",
+        scope: "project",
+        context: "When boolean flags precede the positional query.",
+        mistake: "--json swallowed the next word as its value.",
+        fix: "Parse boolean flags from an allowlist and split --flag=value.",
+        severity: "error",
+      }),
+    ], cwd, home);
+
+    // --json before the query must not swallow it (M22).
+    const search = runCli(["search", "--json", "parser", "--mode", "fts"], cwd, home);
+    expect(search.exitCode).toBe(0);
+    expect(JSON.parse(search.stdout).results[0].title).toBe("Flag parser keeps the query");
+
+    // --flag=value form is honored instead of silently ignored (M22).
+    const limited = runCli(["list", "--limit=1", "--scope=project", "--json"], cwd, home);
+    expect(limited.exitCode).toBe(0);
+    expect(JSON.parse(limited.stdout)).toHaveLength(1);
+  });
+
+  test("bad input yields clean errors, and JSON mode gets a JSON envelope", () => {
+    const cwd = tempProjectDir("codetrap-cli-errors-");
+    const home = tempHome();
+
+    // M23: invalid scope must not print a raw stack trace.
+    const badScope = runCli(["delete", "1", "--scope", "bogus"], cwd, home);
+    expect(badScope.exitCode).toBe(1);
+    expect(badScope.stderr).toContain("Invalid scope: bogus");
+    expect(badScope.stderr).not.toContain(" at ");
+
+    // M25: failures under --json are structured envelopes on stdout.
+    const badScopeJson = runCli(["delete", "1", "--scope", "bogus", "--json"], cwd, home);
+    expect(badScopeJson.exitCode).toBe(1);
+    expect(JSON.parse(badScopeJson.stdout)).toMatchObject({
+      success: false,
+      error: "Invalid scope: bogus",
+    });
+
+    const missingShow = runCli(["show", "999", "--json"], cwd, home);
+    expect(missingShow.exitCode).toBe(1);
+    expect(JSON.parse(missingShow.stdout)).toMatchObject({
+      success: false,
+      error: "Trap #999 not found.",
+    });
+
+    // M23: a corrupt user config degrades to defaults with a warning
+    // instead of bricking every command.
+    mkdirSync(join(home, ".codetrap"), { recursive: true });
+    writeFileSync(join(home, ".codetrap", "config.json"), "{corrupt");
+    const stats = runCli(["stats", "--json"], cwd, home);
+    expect(stats.exitCode).toBe(0);
+    expect(stats.stderr).toContain("ignoring invalid codetrap config");
+    const doctor = runCli(["doctor", "--json"], cwd, home);
+    expect(doctor.exitCode).toBe(0);
   });
 
   test("doctor --json reports scope and embedding health", () => {
@@ -351,7 +415,7 @@ describe("CLI JSON contract", () => {
     const home = tempHome();
     const add = runCli([
       "add",
-      "--json",
+      "--input-json",
       JSON.stringify({
         title: "Archive stale API convention",
         category: "api",
@@ -370,7 +434,7 @@ describe("CLI JSON contract", () => {
       String(first.id),
       "--scope",
       "project",
-      "--json",
+      "--input-json",
       JSON.stringify({
         path_globs: ["src/lifecycle/**"],
         module: "lifecycle",
@@ -429,6 +493,56 @@ describe("CLI JSON contract", () => {
     });
   });
 
+  test("unscoped mutations refuse ambiguous or wrong-scope trap ids", () => {
+    const cwd = tempProjectDir("codetrap-cli-scope-guard-");
+    const home = tempHome();
+
+    const addTrap = (title: string, scope: string) => runCli([
+      "add",
+      "--input-json",
+      JSON.stringify({
+        title,
+        category: "api",
+        scope,
+        context: "When mutating traps without an explicit scope.",
+        mistake: "Unscoped ids silently resolve against whichever database matches.",
+        fix: "Require --scope whenever an unqualified id is ambiguous.",
+        severity: "error",
+      }),
+      "--output-json",
+    ], cwd, home);
+
+    expect(JSON.parse(addTrap("Project trap one", "project").stdout)).toEqual({ id: 1, scope: "project" });
+    expect(JSON.parse(addTrap("Global trap one", "global").stdout)).toEqual({ id: 1, scope: "global" });
+    expect(JSON.parse(addTrap("Global trap two", "global").stdout)).toEqual({ id: 2, scope: "global" });
+
+    // Id 1 exists in both scopes: refuse instead of guessing.
+    const ambiguous = runCli(["delete", "1", "--json"], cwd, home);
+    expect(ambiguous.exitCode).toBe(1);
+    expect(JSON.parse(ambiguous.stdout)).toMatchObject({
+      id: 1,
+      success: false,
+      error: "Trap #1 exists in both project and global scope. Pass --scope to pick one.",
+    });
+
+    // Id 2 exists only in global: refuse instead of silently deleting the global trap.
+    const wrongScope = runCli(["delete", "2", "--json"], cwd, home);
+    expect(wrongScope.exitCode).toBe(1);
+    expect(JSON.parse(wrongScope.stdout)).toMatchObject({
+      id: 2,
+      success: false,
+      error: "Trap #2 not found in project scope; a different trap #2 exists in global scope. Pass --scope global to target it.",
+    });
+
+    // Both global traps must still exist.
+    const globalList = JSON.parse(runCli(["list", "--scope", "global", "--json"], cwd, home).stdout);
+    expect(globalList).toHaveLength(2);
+
+    // Explicit scope still works.
+    const explicit = runCli(["delete", "2", "--scope", "global", "--json"], cwd, home);
+    expect(JSON.parse(explicit.stdout)).toMatchObject({ id: 2, scope: "global", success: true });
+  });
+
   test("config defaults and applicability filters shape search results", () => {
     const cwd = tempProjectDir("codetrap-cli-config-");
     const home = tempHome();
@@ -444,7 +558,7 @@ describe("CLI JSON contract", () => {
 
     runCli([
       "add",
-      "--json",
+      "--input-json",
       JSON.stringify({
         title: "Use db transaction helper",
         category: "database",
@@ -461,7 +575,7 @@ describe("CLI JSON contract", () => {
     ], cwd, home);
     runCli([
       "add",
-      "--json",
+      "--input-json",
       JSON.stringify({
         title: "Use API envelope helper",
         category: "api",
@@ -489,9 +603,78 @@ describe("CLI JSON contract", () => {
       "--json",
     ], cwd, home);
     expect(search.exitCode).toBe(0);
-    const cards = JSON.parse(search.stdout);
+    const cards = JSON.parse(search.stdout).results;
     expect(cards).toHaveLength(1);
     expect(cards[0].title).toBe("Use db transaction helper");
     expect(cards[0].ranking_signals.map((signal: { code: string }) => signal.code)).toContain("path_scope_match");
+  });
+
+  test("add/edit reject invalid enum values with a readable error, not a raw CHECK constraint (M7)", () => {
+    const cwd = tempProjectDir("codetrap-cli-enum-");
+    const home = tempHome();
+
+    const add = runCli([
+      "add",
+      "--input-json",
+      JSON.stringify({
+        title: "Enum guard",
+        category: "api",
+        scope: "project",
+        context: "c",
+        mistake: "m",
+        fix: "f",
+      }),
+      "--output-json",
+    ], cwd, home);
+    expect(add.exitCode).toBe(0);
+    const id = JSON.parse(add.stdout).id as number;
+
+    // edit with a bad category -> friendly message, no leaked SQLite error
+    const badEdit = runCli([
+      "edit",
+      String(id),
+      "--scope",
+      "project",
+      "--input-json",
+      JSON.stringify({ category: "typo" }),
+    ], cwd, home);
+    expect(badEdit.exitCode).not.toBe(0);
+    const editOut = badEdit.stdout + badEdit.stderr;
+    expect(editOut).toContain("Invalid trap category: typo");
+    expect(editOut).not.toContain("CHECK constraint");
+
+    // add with a bad severity -> friendly message
+    const badAdd = runCli([
+      "add",
+      "--input-json",
+      JSON.stringify({
+        title: "x",
+        category: "api",
+        scope: "project",
+        context: "c",
+        mistake: "m",
+        fix: "f",
+        severity: "meh",
+      }),
+    ], cwd, home);
+    expect(badAdd.exitCode).not.toBe(0);
+    const addOut = badAdd.stdout + badAdd.stderr;
+    expect(addOut).toContain("Invalid trap severity: meh");
+    expect(addOut).not.toContain("CHECK constraint");
+
+    // JSON mode returns a structured error envelope (M25) with the friendly text
+    const badJson = runCli([
+      "edit",
+      String(id),
+      "--scope",
+      "project",
+      "--input-json",
+      JSON.stringify({ severity: "nope" }),
+      "--json",
+    ], cwd, home);
+    expect(badJson.exitCode).not.toBe(0);
+    const parsed = JSON.parse(badJson.stdout);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error).toContain("Invalid trap severity: nope");
   });
 });

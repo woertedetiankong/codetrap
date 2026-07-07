@@ -8,8 +8,10 @@ import type {
   TrapSearchResult,
   TrapUpdate,
 } from "../domain/trap";
-import { SearchService, type SearchOptions } from "../lib/search-service";
+import { SearchService, type SearchOptions, type SearchOutcome } from "../lib/search-service";
 import {
+  embeddingConfig,
+  embeddingProfileId,
   type EmbeddingConfig,
   type StoredEmbedding,
 } from "../lib/embedder";
@@ -19,7 +21,7 @@ import {
   type EmbeddingRuntimeInput,
 } from "../lib/embedding-runtime";
 import { runEmbeddingJob } from "../lib/embedding-job";
-import { passageFieldsChanged } from "../lib/trap-search-document";
+import { buildTrapPassage, embeddingIsFresh, hashTrapPassage, passageFieldsChanged } from "../lib/trap-search-document";
 import * as embeddingQueries from "./embedding-queries";
 import * as queries from "./queries";
 import type { TrapStatus } from "../lib/constants";
@@ -50,7 +52,11 @@ export class TrapRepository {
     return queries.insertTrap(this.db, input);
   }
 
-  search(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
+  async search(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
+    return (await this.searchService.search(query, opts)).results;
+  }
+
+  searchWithDiagnostics(query: string, opts: SearchOptions = {}): Promise<SearchOutcome> {
     return this.searchService.search(query, opts);
   }
 
@@ -158,6 +164,34 @@ export class TrapRepository {
 
   getEmbedding(trapId: number, config?: EmbeddingConfig): StoredEmbedding | null {
     return embeddingQueries.getEmbedding(this.db, trapId, config);
+  }
+
+  // Embed one trap right after it is written, so new/edited traps do not
+  // rank below older embedded ones until the next manual reindex.
+  async ensureEmbeddingForTrap(id: number): Promise<boolean> {
+    const provider = this.embeddings.provider();
+    if (!provider) return false;
+    const trap = this.get(id);
+    if (!trap) return false;
+
+    const config = embeddingConfig(provider);
+    const stored = embeddingQueries.getEmbedding(this.db, id, config);
+    if (embeddingIsFresh(trap, stored, config)) return false;
+
+    const passage = buildTrapPassage(trap);
+    const [embedding] = await provider.embed([passage], "retrieval.passage");
+    if (!embedding) return false;
+    embeddingQueries.upsertEmbedding(this.db, {
+      trap_id: id,
+      profile_id: embeddingProfileId(config),
+      provider: config.provider,
+      model: config.model,
+      dimensions: config.dimensions,
+      passage_version: config.passageVersion,
+      passage_hash: hashTrapPassage(passage),
+      embedding,
+    });
+    return true;
   }
 
   upsertEmbedding(record: StoredEmbedding): void {

@@ -15,29 +15,40 @@ export function importProjectTrapTransfer(
   records: TrapExportRecord[],
   projectPath: string
 ): TrapTransferMapping[] {
+  return destination.transaction(() => insertProjectTrapTransfer(destination, records, projectPath));
+}
+
+// The non-transactional core of the transfer, so a caller that already owns a
+// transaction (the cross-DB migration, which copies here and deletes from the
+// attached source in one atomic unit) can reuse it without nesting a second
+// transaction. Callers with no ambient transaction should use
+// importProjectTrapTransfer, which wraps this in one.
+export function insertProjectTrapTransfer(
+  destination: TrapRepository,
+  records: TrapExportRecord[],
+  projectPath: string
+): TrapTransferMapping[] {
   const mappings: TrapTransferMapping[] = [];
   const idMap = new Map<number, number>();
 
-  destination.transaction(() => {
-    for (const record of records) {
-      const destinationId = destination.insertTrapRecord(toProjectTransferRecord(record, projectPath));
-      idMap.set(record.id, destinationId);
-      mappings.push({ source_id: record.id, destination_id: destinationId, title: record.title });
+  for (const record of records) {
+    const destinationId = destination.insertTrapRecord(toProjectTransferRecord(record, projectPath));
+    idMap.set(record.id, destinationId);
+    mappings.push({ source_id: record.id, destination_id: destinationId, title: record.title });
 
-      for (const evidence of record.evidence ?? []) {
-        destination.addEvidence(destinationId, toEvidenceInput(evidence));
-      }
+    for (const evidence of record.evidence ?? []) {
+      destination.addEvidence(destinationId, toEvidenceInput(evidence));
     }
+  }
 
-    for (const record of records) {
-      if (record.supersedes_id === null) continue;
-      const destinationId = idMap.get(record.id);
-      const destinationSupersedesId = idMap.get(record.supersedes_id);
-      if (destinationId !== undefined && destinationSupersedesId !== undefined) {
-        destination.updateTrapSupersedesId(destinationId, destinationSupersedesId);
-      }
+  for (const record of records) {
+    if (record.supersedes_id === null) continue;
+    const destinationId = idMap.get(record.id);
+    const destinationSupersedesId = idMap.get(record.supersedes_id);
+    if (destinationId !== undefined && destinationSupersedesId !== undefined) {
+      destination.updateTrapSupersedesId(destinationId, destinationSupersedesId);
     }
-  });
+  }
 
   return mappings;
 }

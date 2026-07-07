@@ -9,7 +9,8 @@ import type {
   TrapInput,
   TrapUpdate,
 } from "../domain/trap";
-import { buildTrapEvidenceInput } from "../domain/trap";
+import { buildTrapEvidenceInput, parseTrapStatus } from "../domain/trap";
+import { DEFAULT_SEVERITY, DEFAULT_TRAP_STATUS, type TrapStatus } from "./constants";
 import {
   parseEvidenceRelatedFiles,
   parseOptionalEvidenceRelatedFiles,
@@ -77,6 +78,52 @@ export function importRecordToTrapInput(record: TrapImportRecord): TrapInput {
     module: record.module ?? undefined,
     owner: record.owner ?? undefined,
   };
+}
+
+export function importRecordToTrapRecordInsert(
+  record: TrapImportRecord,
+  projectPath: string | null
+): Omit<Trap, "id"> {
+  const input = importRecordToTrapInput(record);
+  const fields = encodeTrapInsertFields(input);
+  const createdAt = record.created_at ?? sqliteNow();
+  return {
+    title: input.title,
+    category: input.category,
+    tags: fields.tags,
+    scope: input.scope,
+    context: input.context,
+    mistake: input.mistake,
+    fix: input.fix,
+    search_text: fields.search_text,
+    before_code: input.before_code ?? null,
+    after_code: input.after_code ?? null,
+    severity: input.severity ?? DEFAULT_SEVERITY,
+    state_key: record.state_key ?? null,
+    status: parseTrapImportStatus(record.status),
+    // Remapped after the whole batch inserts, once destination ids are known.
+    supersedes_id: null,
+    valid_from: record.valid_from ?? createdAt,
+    valid_until: record.valid_until ?? null,
+    project_path: input.scope === "project" ? projectPath : null,
+    path_globs: fields.path_globs,
+    module: input.module ?? null,
+    owner: input.owner ?? null,
+    hit_count: record.hit_count ?? 0,
+    created_at: createdAt,
+    updated_at: record.updated_at ?? createdAt,
+  };
+}
+
+function parseTrapImportStatus(status: string | null | undefined): TrapStatus {
+  if (status === undefined || status === null) return DEFAULT_TRAP_STATUS;
+  const parsed = parseTrapStatus(status);
+  if (parsed === undefined || parsed === "all") return DEFAULT_TRAP_STATUS;
+  return parsed;
+}
+
+function sqliteNow(): string {
+  return new Date().toISOString().slice(0, 19).replace("T", " ");
 }
 
 export function importEvidenceToTrapInput(evidence: TrapImportEvidence): TrapEvidenceInput {

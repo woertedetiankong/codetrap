@@ -413,7 +413,7 @@ describe("session CLI", () => {
       "fts",
       "--json",
     ], cwd, home).stdout);
-    expect(search).toEqual([]);
+    expect(search).toEqual({ results: [], diagnostics: [] });
 
     const accept = JSON.parse(runCli([
       "session",
@@ -439,7 +439,7 @@ describe("session CLI", () => {
       "fts",
       "--json",
     ], cwd, home).stdout);
-    expect(searchAfterAccept[0]).toMatchObject({
+    expect(searchAfterAccept.results[0]).toMatchObject({
       trap_id: 1,
       title: "Do not search pending Markdown candidates as confirmed traps",
     });
@@ -471,7 +471,7 @@ describe("session CLI", () => {
       "--json",
     ], cwd, home);
     expect(mixed.exitCode).toBe(1);
-    expect(mixed.stderr).toContain("Choose only one of --trap-json, --trap-markdown, or --trap-markdown-file");
+    expect(cliError(mixed)).toContain("Choose only one of --trap-json, --trap-markdown, or --trap-markdown-file");
 
     const emptyStdin = runCli([
       "session",
@@ -481,7 +481,7 @@ describe("session CLI", () => {
       "--json",
     ], cwd, home, "");
     expect(emptyStdin.exitCode).toBe(1);
-    expect(emptyStdin.stderr).toContain("Markdown trap input is required");
+    expect(cliError(emptyStdin)).toContain("Markdown trap input is required");
 
     const missingFile = runCli([
       "session",
@@ -491,7 +491,7 @@ describe("session CLI", () => {
       "--json",
     ], cwd, home);
     expect(missingFile.exitCode).toBe(1);
-    expect(missingFile.stderr).toContain("missing.md");
+    expect(cliError(missingFile)).toContain("missing.md");
 
     const missingFix = runCli([
       "session",
@@ -505,7 +505,7 @@ describe("session CLI", () => {
       "--json",
     ], cwd, home);
     expect(missingFix.exitCode).toBe(1);
-    expect(missingFix.stderr).toContain("trap fix is required");
+    expect(cliError(missingFix)).toContain("trap fix is required");
 
     const invalidSeverity = runCli([
       "session",
@@ -521,7 +521,7 @@ describe("session CLI", () => {
       "--json",
     ], cwd, home);
     expect(invalidSeverity.exitCode).toBe(1);
-    expect(invalidSeverity.stderr).toContain("Invalid trap severity");
+    expect(cliError(invalidSeverity)).toContain("Invalid trap severity");
   });
 
   test("captures into a closed post-flight session when no session is active", () => {
@@ -653,8 +653,7 @@ describe("session CLI", () => {
 
     const invalidJson = runCli(["session", "capture", "--trap-json", "{bad", "--json"], cwd, home);
     expect(invalidJson.exitCode).toBe(1);
-    expect(invalidJson.stdout).toBe("");
-    expect(invalidJson.stderr).toContain("Invalid --trap-json");
+    expect(cliError(invalidJson)).toContain("Invalid --trap-json");
 
     const missingFix = runCli([
       "session",
@@ -668,8 +667,7 @@ describe("session CLI", () => {
       "--json",
     ], cwd, home);
     expect(missingFix.exitCode).toBe(1);
-    expect(missingFix.stdout).toBe("");
-    expect(missingFix.stderr).toContain("trap fix is required");
+    expect(cliError(missingFix)).toContain("trap fix is required");
 
     const invalidSeverity = runCli([
       "session",
@@ -685,8 +683,7 @@ describe("session CLI", () => {
       "--json",
     ], cwd, home);
     expect(invalidSeverity.exitCode).toBe(1);
-    expect(invalidSeverity.stdout).toBe("");
-    expect(invalidSeverity.stderr).toContain("Invalid trap severity");
+    expect(cliError(invalidSeverity)).toContain("Invalid trap severity");
   });
 
   test("blocks possible conflicts unless the user accepts lifecycle handling", () => {
@@ -695,7 +692,7 @@ describe("session CLI", () => {
 
     const existing = runCli([
       "add",
-      "--json",
+      "--input-json",
       JSON.stringify({
         title: "Use fetchWrapper for API calls",
         category: "api",
@@ -757,7 +754,7 @@ describe("session CLI", () => {
         expect.objectContaining({
           trap_id: 1,
           scope: "project",
-          reason: "same module",
+          reason: "same module and overlapping topic",
         }),
       ],
     });
@@ -799,7 +796,7 @@ describe("session CLI", () => {
 
     runCli([
       "add",
-      "--json",
+      "--input-json",
       JSON.stringify({
         title: "Use stable API client",
         category: "api",
@@ -858,7 +855,7 @@ describe("session CLI", () => {
         expect.objectContaining({
           trap_id: 1,
           scope: "global",
-          reason: "same module",
+          reason: "same module and overlapping topic",
         }),
       ],
     });
@@ -883,7 +880,7 @@ describe("session CLI", () => {
 
     runCli([
       "add",
-      "--json",
+      "--input-json",
       JSON.stringify({
         title: "Keep request boundary scoped",
         category: "api",
@@ -944,3 +941,10 @@ describe("session CLI", () => {
     });
   });
 });
+
+function cliError(result: { stdout: string; stderr: string }): string {
+  if (result.stderr.trim()) return result.stderr;
+  const payload = JSON.parse(result.stdout) as { success: boolean; error?: string };
+  expect(payload.success).toBe(false);
+  return payload.error ?? "";
+}

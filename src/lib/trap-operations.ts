@@ -9,13 +9,15 @@ import {
   type TrapImportRecord,
   type TrapSearchResult,
 } from "../domain/trap";
-import type { TrapStore, TrapStats } from "./store";
+import type { ScopedSearchDiagnostic, TrapStore, TrapStats } from "./store";
 import type { SearchMode } from "./constants";
 import { toTrapActionCards } from "./search-result-card";
 import type { AddTrapEvidenceResult, TrapMutationResult } from "./trap-mutation-result";
 
 export type TrapListGroup = { traps: Trap[]; scope: string };
 export type TrapSearchGroup = { results: TrapSearchResult[]; scope: string };
+export type TrapSearchOutcome = { groups: TrapSearchGroup[]; diagnostics: ScopedSearchDiagnostic[] };
+export type TrapSearchCards = { cards: TrapActionCard[]; diagnostics: ScopedSearchDiagnostic[] };
 export type { AddTrapEvidenceResult, TrapMutationResult };
 
 export type TrapStatsResult = { project: TrapStats | null; global: TrapStats | null };
@@ -53,7 +55,7 @@ export class TrapOperations {
     return this.store.add(buildTrapInput(args));
   }
 
-  async searchTrapGroups(args: SearchTrapsArgs): Promise<TrapSearchGroup[]> {
+  async searchTrapGroups(args: SearchTrapsArgs): Promise<TrapSearchOutcome> {
     return this.store.search(args.query, {
       category: args.category,
       scope: args.scope,
@@ -68,8 +70,16 @@ export class TrapOperations {
     });
   }
 
-  async searchTrapCards(args: SearchTrapsArgs): Promise<TrapActionCard[]> {
-    return toTrapActionCards(await this.searchTrapGroups(args));
+  async searchTrapCards(args: SearchTrapsArgs): Promise<TrapSearchCards> {
+    const outcome = await this.searchTrapGroups(args);
+    return {
+      cards: toTrapActionCards(outcome.groups),
+      diagnostics: outcome.diagnostics,
+    };
+  }
+
+  embedTrapBestEffort(id: number, scope: string): Promise<boolean> {
+    return this.store.embedTrapBestEffort(id, scope);
   }
 
   getTrapDetails(id: number, scope?: string): TrapDetails | null {
@@ -130,6 +140,10 @@ export class TrapOperations {
     return this.store.supersede(id, supersededById, scope, stateKey);
   }
 
+  transaction<T>(scope: string, callback: () => T): T {
+    return this.store.transaction(scope, callback);
+  }
+
   getStats(scope?: string): TrapStatsResult {
     return this.store.stats({ scope });
   }
@@ -142,7 +156,7 @@ export class TrapOperations {
     return this.store.exportAll({ scope });
   }
 
-  importTraps(records: TrapImportRecord[]): number {
+  importTraps(records: TrapImportRecord[]): ReturnType<TrapStore["importAll"]> {
     return this.store.importAll(records);
   }
 }

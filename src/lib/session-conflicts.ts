@@ -21,9 +21,12 @@ export async function findCandidateConflicts(
   const query = conflictQuery(candidate);
   if (!query) return [];
 
-  const cards = await operations.searchTrapCards({
+  // Search both scopes: a project candidate can duplicate a global trap
+  // (and vice versa), and accepting it with conflict_status "none" hides
+  // the duplication forever.
+  const { cards } = await operations.searchTrapCards({
     query,
-    scope: candidate.trap.scope,
+    scope: undefined,
     status: "active",
     limit: 3,
     mode: "fts",
@@ -56,14 +59,22 @@ function conflictQuery(candidate: CandidateTrap): string {
 }
 
 function conflictReason(candidate: CandidateTrap, existing: Trap): string | null {
+  const candidateTags = candidate.trap.tags ?? [];
+  const existingTags = parseTrapTags(existing.tags);
+  const tagsIntersect = intersects(candidateTags, existingTags);
+  const sharedTitleTokens = titleOverlap(candidate.trap.title, existing.title);
+
+  // A bare module match fires on every trap in the module regardless of
+  // topic, which trains reviewers to reflexively --accept-anyway. Require
+  // topical overlap on top of the module match.
   const sameModule = Boolean(candidate.trap.module && existing.module === candidate.trap.module);
-  if (sameModule) return "same module";
+  if (sameModule && (tagsIntersect || sharedTitleTokens >= 2)) {
+    return "same module and overlapping topic";
+  }
 
   if (pathScopesOverlap(candidate, existing)) return "overlapping path scope";
 
-  const candidateTags = candidate.trap.tags ?? [];
-  const existingTags = parseTrapTags(existing.tags);
-  if (intersects(candidateTags, existingTags) && titleOverlap(candidate.trap.title, existing.title) >= 2) {
+  if (tagsIntersect && sharedTitleTokens >= 2) {
     return "similar title and tags";
   }
 

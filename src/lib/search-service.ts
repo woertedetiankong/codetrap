@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import * as embeddingQueries from "../db/embedding-queries";
 import * as queries from "../db/queries";
-import type { TrapSearchResult } from "../domain/trap";
+import type { TrapSearchDiagnostic, TrapSearchResult } from "../domain/trap";
 import type { SearchMode, TrapStatus } from "./constants";
 import { cosineSimilarity } from "./embedder";
 import {
@@ -31,6 +31,14 @@ export interface SearchOptions {
 
 const DEFAULT_LIMIT = 20;
 
+// Diagnostics ride out-of-band next to the results: stapling them onto
+// result rows loses the signal exactly when it matters most — when the
+// result list is empty.
+export type SearchOutcome = {
+  results: TrapSearchResult[];
+  diagnostics: TrapSearchDiagnostic[];
+};
+
 export class SearchService {
   private readonly policy: TrapSearchPolicy;
   private readonly embeddings: EmbeddingRuntime;
@@ -44,13 +52,13 @@ export class SearchService {
     this.policy = new TrapSearchPolicy(ranking);
   }
 
-  async search(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
-    if (!query.trim()) return [];
+  async search(query: string, opts: SearchOptions = {}): Promise<SearchOutcome> {
+    if (!query.trim()) return { results: [], diagnostics: [] };
 
     const mode = opts.mode ?? "fts";
     switch (mode) {
       case "fts":
-        return this.ftsSearch(query, opts);
+        return { results: this.ftsSearch(query, opts), diagnostics: [] };
       case "semantic":
         return this.semanticSearch(query, opts);
       case "hybrid":
@@ -65,30 +73,61 @@ export class SearchService {
     return this.policy.finalizeResults(this.retrieveFtsCandidates(query, plan), query, opts, plan);
   }
 
-  async semanticSearch(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
+  async semanticSearch(query: string, opts: SearchOptions = {}): Promise<SearchOutcome> {
     const plan = this.policy.plan(opts, DEFAULT_LIMIT);
-    return this.policy.finalizeResults(await this.retrieveSemanticCandidates(query, plan), query, opts, plan);
+    const results = this.policy.finalizeResults(await this.retrieveSemanticCandidates(query, plan), query, opts, plan);
+    return { results, diagnostics: this.partialIndexDiagnostics(opts) };
   }
 
-  async hybridSearch(query: string, opts: SearchOptions = {}): Promise<TrapSearchResult[]> {
+  async hybridSearch(query: string, opts: SearchOptions = {}): Promise<SearchOutcome> {
     const plan = this.policy.plan(opts, DEFAULT_LIMIT);
     const ftsCandidates = this.retrieveFtsCandidates(query, plan);
 
     try {
       const semanticCandidates = await this.retrieveSemanticCandidates(query, plan);
       if (semanticCandidates.length === 0) {
-        return this.policy.withDiagnostics(this.policy.finalizeResults(ftsCandidates, query, opts, plan), {
+        const fallback = {
           code: "semantic_no_candidates",
           message: "Hybrid search used FTS results because no fresh semantic candidates passed the score threshold.",
-        });
+        };
+        return {
+          results: this.policy.withDiagnostics(this.policy.finalizeResults(ftsCandidates, query, opts, plan), fallback),
+          diagnostics: [fallback, ...this.partialIndexDiagnostics(opts)],
+        };
       }
-      return this.policy.fuseAndFinalize(ftsCandidates, semanticCandidates, query, opts, plan);
+      return {
+        results: this.policy.fuseAndFinalize(ftsCandidates, semanticCandidates, query, opts, plan),
+        diagnostics: this.partialIndexDiagnostics(opts),
+      };
     } catch (error) {
-      return this.policy.withDiagnostics(
-        this.policy.finalizeResults(ftsCandidates, query, opts, plan),
-        this.policy.semanticDiagnostic(error)
-      );
+      const diagnostic = this.policy.semanticDiagnostic(error);
+      return {
+        results: this.policy.withDiagnostics(
+          this.policy.finalizeResults(ftsCandidates, query, opts, plan),
+          diagnostic
+        ),
+        diagnostics: [diagnostic],
+      };
     }
+  }
+
+  // Traps without a fresh embedding get only one RRF contribution in hybrid
+  // fusion (and none in semantic mode), so a partially built index quietly
+  // biases ranking against the newest traps. Say so.
+  private partialIndexDiagnostics(opts: SearchOptions): TrapSearchDiagnostic[] {
+    const config = this.embeddings.config();
+    if (!config) return [];
+    const counts = embeddingQueries.getEmbeddingStateCounts(this.db, config, {
+      scope: opts.scope,
+      category: opts.category,
+      status: opts.status,
+    });
+    const unindexed = counts.missing + counts.stale;
+    if (unindexed === 0) return [];
+    return [{
+      code: "partial_index",
+      message: `${unindexed} of ${counts.total} trap(s) lack fresh embeddings (${counts.missing} missing, ${counts.stale} stale) and rank keyword-only. Run \`codetrap embeddings reindex\`.`,
+    }];
   }
 
   private retrieveFtsCandidates(query: string, plan: SearchRetrievalPlan): TrapSearchResult[] {

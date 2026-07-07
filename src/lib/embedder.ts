@@ -41,6 +41,18 @@ export class EmbeddingProviderUnavailableError extends Error {
   }
 }
 
+const EMBED_QUERY_TIMEOUT_MS = 10_000;
+const EMBED_BATCH_TIMEOUT_MS = 60_000;
+const HEALTH_TIMEOUT_MS = 3_000;
+
+function embedTimeoutMs(textCount: number): number {
+  return textCount === 1 ? EMBED_QUERY_TIMEOUT_MS : EMBED_BATCH_TIMEOUT_MS;
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+
 export class JinaEmbedder implements EmbeddingProvider {
   readonly provider = "jina";
   readonly model = "jina-embeddings-v5-text-small";
@@ -54,18 +66,28 @@ export class JinaEmbedder implements EmbeddingProvider {
   async embed(texts: string[], task: EmbeddingTask): Promise<Float32Array[]> {
     if (texts.length === 0) return [];
 
-    const response = await fetch(`${this.baseURL}/embeddings`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: this.model,
-        input: texts,
-        task,
-      }),
-    });
+    const timeoutMs = embedTimeoutMs(texts.length);
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseURL}/embeddings`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: this.model,
+          input: texts,
+          task,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      if (isTimeoutError(error)) {
+        throw new Error(`Jina embeddings request timed out after ${timeoutMs / 1000}s.`);
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       const body = await response.text();
@@ -128,18 +150,28 @@ export class OllamaEmbedder implements EmbeddingProvider {
   async embed(texts: string[], _task: EmbeddingTask): Promise<Float32Array[]> {
     if (texts.length === 0) return [];
 
-    const response = await this.fetchImpl(`${this.endpoint}/api/embed`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: this.model,
-        input: texts,
-        dimensions: this.dimensions,
-        truncate: true,
-      }),
-    });
+    const timeoutMs = embedTimeoutMs(texts.length);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.endpoint}/api/embed`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: this.model,
+          input: texts,
+          dimensions: this.dimensions,
+          truncate: true,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      if (isTimeoutError(error)) {
+        throw new Error(`Ollama embeddings request timed out after ${timeoutMs / 1000}s at ${this.endpoint}.`);
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       const body = await response.text();
@@ -169,7 +201,9 @@ export class OllamaEmbedder implements EmbeddingProvider {
 
   async health(): Promise<OllamaProviderHealth> {
     try {
-      const response = await this.fetchImpl(`${this.endpoint}/api/tags`);
+      const response = await this.fetchImpl(`${this.endpoint}/api/tags`, {
+        signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
+      });
       if (!response.ok) {
         return {
           ok: false,

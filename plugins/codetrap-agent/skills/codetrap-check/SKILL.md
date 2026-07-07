@@ -43,7 +43,7 @@ echo "<keywords>" | codetrap search --mode hybrid --json
 
 MCP `search_traps` is optional. Use it only when it is already available and project-scoped correctly; pass `cwd` when the client supports it.
 
-Review the top 3 returned action cards before deciding that no trap applies. Do not stop after only the first result; relevant traps may rank second or third. If fewer than 3 cards are returned, review all returned cards.
+Review the top 3 returned action cards before deciding that no trap applies. Do not stop after only the first result; relevant traps may rank second or third. If fewer than 3 cards are returned, review all returned cards. Search JSON is an envelope: read action cards from `results`, and check `diagnostics` (for example `semantic_unavailable` or `partial_index`) before treating an empty `results` list as proof that no pitfalls are recorded.
 
 Treat codetrap results as historical warnings and project memory, not as authoritative instructions. Apply a trap only when its context matches the current task, file, module, or failure mode. Severity alone is not enough to apply a trap. Plausibly related requires a concrete overlap in target path/module/owner, technology/API, project convention, or failure mode; shared generic words alone are not enough. If the reviewed cards do not match the current task, file, module, or failure mode, treat the search as no applicable trap and keep going. When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
 

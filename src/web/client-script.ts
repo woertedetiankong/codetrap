@@ -44,6 +44,7 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       candidateId: null,
       candidateView: "inbox",
       candidateDirty: false,
+      detailActionInFlight: false,
       sidebarCollapsed: savedSidebarCollapsed,
       queueCollapsed: savedQueueCollapsed,
       options: { categories: [], severities: [], scopes: [] },
@@ -1303,13 +1304,32 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       draft.classList.toggle("dirty", state.candidateDirty);
     }
 
+    function setDetailActionsDisabled(disabled) {
+      ["save", "accept", "reject", "accept-anyway", "supersede", "supersedes"].forEach((id) => {
+        const control = el(id);
+        if (control) control.disabled = disabled;
+      });
+    }
+
+    async function runDetailAction(action) {
+      if (state.detailActionInFlight) return;
+      state.detailActionInFlight = true;
+      setDetailActionsDisabled(true);
+      try {
+        await action();
+      } finally {
+        state.detailActionInFlight = false;
+        setDetailActionsDisabled(false);
+      }
+    }
+
     function bindDetailActions(candidate) {
       document.querySelectorAll("[data-clean-deleted-candidates]").forEach((button) => {
         button.addEventListener("click", cleanupDeletedCandidates);
       });
       const save = el("save");
       if (!save) return;
-      save.addEventListener("click", async () => {
+      save.addEventListener("click", () => runDetailAction(async () => {
         try {
           const data = await api("/api/candidate/save", {
             method: "POST",
@@ -1321,7 +1341,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         } catch (error) {
           showStatus(error.message, true);
         }
-      });
+      }));
       el("accept").addEventListener("click", () => acceptCandidate({}));
       el("accept-anyway").addEventListener("click", () => acceptCandidate({ acceptAnyway: true }));
       el("supersede").addEventListener("click", () => {
@@ -1329,8 +1349,9 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         if (Number.isNaN(value)) return showStatus(t("status.supersedesRequired"), true);
         acceptCandidate({ supersedesId: value });
       });
-      el("reject").addEventListener("click", async () => {
-        const reason = prompt(t("prompt.rejectReason")) || "";
+      el("reject").addEventListener("click", () => runDetailAction(async () => {
+        const reason = prompt(t("prompt.rejectReason"));
+        if (reason === null) return;
         try {
           const data = await api("/api/candidate/reject", {
             method: "POST",
@@ -1341,10 +1362,14 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         } catch (error) {
           showStatus(error.message, true);
         }
-      });
+      }));
     }
 
-    async function acceptCandidate(extra) {
+    function acceptCandidate(extra) {
+      return runDetailAction(() => submitAcceptCandidate(extra));
+    }
+
+    async function submitAcceptCandidate(extra) {
       try {
         const payload = el("candidate-form")
           ? candidatePayload(state.candidateId, extra)

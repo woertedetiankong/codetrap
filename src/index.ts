@@ -31,8 +31,13 @@ if (args.length === 0) {
     console.log(`Initialized .codetrap/ in ${cwd}`);
   }
 } else {
-  const store = new TrapStore(process.cwd());
-  await run(args, store);
+  try {
+    const store = new TrapStore(process.cwd());
+    await run(args, store);
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
 }
 
 function isHelpArg(arg: string | undefined): boolean {
@@ -44,11 +49,11 @@ function showHelp(): void {
   console.log("");
   console.log("Commands:");
   console.log("  init                  Initialize .codetrap/ in current project");
-  console.log("  add                   Add a trap (use --json for structured input)");
+  console.log("  add                   Add a trap (use --input-json for structured input)");
   console.log("  search <query>        Search traps by keyword/semantic/hybrid mode");
   console.log("  list [--category X]   List traps");
   console.log("  show <id>             Show trap details");
-  console.log("  edit <id> --json '{}' Edit a trap");
+  console.log("  edit <id> --input-json '{}'  Edit a trap");
   console.log("  delete <id>           Delete a trap");
   console.log("  add_trap_evidence     Attach evidence to a trap");
   console.log("  archive_trap          Archive a trap");
@@ -81,8 +86,9 @@ function showHelp(): void {
   console.log("  --project <path>        Project path for web console");
   console.log("  --host <host>           Host for web console (default 127.0.0.1)");
   console.log("  --port <n>              Port for web console (default 4737)");
-  console.log("  --json                  JSON output for search/show/list/stats/doctor; JSON input for add/edit");
-  console.log("  --output-json           JSON output for add/edit when --json is used as input");
+  console.log("  --json                  JSON output (all commands); errors become { success: false, error }");
+  console.log("  --input-json <json>     JSON input for add/edit/add_trap_evidence");
+  console.log("  --output-json           Alias for --json output (kept for compatibility)");
   console.log("  --from-project-path <path>  Source project path for scope repair/migration");
   console.log("  --to-project-path <path>    Destination project path for scope repair/migration");
   console.log("  --dry-run|--apply       Preview setup/scope migration, or apply scope migration");

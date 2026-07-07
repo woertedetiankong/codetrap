@@ -41,6 +41,8 @@ const BUILT_IN_SEARCH_DEFAULTS: SearchDefaults = {
   rerank: true,
 };
 
+const warnedConfigPaths = new Set<string>();
+
 export function loadCodetrapConfig(home = homedir()): CodetrapConfig {
   const path = codetrapConfigPath(home);
   if (!existsSync(path)) return {};
@@ -49,8 +51,14 @@ export function loadCodetrapConfig(home = homedir()): CodetrapConfig {
     const parsed = JSON.parse(readFileSync(path, "utf-8"));
     return normalizeConfig(parsed);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid codetrap config at ${path}: ${message}`);
+    // A corrupt config must not brick every command (including doctor):
+    // warn once per process and degrade to built-in defaults.
+    if (!warnedConfigPaths.has(path)) {
+      warnedConfigPaths.add(path);
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Warning: ignoring invalid codetrap config at ${path}: ${message}. Using defaults.`);
+    }
+    return {};
   }
 }
 

@@ -1,4 +1,5 @@
 import { CATEGORIES, SCOPES, SEARCH_MODES, TRAP_STATUSES } from "../lib/constants";
+import { SESSION_NOTE_KINDS } from "../domain/session";
 import {
   archiveTrapInputSchema,
   supersedeTrapInputSchema,
@@ -11,6 +12,7 @@ const categoryEnum = [...CATEGORIES] as string[];
 const scopeEnum = [...SCOPES] as string[];
 const searchModeEnum = [...SEARCH_MODES] as string[];
 const statusEnum = [...TRAP_STATUSES, "all"] as string[];
+const noteKindEnum = [...SESSION_NOTE_KINDS] as string[];
 const cwdProperty = {
   type: "string",
   description: "Optional working directory used to resolve project scope for this tool call.",
@@ -45,6 +47,23 @@ export const toolDefinitions = [
     description:
       "Record a new coding pitfall. Call this when the user wants to save a lesson learned: an AI mistake pattern and the correct approach.",
     inputSchema: withCwd(trapInputSchema()),
+  },
+  {
+    name: "capture_candidate",
+    description:
+      "Propose a coding pitfall for human review instead of writing it directly. Writes a candidate to the session inbox; a human accepts or rejects it via `codetrap session accept/reject` or the web review console. Prefer this over add_trap when following the capture→review→accept workflow.",
+    inputSchema: captureCandidateSchema(),
+  },
+  {
+    name: "doctor",
+    description:
+      "Diagnose codetrap health for the resolved project: trap and embedding counts, hybrid-search availability, mis-scoped traps, pending candidate review, and recommended next actions. Pass cwd to diagnose a specific project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cwd: cwdProperty,
+      },
+    },
   },
   {
     name: "get_trap",
@@ -127,6 +146,22 @@ function withCwd<T extends { properties: Record<string, unknown> }>(schema: T): 
     ...schema,
     properties: {
       ...schema.properties,
+      cwd: cwdProperty,
+    },
+  };
+}
+
+function captureCandidateSchema() {
+  const base = trapInputSchema();
+  return {
+    ...base,
+    properties: {
+      ...base.properties,
+      goal: { type: "string", description: "Optional session goal used when a new post-flight session is created." },
+      kind: { type: "string", enum: noteKindEnum, description: "Note kind for the capture evidence (default observation)." },
+      related_files: { type: "array", items: { type: "string" }, description: "Files related to this pitfall." },
+      source_ref: { type: "string", description: "Optional source reference (commit, URL, or conversation id)." },
+      evidence_note: { type: "string", description: "Optional note describing the supporting evidence." },
       cwd: cwdProperty,
     },
   };

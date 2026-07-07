@@ -37,7 +37,7 @@ Use the CLI from any directory:
 
 ```bash
 codetrap search "HTTP request timeout" --mode hybrid
-codetrap add --json '{
+codetrap add --input-json '{
   "title": "Dont use fetch() without timeout",
   "category": "api",
   "scope": "project",

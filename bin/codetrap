@@ -1,4 +1,38 @@
-#!/usr/bin/env bun
+#!/bin/sh
+# codetrap runs on the Bun runtime. This shim finds Bun and gives a clear
+# escape hatch on machines that only have Node, instead of dying with
+# "env: 'bun': No such file or directory".
+set -e
 
-import "../src/index.ts";
+resolve_script() {
+  target="$0"
+  while [ -L "$target" ]; do
+    link="$(readlink "$target")"
+    case "$link" in
+      /*) target="$link" ;;
+      *) target="$(dirname "$target")/$link" ;;
+    esac
+  done
+  printf '%s\n' "$target"
+}
 
+SCRIPT_PATH="$(resolve_script)"
+PACKAGE_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+
+if command -v bun >/dev/null 2>&1; then
+  exec bun "$PACKAGE_ROOT/src/index.ts" "$@"
+fi
+
+cat >&2 <<'EOF'
+codetrap requires the Bun runtime, which was not found on your PATH.
+
+Install Bun (then re-run this command):
+  curl -fsSL https://bun.sh/install | bash
+  # or: npm install -g bun
+
+Or download a prebuilt codetrap binary (no Bun needed):
+  https://github.com/woertedetiankong/codetrap/releases
+
+See docs/installation.md in the codetrap package for details.
+EOF
+exit 1

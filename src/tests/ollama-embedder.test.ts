@@ -37,6 +37,32 @@ describe("OllamaEmbedder", () => {
     expect(Array.from(embeddings[1])).toEqual([0, 1, 0]);
   });
 
+  test("passes an abort signal so a wedged server cannot hang search forever", async () => {
+    let capturedSignal: AbortSignal | null | undefined;
+    const fetcher = async (_input: string | URL | Request, init?: RequestInit) => {
+      capturedSignal = init?.signal;
+      return new Response(JSON.stringify({ embeddings: [[1, 0, 0]] }));
+    };
+    const embedder = new OllamaEmbedder({ dimensions: 3, fetch: fetcher });
+
+    await embedder.embed(["text"], "retrieval.query");
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+
+    await embedder.health();
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  test("maps fetch timeouts to a readable error", async () => {
+    const fetcher = async () => {
+      throw new DOMException("The operation timed out.", "TimeoutError");
+    };
+    const embedder = new OllamaEmbedder({ endpoint: "http://127.0.0.1:11434", dimensions: 3, fetch: fetcher });
+
+    await expect(embedder.embed(["text"], "retrieval.query")).rejects.toThrow(
+      "Ollama embeddings request timed out after 10s at http://127.0.0.1:11434."
+    );
+  });
+
   test("rejects unexpected embedding dimensions", async () => {
     const fetcher = async () => new Response(JSON.stringify({
       embeddings: [[1, 0]],

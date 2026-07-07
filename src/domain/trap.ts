@@ -125,11 +125,20 @@ export type TrapImportEvidence = Partial<Omit<TrapEvidence, "related_files">> & 
 };
 
 export type TrapImportRecord = Omit<TrapInput, "tags" | "before_code" | "after_code" | "project_path" | "path_globs"> & {
+  id?: number;
   tags?: string[] | string | null;
   before_code?: string | null;
   after_code?: string | null;
   project_path?: string | null;
   path_globs?: string[] | string | null;
+  status?: string | null;
+  state_key?: string | null;
+  supersedes_id?: number | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  hit_count?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   evidence?: TrapImportEvidence[];
 };
 
@@ -283,7 +292,19 @@ export function supersedeTrapInputSchema(): JsonSchema {
   };
 }
 
+// M7: reject invalid enum values with a readable message before they reach the
+// SQLite CHECK constraint (which would otherwise surface as a raw error).
+function assertTrapEnum(field: "category" | "severity", value: unknown, allowed: readonly string[]): void {
+  if (value === undefined || value === null) return;
+  const text = String(value);
+  if (!allowed.includes(text)) {
+    throw new Error(`Invalid trap ${field}: ${text}. Expected one of: ${allowed.join(", ")}`);
+  }
+}
+
 export function buildTrapInput(args: Record<string, any>): TrapInput {
+  assertTrapEnum("category", args.category, CATEGORIES);
+  assertTrapEnum("severity", args.severity, SEVERITIES);
   return {
     title: args.title,
     category: args.category,
@@ -322,6 +343,8 @@ export function parseTrapStatus(status?: string): TrapStatus | "all" | undefined
 }
 
 export function pickTrapUpdate(args: Record<string, any>): TrapUpdate {
+  assertTrapEnum("category", args.category, CATEGORIES);
+  assertTrapEnum("severity", args.severity, SEVERITIES);
   const update: TrapUpdate = {};
   for (const field of TRAP_UPDATE_FIELDS) {
     if (args[field] !== undefined) {

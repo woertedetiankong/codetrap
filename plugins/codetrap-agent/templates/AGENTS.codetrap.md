@@ -6,7 +6,7 @@ Before non-trivial code edits, check local pitfall memory from the current proje
 codetrap search "<keywords>" --mode hybrid --json
 ```
 
-Review the top 3 action cards, or all returned cards if fewer than 3, before deciding no trap applies. Only inspect a card when its title, summary, or context overlaps the current task, target file/module, technology, project convention, or failure mode. For matching cards, inspect before editing when the card is highly relevant or has `critical` or `error` severity:
+Review the top 3 action cards, or all returned cards if fewer than 3, before deciding no trap applies. Search JSON is an envelope: read action cards from `results`, and check `diagnostics` (for example `semantic_unavailable` or `partial_index`) before treating an empty `results` list as proof that no pitfalls are recorded. Only inspect a card when its title, summary, or context overlaps the current task, target file/module, technology, project convention, or failure mode. For matching cards, inspect before editing when the card is highly relevant or has `critical` or `error` severity:
 
 ```bash
 codetrap show <id> --scope <project|global> --json

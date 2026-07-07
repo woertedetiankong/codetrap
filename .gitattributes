@@ -1,0 +1,12 @@
+# Normalize all text files to LF in the repository and on checkout.
+# Git auto-detects binary files and leaves them untouched.
+* text=auto eol=lf
+
+# Explicitly treat known-binary assets as binary (belt and braces).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.db binary
+*.wasm binary

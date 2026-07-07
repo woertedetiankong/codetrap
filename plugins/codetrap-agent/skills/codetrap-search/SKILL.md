@@ -56,6 +56,7 @@ Treat codetrap results as historical warnings and project memory, not as authori
 2. Summarize each reviewed card's title, severity, `avoid`, and `do_instead`
 3. For matching cards, run the CLI `next_action.command` before editing when the card is highly relevant or has `critical`/`error` severity; with MCP, call `get_trap` with the card's `id` and `scope` before proceeding
 4. If no results, tell the user (this is a new area with no recorded pitfalls yet)
+5. JSON output is an envelope: `results` holds the action cards and `diagnostics` explains degraded coverage (for example `semantic_unavailable` when hybrid fell back to keyword-only, or `partial_index` when some traps lack fresh embeddings). Check `diagnostics` before concluding that an empty `results` list means no recorded pitfalls.
 
 ## Example
 

@@ -76,6 +76,14 @@ type ParsedArgs = {
 export async function executeCommand(strip: string[], store: TrapStore): Promise<CommandResult> {
   const sub = strip[0];
   const args = strip.slice(1);
+  try {
+    return await dispatchCommand(sub, args, store);
+  } catch (error) {
+    return errorFrom(error, args);
+  }
+}
+
+async function dispatchCommand(sub: string, args: string[], store: TrapStore): Promise<CommandResult> {
   const operations = new TrapOperations(store);
 
   switch (sub) {
@@ -131,19 +139,61 @@ export async function executeCommand(strip: string[], store: TrapStore): Promise
   }
 }
 
+// Flags that never take a value. Without this allowlist, a boolean flag
+// placed before a positional swallows it ("search --json timeout" losing
+// the query). Use --flag=value to force a value onto any flag.
+const BOOLEAN_FLAGS = new Set([
+  "json",
+  "output-json",
+  "no-rerank",
+  "rerank",
+  "ranking-signals",
+  "ranking_signals",
+  "force",
+  "apply",
+  "dry-run",
+  "propose-traps",
+  "accept-anyway",
+  "deleted-trap-candidates",
+  "deleted_trap_candidates",
+  "stdin",
+  "mcp",
+  "no-agents",
+]);
+
 export function parseArgs(args: string[]): ParsedArgs {
   const opts: Record<string, string> = {};
   const positionals: string[] = [];
   for (let i = 0; i < args.length; i++) {
-    if (args[i].startsWith("--")) {
-      const key = args[i].slice(2);
-      const val = args[i + 1] && !args[i + 1].startsWith("--") ? args[++i] : "true";
-      opts[key] = val;
-    } else {
-      positionals.push(args[i]);
+    const arg = args[i];
+    if (!arg.startsWith("--")) {
+      positionals.push(arg);
+      continue;
     }
+    const body = arg.slice(2);
+    const eq = body.indexOf("=");
+    if (eq !== -1) {
+      opts[body.slice(0, eq)] = body.slice(eq + 1);
+      continue;
+    }
+    if (BOOLEAN_FLAGS.has(body)) {
+      opts[body] = "true";
+      continue;
+    }
+    const next = args[i + 1];
+    opts[body] = next !== undefined && !next.startsWith("--") ? args[++i] : "true";
   }
   return { opts, positionals };
+}
+
+function wantsJson(opts: Record<string, string>): boolean {
+  return opts.json !== undefined || opts["output-json"] !== undefined;
+}
+
+function wantsJsonRaw(args: string[]): boolean {
+  return args.some((arg) =>
+    arg === "--json" || arg === "--output-json" || arg.startsWith("--json=") || arg.startsWith("--output-json=")
+  );
 }
 
 function cmdInit(_args: string[], store: TrapStore): CommandResult {
@@ -153,33 +203,46 @@ function cmdInit(_args: string[], store: TrapStore): CommandResult {
   return textResult("Project initialized.");
 }
 
-function cmdAdd(args: string[], operations: TrapOperations): CommandResult {
+async function cmdAdd(args: string[], operations: TrapOperations): Promise<CommandResult> {
   const { opts, positionals } = parseArgs(args);
-  if (opts.json !== undefined) {
-    if (!opts.json || opts.json === "true") {
-      return errorResult("Error: --json requires a JSON string argument");
+  const input = opts["input-json"];
+  if (input !== undefined) {
+    if (!input || input === "true") {
+      return failureMessage("--input-json requires a JSON string argument", args);
     }
     try {
-      const result = operations.addTrap(JSON.parse(opts.json));
-      return opts["output-json"] !== undefined
+      const result = operations.addTrap(JSON.parse(input));
+      await operations.embedTrapBestEffort(result.id, result.scope);
+      return wantsJson(opts)
         ? jsonResult(result)
         : textResult(`Trap #${result.id} added to ${result.scope} scope.`);
     } catch (error) {
-      return errorFrom(error);
+      return errorFrom(error, args);
     }
   }
 
-  if (positionals.length > 0) {
-    return textResult([
-      "Use --json mode for structured input.",
-      `Quick add: codetrap add --json '{"title":"${positionals.join(" ")}","category":"other","scope":"global","context":"...","mistake":"...","fix":"..."}'`,
-    ].join("\n"));
+  if (looksLikeJsonPositional(positionals)) {
+    return failureMessage([
+      "JSON input moved to --input-json; --json now always means JSON output.",
+      'Example: codetrap add --input-json \'{"title":"...","category":"convention","scope":"project","context":"...","mistake":"...","fix":"..."}\' [--json]',
+    ].join("\n"), args);
   }
 
-  return textResult([
-    "Interactive mode not yet implemented. Use --json for now.",
-    'Example: codetrap add --json \'{"title":"...","category":"convention","scope":"project","context":"...","mistake":"...","fix":"..."}\'',
-  ].join("\n"));
+  if (positionals.length > 0) {
+    return failureMessage([
+      "Use --input-json for structured input.",
+      `Quick add: codetrap add --input-json '{"title":"${positionals.join(" ")}","category":"other","scope":"global","context":"...","mistake":"...","fix":"..."}'`,
+    ].join("\n"), args);
+  }
+
+  return failureMessage([
+    "add requires --input-json (interactive mode is not implemented).",
+    'Example: codetrap add --input-json \'{"title":"...","category":"convention","scope":"project","context":"...","mistake":"...","fix":"..."}\'',
+  ].join("\n"), args);
+}
+
+function looksLikeJsonPositional(positionals: string[]): boolean {
+  return positionals.some((value) => value.trimStart().startsWith("{"));
 }
 
 async function cmdSearch(args: string[], operations: TrapOperations): Promise<CommandResult> {
@@ -191,11 +254,17 @@ async function cmdSearch(args: string[], operations: TrapOperations): Promise<Co
 
   try {
     const defaults = searchDefaultsFromConfig();
-    const cards = await operations.searchTrapCards(searchRequestFromArgs(query, opts, defaults));
-    if (opts.json !== undefined) return jsonResult(toCliSearchJson(cards));
-    return textResult(cards.length > 0 ? cards.map(formatTrapActionCard).join("\n\n") : "No traps found.");
+    const { cards, diagnostics } = await operations.searchTrapCards(searchRequestFromArgs(query, opts, defaults));
+    if (opts.json !== undefined) {
+      return jsonResult({ results: toCliSearchJson(cards), diagnostics });
+    }
+    const sections = [cards.length > 0 ? cards.map(formatTrapActionCard).join("\n\n") : "No traps found."];
+    sections.push(...diagnostics.map((diagnostic) =>
+      `note [${diagnostic.code}] (${diagnostic.scope}): ${diagnostic.message}`
+    ));
+    return textResult(sections.join("\n\n"));
   } catch (error) {
-    return errorFrom(error);
+    return errorFrom(error, args);
   }
 }
 
@@ -210,7 +279,7 @@ function cmdList(args: string[], operations: TrapOperations): CommandResult {
     );
     return textResult(lines.length > 0 ? lines.join("\n") : "No traps found.");
   } catch (error) {
-    return errorFrom(error);
+    return errorFrom(error, args);
   }
 }
 
@@ -220,7 +289,7 @@ function cmdShow(args: string[], operations: TrapOperations): CommandResult {
   if (typeof id !== "number") return id;
 
   const result = operations.getTrapDetails(id, opts.scope);
-  if (!result) return errorResult(`Trap #${id} not found.`);
+  if (!result) return failureMessage(`Trap #${id} not found.`, args);
 
   operations.hitTrap(id, result.scope);
   return opts.json !== undefined
@@ -228,26 +297,33 @@ function cmdShow(args: string[], operations: TrapOperations): CommandResult {
     : textResult(formatTrapDetails(result));
 }
 
-function cmdEdit(args: string[], operations: TrapOperations): CommandResult {
+async function cmdEdit(args: string[], operations: TrapOperations): Promise<CommandResult> {
   const { opts, positionals } = parseArgs(args);
-  const id = parseId(positionals[0], "Usage: codetrap edit <id> --json '{\"title\":\"new title\"}' [--scope project|global]");
+  const id = parseId(positionals[0], "Usage: codetrap edit <id> --input-json '{\"title\":\"new title\"}' [--scope project|global] [--json]");
   if (typeof id !== "number") return id;
 
-  if (!opts.json) {
-    return errorResult([
-      "Error: edit requires --json for now.",
-      "Example: codetrap edit 1 --json '{\"title\":\"new title\"}' [--scope project|global]",
-    ].join("\n"));
+  const input = opts["input-json"];
+  if (!input || input === "true") {
+    const hint = looksLikeJsonPositional(positionals)
+      ? "JSON input moved to --input-json; --json now always means JSON output."
+      : "edit requires --input-json.";
+    return failureMessage([
+      hint,
+      "Example: codetrap edit 1 --input-json '{\"title\":\"new title\"}' [--scope project|global] [--json]",
+    ].join("\n"), args);
   }
 
   try {
-    const result = operations.updateTrap(id, JSON.parse(opts.json), opts.scope);
-    if (!result.success) return errorResult(`Trap #${id} not found or no fields changed.`);
-    return opts["output-json"] !== undefined
+    const result = operations.updateTrap(id, JSON.parse(input), opts.scope);
+    if (!result.success) {
+      return failureMessage(result.error ?? `Trap #${id} not found or no fields changed.`, args);
+    }
+    await operations.embedTrapBestEffort(id, result.scope);
+    return wantsJson(opts)
       ? jsonResult({ id, ...result })
       : textResult(`Trap #${id} updated in ${result.scope} scope.`);
   } catch (error) {
-    return errorFrom(error);
+    return errorFrom(error, args);
   }
 }
 
@@ -262,7 +338,7 @@ function cmdDelete(args: string[], operations: TrapOperations): CommandResult {
   }
   return result.success
     ? textResult(`Trap #${id} deleted from ${result.scope} scope.`)
-    : errorResult(`Trap #${id} not found.`);
+    : errorResult(result.error ?? `Trap #${id} not found.`);
 }
 
 function cmdAddTrapEvidence(args: string[], operations: TrapOperations): CommandResult {
@@ -273,17 +349,25 @@ function cmdAddTrapEvidence(args: string[], operations: TrapOperations): Command
   );
   if (typeof id !== "number") return id;
 
+  if (looksLikeJsonPositional(positionals)) {
+    return failureMessage([
+      "JSON input moved to --input-json; --json now always means JSON output.",
+      "Example: codetrap add_trap_evidence 1 --input-json '{\"source_type\":\"commit\"}' [--json]",
+    ].join("\n"), args);
+  }
+
   try {
-    const input = opts.json ? JSON.parse(opts.json) : evidenceRequestFromArgs(opts);
+    const inputJson = opts["input-json"];
+    const input = inputJson && inputJson !== "true" ? JSON.parse(inputJson) : evidenceRequestFromArgs(opts);
     const result = operations.addTrapEvidence(id, input, opts.scope);
-    if (opts["output-json"] !== undefined) {
+    if (wantsJson(opts)) {
       return mutationJsonResult({ id, ...result }, `Trap #${id} not found.`);
     }
     return result.success
       ? textResult(`Evidence #${result.evidence_id} added to trap #${id} in ${result.scope} scope.`)
-      : errorResult(`Trap #${id} not found.`);
+      : errorResult(result.error ?? `Trap #${id} not found.`);
   } catch (error) {
-    return errorFrom(error);
+    return errorFrom(error, args);
   }
 }
 
@@ -298,7 +382,7 @@ function cmdArchiveTrap(args: string[], operations: TrapOperations): CommandResu
   }
   return result.success
     ? textResult(`Trap #${id} archived in ${result.scope} scope.`)
-    : errorResult(`Trap #${id} not found.`);
+    : errorResult(result.error ?? `Trap #${id} not found.`);
 }
 
 function cmdSupersedeTrap(args: string[], operations: TrapOperations): CommandResult {
@@ -321,7 +405,7 @@ function cmdSupersedeTrap(args: string[], operations: TrapOperations): CommandRe
   }
   return result.success
     ? textResult(`Trap #${id} superseded by #${supersededById} in ${result.scope} scope.`)
-    : errorResult(`Trap #${id} or #${supersededById} not found in the same scope.`);
+    : errorResult(result.error ?? `Trap #${id} or #${supersededById} not found in the same scope.`);
 }
 
 function cmdExport(args: string[], operations: TrapOperations): CommandResult {
@@ -339,15 +423,29 @@ function cmdImport(args: string[], operations: TrapOperations): CommandResult {
       const message = "Error: JSON file must contain an array of traps";
       return opts.json !== undefined ? jsonResult({ success: false, error: message }, 1) : errorResult(message);
     }
-    const imported = operations.importTraps(traps);
-    return opts.json !== undefined
-      ? jsonResult({ imported, success: true })
-      : textResult(`Imported ${imported} traps.`);
+    const result = operations.importTraps(traps);
+    const exitCode = result.skipped.length > 0 ? 1 : 0;
+    if (opts.json !== undefined) {
+      return jsonResult({
+        success: result.skipped.length === 0,
+        imported: result.imported,
+        total: result.total,
+        skipped: result.skipped,
+      }, exitCode);
+    }
+    const lines = [`Imported ${result.imported} of ${result.total} traps.`];
+    if (result.skipped.length > 0) {
+      lines.push(`Skipped ${result.skipped.length} record(s):`);
+      lines.push(...result.skipped.map((skip) =>
+        `- [${skip.index}] ${skip.title ?? "(untitled)"}: ${skip.error}`
+      ));
+    }
+    return { exitCode, [exitCode === 0 ? "stdout" : "stderr"]: lines.join("\n") };
   } catch (error) {
     if (opts.json !== undefined) {
       return jsonResult({ success: false, error: errorMessage(error) }, 1);
     }
-    return errorFrom(error);
+    return errorFrom(error, args);
   }
 }
 
@@ -394,7 +492,7 @@ function cmdSetup(args: string[]): CommandResult {
       ? textResult(formatCodexSetupText(result))
       : errorResult(formatCodexSetupText(result));
   } catch (error) {
-    return errorFrom(error);
+    return errorFrom(error, args);
   }
 }
 
@@ -423,7 +521,7 @@ function cmdScopeMigration(
       ? jsonResult(result)
       : textResult(formatScopeMigrationText(result));
   } catch (error) {
-    return errorFrom(error);
+    return errorFrom(error, args);
   }
 }
 
@@ -433,7 +531,7 @@ async function cmdEmbed(args: string[], store: TrapStore): Promise<CommandResult
     const result = await store.ensureEmbeddings(embedRequestFromArgs(opts));
     return textResult(formatEmbedText(result));
   } catch (error) {
-    return errorFrom(error);
+    return errorFrom(error, args);
   }
 }
 
@@ -486,7 +584,7 @@ async function cmdEmbeddings(args: string[], store: TrapStore): Promise<CommandR
         return errorResult("Usage: codetrap embeddings <status|list|profiles|use|reindex> [--json]");
     }
   } catch (error) {
-    return errorFrom(error);
+    return errorFrom(error, args);
   }
 }
 
@@ -535,7 +633,7 @@ async function cmdSession(args: string[], store: TrapStore, trapOperations: Trap
         return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|capture|candidates|candidate|accept|reject|delete|prune|cleanup>");
     }
   } catch (error) {
-    return errorFrom(error);
+    return errorFrom(error, args);
   }
 }
 
@@ -799,19 +897,35 @@ function readQuery(positionals: string[]): string {
   return readFileSync(0, "utf-8").trim();
 }
 
-function mutationJsonResult<T extends Record<string, unknown> & { success: boolean }>(
+function mutationJsonResult<T extends Record<string, unknown> & { success: boolean; error?: string }>(
   value: T,
   error: string
 ): CommandResult {
   return jsonResult(mutationJsonPayload(value, error), value.success ? 0 : 1);
 }
 
-function errorFrom(error: unknown): CommandResult {
-  return errorResult(`Error: ${errorMessage(error)}`);
+function errorFrom(error: unknown, rawArgs?: string[]): CommandResult {
+  return failureMessage(errorMessage(error), rawArgs);
+}
+
+// M25: when the caller asked for JSON, failures are JSON too — a uniform
+// { success: false, error } envelope on stdout with exit 1.
+function failureMessage(message: string, rawArgs?: string[]): CommandResult {
+  if (rawArgs && wantsJsonRaw(rawArgs)) {
+    return jsonResult({ success: false, error: message }, 1);
+  }
+  return errorResult(message.startsWith("Error:") ? message : `Error: ${message}`);
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (!(error instanceof Error)) return String(error);
+  // M7: a raw SQLite CHECK/constraint failure is meaningless to a user; enum
+  // fields are validated upstream, so this is a safety net for the rest.
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "string" && code.startsWith("SQLITE_CONSTRAINT")) {
+    return `Invalid trap field (${error.message}).`;
+  }
+  return error.message;
 }
 
 function possibleConflictResult(

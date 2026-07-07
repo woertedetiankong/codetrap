@@ -21,6 +21,11 @@ import {
   toTrapDetailsJson,
 } from "../lib/output-json";
 import { storeForScopeContext } from "../lib/scope-context";
+import { searchDefaultsFromConfig } from "../lib/config";
+import { SessionOperations } from "../lib/session-operations";
+import { SessionStore } from "../lib/session-store";
+import { CANDIDATES_FILE, sessionRelativeFile } from "../lib/session-codec";
+import { buildDoctorReport } from "../lib/doctor";
 import {
   listRequestFromArgs,
   searchRequestFromArgs,
@@ -35,14 +40,51 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
   try {
     switch (name) {
       case "search_traps": {
-        const defaults = { mode: "hybrid" as const, limit: args.limit ?? 20, rerank: true };
-        const cards = await operations.searchTrapCards(searchRequestFromArgs(args.query, args, defaults));
-        return toMcpTextJson(toMcpSearchJson(cards));
+        // Honor user config/env search defaults, same as the CLI (M26).
+        const { cards, diagnostics } = await operations.searchTrapCards(
+          searchRequestFromArgs(args.query, args, searchDefaultsFromConfig())
+        );
+        const warning = projectScopeWarning(scopedStore, args.scope);
+        return toMcpTextJson({ results: toMcpSearchJson(cards), diagnostics, ...(warning ? { warning } : {}) });
       }
 
       case "add_trap": {
         const result = operations.addTrap(args);
+        await operations.embedTrapBestEffort(result.id, result.scope);
         return toMcpTextJson(result);
+      }
+
+      case "capture_candidate": {
+        const projectRoot = scopedStore.getProjectRoot();
+        if (!projectRoot) {
+          return toMcpTextError(
+            "capture_candidate requires a project. Pass cwd for a directory initialized with 'codetrap init'."
+          );
+        }
+        const sessions = new SessionOperations(new SessionStore(projectRoot), operations);
+        const result = sessions.captureCandidate({
+          trap: args,
+          goal: args.goal,
+          kind: args.kind,
+          relatedFiles: args.related_files,
+          sourceRef: args.source_ref,
+          evidenceNote: args.evidence_note,
+        });
+        return toMcpTextJson({
+          success: true,
+          session_id: result.session.id,
+          candidate_id: result.candidate.id,
+          status: result.candidate.status,
+          quality_score: result.candidate.quality_score,
+          candidate_count: result.candidate_count,
+          created_session: result.created_session,
+          closed_session: result.closed_session,
+          duplicate: result.duplicate,
+          candidate_traps_path: sessionRelativeFile(result.session.id, CANDIDATES_FILE),
+          recap_path: result.recap_path,
+          review:
+            "A human reviews this candidate with 'codetrap session accept/reject' or the web review console; capture never writes directly to the trap database.",
+        });
       }
 
       case "get_trap": {
@@ -60,6 +102,7 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
 
       case "update_trap": {
         const result = operations.updateTrap(args.id, args, args.scope);
+        if (result.success) await operations.embedTrapBestEffort(args.id, result.scope);
         return toMcpTextJson(result, !result.success);
       }
 
@@ -86,7 +129,20 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
       case "get_stats": {
         const request = statsRequestFromArgs(args);
         const stats = operations.getStats(request.scope);
-        return toMcpTextJson(toStatsJson(stats, operations.getEmbeddingStats(request.scope)));
+        const warning = projectScopeWarning(scopedStore, request.scope);
+        return toMcpTextJson({
+          ...toStatsJson(stats, operations.getEmbeddingStats(request.scope)),
+          ...(warning ? { warning } : {}),
+        });
+      }
+
+      case "doctor": {
+        const projectRoot = scopedStore.getProjectRoot();
+        const candidateReview = projectRoot
+          ? new SessionOperations(new SessionStore(projectRoot), operations).candidateReviewSummary()
+          : null;
+        const report = await buildDoctorReport(scopedStore, operations, effectiveCwd(args), candidateReview);
+        return toMcpTextJson(report);
       }
 
       default:
@@ -95,6 +151,19 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
   } catch (e: any) {
     return toMcpTextError(e instanceof Error ? e.message : String(e));
   }
+}
+
+// When the server can't resolve a project (its startup cwd isn't inside a
+// codetrap project and the caller passed no cwd), project-scoped traps are
+// silently skipped. Surface a warning so callers know to pass cwd (M27).
+function projectScopeWarning(scopedStore: TrapStore, scope?: unknown): string | undefined {
+  if (scope === "global") return undefined;
+  if (scopedStore.hasProject()) return undefined;
+  return "No project scope resolved for this call: the server's working directory is not inside a codetrap project, so only global traps were considered. Pass `cwd` (the absolute path of the active project) to include project-scoped traps.";
+}
+
+function effectiveCwd(args: ToolArgs): string {
+  return typeof args.cwd === "string" && args.cwd.trim() !== "" ? args.cwd : process.cwd();
 }
 
 export function handleResourceRead(store: TrapStore, uri: string) {

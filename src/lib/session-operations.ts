@@ -1,4 +1,5 @@
 import type { CandidateTrap } from "../domain/session";
+import { parseSessionNoteKind } from "../domain/session";
 import type { Scope } from "./constants";
 import type { TrapOperations } from "./trap-operations";
 import {
@@ -135,6 +136,10 @@ export class SessionOperations {
 
   captureCandidate(request: SessionCaptureRequest): SessionCaptureResult {
     const trap = capturedTrapInput(request.trap);
+    // Validate the note kind before creating any session so an invalid
+    // --kind can't leak a permanently-active auto-session (M21).
+    parseSessionNoteKind(request.kind);
+
     const active = this.sessions.status().session;
     const createdSession = active === null;
     const session = active ?? this.sessions.startSession({
@@ -142,28 +147,42 @@ export class SessionOperations {
       module: trap.module,
       owner: trap.owner,
     });
-    const captured = this.sessions.addCandidate({
-      sessionId: session.id,
-      draft: capturedCandidateDraft(session, {
-        trap,
-        kind: request.kind,
-        relatedFiles: request.relatedFiles,
-        sourceRef: request.sourceRef,
-        evidenceNote: request.evidenceNote,
-      }),
-    });
-    const closed = createdSession ? this.sessions.closeSession(session.id, false) : null;
-    return {
-      success: true,
-      session: closed?.session ?? captured.session,
-      candidate: captured.candidate,
-      candidate_count: this.sessions.candidateDocument(session.id).candidates.length,
-      candidates_path: captured.candidates_path,
-      created_session: createdSession,
-      closed_session: closed !== null,
-      duplicate: captured.duplicate,
-      recap_path: closed?.recap_path ?? null,
-    };
+
+    try {
+      const captured = this.sessions.addCandidate({
+        sessionId: session.id,
+        draft: capturedCandidateDraft(session, {
+          trap,
+          kind: request.kind,
+          relatedFiles: request.relatedFiles,
+          sourceRef: request.sourceRef,
+          evidenceNote: request.evidenceNote,
+        }),
+      });
+      const closed = createdSession ? this.sessions.closeSession(session.id, false) : null;
+      return {
+        success: true,
+        session: closed?.session ?? captured.session,
+        candidate: captured.candidate,
+        candidate_count: this.sessions.candidateDocument(session.id).candidates.length,
+        candidates_path: captured.candidates_path,
+        created_session: createdSession,
+        closed_session: closed !== null,
+        duplicate: captured.duplicate,
+        recap_path: closed?.recap_path ?? null,
+      };
+    } catch (error) {
+      // If we created the auto-session solely for this capture and a later
+      // step failed, remove it so it doesn't linger as the active session (M21).
+      if (createdSession) {
+        try {
+          this.sessions.deleteSession(session.id);
+        } catch {
+          // Best-effort cleanup — surface the original capture error below.
+        }
+      }
+      throw error;
+    }
   }
 
   candidateDocument(id?: string) {
@@ -208,34 +227,44 @@ export class SessionOperations {
       throw new Error(`Trap #${supersedesId} not found in ${String(trap.scope)} scope.`);
     }
 
-    const added = this.traps.addTrap({ ...trap });
-    const evidence = this.traps.addTrapEvidence(added.id, {
-      source_type: "conversation",
-      source_ref: `session:${session.id}`,
-      related_files: candidateRelatedFiles(editedCandidate),
-      note: `Accepted from session candidate ${editedCandidate.id}`,
-    }, added.scope);
-    if (!evidence.success) throw new Error(`Failed to attach evidence to trap #${added.id}.`);
+    // One transaction covers trap+evidence+supersede and the candidate's
+    // proposed→accepted transition: if any step throws (including the
+    // status guard rejecting an already-accepted candidate), no trap is
+    // committed, so a retry cannot insert a duplicate.
+    const accepted = this.traps.transaction(String(trap.scope), () => {
+      const added = this.traps.addTrap({ ...trap });
+      const evidence = this.traps.addTrapEvidence(added.id, {
+        source_type: "conversation",
+        source_ref: `session:${session.id}`,
+        related_files: candidateRelatedFiles(editedCandidate),
+        note: `Accepted from session candidate ${editedCandidate.id}`,
+      }, added.scope);
+      if (!evidence.success) throw new Error(`Failed to attach evidence to trap #${added.id}.`);
 
-    if (supersedesId !== undefined) {
-      const supersede = this.traps.supersedeTrap(supersedesId, added.id, added.scope);
-      if (!supersede.success) throw new Error(`Trap #${supersedesId} could not be superseded by trap #${added.id}.`);
-    }
+      if (supersedesId !== undefined) {
+        const supersede = this.traps.supersedeTrap(supersedesId, added.id, added.scope);
+        if (!supersede.success) throw new Error(`Trap #${supersedesId} could not be superseded by trap #${added.id}.`);
+      }
 
-    return {
-      success: true,
-      ...this.sessions.acceptCandidate(editedCandidate.id, {
-        sessionId: session.id,
-        trap,
-        trapId: added.id,
-        scope: added.scope,
-        evidenceId: evidence.evidence_id,
-        supersededId: supersedesId ?? null,
-        conflictChecked: true,
-        conflictStatus: supersedesId !== undefined ? "confirmed" : conflicts.length > 0 ? "possible" : "none",
-        suggestedAction: supersedesId !== undefined ? "supersede" : "accept",
-      }),
-    };
+      return {
+        success: true as const,
+        ...this.sessions.acceptCandidate(editedCandidate.id, {
+          sessionId: session.id,
+          trap,
+          trapId: added.id,
+          scope: added.scope,
+          evidenceId: evidence.evidence_id,
+          supersededId: supersedesId ?? null,
+          conflictChecked: true,
+          conflictStatus: supersedesId !== undefined ? "confirmed" : conflicts.length > 0 ? "possible" : "none",
+          suggestedAction: supersedesId !== undefined ? "supersede" : "accept",
+        }),
+      };
+    });
+
+    // Outside the transaction: embedding is an HTTP call and best-effort.
+    await this.traps.embedTrapBestEffort(accepted.trap_id, accepted.scope);
+    return accepted;
   }
 
   rejectCandidate(request: SessionRejectRequest) {

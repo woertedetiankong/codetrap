@@ -29,7 +29,7 @@ codetrap --help
 codetrap init
 
 # Record your first trap
-codetrap add --json '{
+codetrap add --input-json '{
   "title": "Dont use fetch() without timeout",
   "category": "api",
   "scope": "global",
@@ -85,7 +85,7 @@ For a quick manual check, agents can run `codetrap search "<task keywords>" --mo
 - **Structured trap recording** — title, category, context, mistake, fix, severity, tags, lifecycle, evidence, before/after code
 - **Session mode capture** — record implementation notes, promote explicit structured trap notes into candidates, and save only user-accepted lessons
 - **Dual scope** — project-scoped (`.codetrap/traps.db`) and global (`~/.codetrap/traps.db`)
-- **CLI-first agent API** — `search/show/list/stats/doctor --json` and stdin query support for shell-friendly automation
+- **CLI-first agent API** — `search/show/list/stats/doctor --json` and stdin query support for shell-friendly automation; `search --json` returns `{ results, diagnostics }` so degraded coverage (semantic fallback, partial embedding index) is visible even when results are empty
 - **Three search modes** — FTS (SQLite FTS5), semantic (local Ollama or Jina embeddings), hybrid (RRF fusion)
 - **Chinese + mixed-language search** — CJK bigram tokenizer, synonym map for Chinese-English terms
 - **MCP server** — optional tools + resources for AI agent integration
@@ -176,8 +176,7 @@ codetrap/
 ├── scripts/                  Release asset and preflight scripts
 ├── docs/                     Architecture + reference docs
 ├── package.json
-├── tsconfig.json
-└── CONTEXT.md                Full project context for AI agents
+└── tsconfig.json
 ```
 
 ## CLI Commands
@@ -185,11 +184,11 @@ codetrap/
 | Command | Description |
 |---|---|
 | `init` | Initialize `.codetrap/` in current project |
-| `add` | Record a confirmed trap (`--json` structured input; interactive mode is not implemented) |
+| `add` | Record a confirmed trap (`--input-json` structured input, `--json` JSON output; interactive mode is not implemented) |
 | `search <query>` | Search traps (--mode fts\|semantic\|hybrid, --category, --scope, --status, --limit, --path, --module, --owner, --no-rerank, --ranking-signals, --json; query can come from stdin) |
 | `list` | List traps (--category, --scope, --status, --path, --module, --owner, --limit, --json) |
 | `show <id>` | Show full trap details (--json) |
-| `edit <id>` | Edit a trap (`--json` input, `--output-json` output) |
+| `edit <id>` | Edit a trap (`--input-json` input, `--json` output) |
 | `delete <id>` | Delete a trap (--json) |
 | `add_trap_evidence <id>` | Attach source/evidence metadata (--output-json) |
 | `archive_trap <id>` | Archive a trap so default search skips it (--json) |
@@ -235,6 +234,8 @@ codetrap session accept cand-001
 Pending candidates are surfaced through `codetrap session status`, `codetrap session list`, `codetrap doctor`, and the local `codetrap web` review console so candidate lessons do not disappear into session files.
 
 `session accept` writes the confirmed lesson through `TrapOperations`, attaches session evidence, and checks similar active traps before saving. `--edit-json` is applied before the conflict check, so edits to scope/module/title/tags/path globs affect both the saved trap and conflict detection. If a possible conflict is found, the candidate keeps its edited trap shape and conflict diagnostics; use `--accept-anyway` to keep both traps or `--supersedes <trap-id>` to preserve lifecycle history.
+
+> **Trust model:** the human-review gate is advisory, not enforced. `codetrap add`, the MCP `add_trap` tool, and `session accept` are all callable by the same agent that captured a candidate — codetrap cannot distinguish a human from an agent invoking the CLI. The packaged agent templates instruct agents to route lessons through the candidate inbox and wait for approval, but a misbehaving or misconfigured agent can write to `traps.db` directly. Review `codetrap list` / the web console periodically if that distinction matters to your workflow.
 
 Session maintenance commands keep temporary files from becoming stale context:
 
@@ -320,7 +321,7 @@ Skills are a convenience layer for Codex users. They do not replace MCP or `AGEN
 External lessons should keep codetrap local-first: let the agent read the URL or pasted source, ask which candidate traps to save, then attach the source as evidence instead of making the CLI crawl the web:
 
 ```bash
-codetrap add --json '{...}' --output-json
+codetrap add --input-json '{...}' --json
 
 codetrap add_trap_evidence <id> \
   --scope global \

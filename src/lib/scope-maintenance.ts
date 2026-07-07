@@ -47,8 +47,17 @@ export function projectDbPath(projectPath: string): string {
   return scopePath.join(projectPath, CODETRAP_DIR, TRAPS_DB_FILE);
 }
 
-export function withReadOnlyScopeRepository<T>(dbPath: string, callback: (repository: TrapRepository) => T): T {
+// M4: a read-only connection still contends with a concurrent writer; without
+// busy_timeout, export/backup fails instantly with SQLITE_BUSY. Mirror the
+// timeout configureDatabase() applies to read/write connections (5000ms).
+export function openReadOnlyDatabase(dbPath: string): Database {
   const db = new Database(dbPath, { readonly: true });
+  db.exec("PRAGMA busy_timeout=5000");
+  return db;
+}
+
+export function withReadOnlyScopeRepository<T>(dbPath: string, callback: (repository: TrapRepository) => T): T {
+  const db = openReadOnlyDatabase(dbPath);
   try {
     return callback(new TrapRepository(db));
   } finally {
@@ -61,7 +70,7 @@ export function backupScopeDatabase(dbPath: string, label: string): string {
   mkdirSync(backupDir, { recursive: true });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupPath = join(backupDir, `${basename(dbPath)}.${label}.${timestamp}.backup`);
-  const db = new Database(dbPath, { readonly: true });
+  const db = openReadOnlyDatabase(dbPath);
   try {
     writeFileSync(backupPath, db.serialize());
   } finally {

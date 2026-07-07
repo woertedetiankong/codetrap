@@ -323,7 +323,17 @@ function registerInitialProject(options: WebServerOptions): string | null {
   }
 }
 
-function serveOnAvailablePort(args: {
+// M32: Bun.serve throws a "Failed to start server. Is port <n> in use?" error
+// whose port-in-use signal lives on error.code, not in the message — so the old
+// String(error).includes("EADDRINUSE") check never matched and the fallback was
+// dead code. Test the code (with a message fallback for older Bun builds).
+export function isAddressInUseError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "EADDRINUSE") return true;
+  return /EADDRINUSE|port \d+ (is |already )?in use|in use\?/i.test(String(error));
+}
+
+export function serveOnAvailablePort(args: {
   host: string;
   port: number;
   fetch: (request: Request) => Promise<Response>;
@@ -337,7 +347,7 @@ function serveOnAvailablePort(args: {
       });
       return { port: server.port ?? port, server };
     } catch (error) {
-      if (String(error).includes("EADDRINUSE")) continue;
+      if (isAddressInUseError(error)) continue;
       throw error;
     }
   }

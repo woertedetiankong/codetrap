@@ -1,3 +1,4 @@
+import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { openDatabase } from "../db/connection";
@@ -13,10 +14,11 @@ import {
   type ScopeMaintenanceCommand,
 } from "./scope-maintenance";
 import {
-  deleteTransferredSourceTraps,
-  importProjectTrapTransfer,
+  insertProjectTrapTransfer,
   type TrapTransferMapping,
 } from "./trap-transfer";
+
+const ATTACHED_SOURCE = "migration_source";
 
 export type ScopeMigrationCommand = ScopeMaintenanceCommand;
 export type ScopeMigrationMode = "dry-run" | "apply";
@@ -189,6 +191,7 @@ function applyScopeMigrationPlan(plan: ScopeMigrationPlan): ScopeMigrationApplyR
   const applyResult = applyScopeMigration(
     plan.sourceDb,
     plan.destinationDb,
+    plan.records,
     plan.fromProjectPath,
     plan.toProjectPath
   );
@@ -223,33 +226,88 @@ function resolveScopeMigrationOptions(options: ScopeMigrationOptions): ResolvedS
   };
 }
 
-function applyScopeMigration(
+// Exported for the atomicity regression test; not part of the public API.
+export function applyScopeMigration(
   sourceDbPath: string,
   destinationDbPath: string,
+  records: TrapExportRecord[],
   fromProjectPath: string,
   toProjectPath: string
 ): { moved: TrapTransferMapping[]; sourceAfter: number; destinationAfter: number } {
-  const sourceDb = openDatabase(sourceDbPath);
-  const destinationDb = openDatabase(destinationDbPath);
-  try {
-    const sourceRepository = new TrapRepository(sourceDb);
-    const destinationRepository = new TrapRepository(destinationDb);
-    const records = sourceRepository.exportProjectTrapsByPath(fromProjectPath);
-    const moved = importProjectTrapTransfer(destinationRepository, records, toProjectPath);
-    const deleted = deleteTransferredSourceTraps(sourceRepository, records);
-    if (deleted !== records.length) {
-      throw new Error(`Expected to delete ${records.length} source traps, deleted ${deleted}.`);
-    }
+  // Bring the source schema up to date before we read/delete from it through
+  // the attached connection (the destination migrates when opened below).
+  openDatabase(sourceDbPath).close();
 
-    return {
-      moved,
-      sourceAfter: sourceRepository.countProjectTrapsByPath(fromProjectPath),
-      destinationAfter: destinationRepository.countProjectTrapsByPath(toProjectPath),
-    };
+  const db = openDatabase(destinationDbPath);
+  try {
+    attachDatabase(db, sourceDbPath, ATTACHED_SOURCE);
+    try {
+      const destinationRepository = new TrapRepository(db);
+      let moved: TrapTransferMapping[] = [];
+
+      // M3: copy into the destination AND delete from the attached source in a
+      // single transaction on a single connection, so any thrown error rolls
+      // back both sides. This replaces the previous two-connection / two-commit
+      // sequence, where a failure between the destination insert and the source
+      // delete left traps duplicated in both DBs. The pre-migration backups
+      // taken before this call cover the residual hard-crash-during-COMMIT
+      // window that WAL cannot make atomic across two separate files.
+      db.transaction(() => {
+        moved = insertProjectTrapTransfer(destinationRepository, records, toProjectPath);
+        const ids = records.map((record) => record.id);
+        const deleted = deleteAttachedTrapsByIds(db, ATTACHED_SOURCE, ids);
+        if (deleted !== records.length) {
+          throw new Error(`Expected to delete ${records.length} source traps, deleted ${deleted}.`);
+        }
+      })();
+
+      return {
+        moved,
+        sourceAfter: countAttachedProjectTraps(db, ATTACHED_SOURCE, fromProjectPath),
+        destinationAfter: destinationRepository.countProjectTrapsByPath(toProjectPath),
+      };
+    } finally {
+      detachDatabase(db, ATTACHED_SOURCE);
+    }
   } finally {
-    sourceDb.close();
-    destinationDb.close();
+    db.close();
   }
+}
+
+// ATTACH/DETACH must run outside any transaction. `alias` is a fixed internal
+// constant (never user input); the path is a trusted, already-resolved db path
+// bound as a SQL string literal.
+function attachDatabase(db: Database, path: string, alias: string): void {
+  db.exec(`ATTACH DATABASE '${path.replace(/'/g, "''")}' AS ${alias}`);
+}
+
+function detachDatabase(db: Database, alias: string): void {
+  db.exec(`DETACH DATABASE ${alias}`);
+}
+
+// Delete straight from the attached source's traps table so FK cascades
+// (evidence, embeddings) and the FTS delete trigger — all defined in the source
+// schema — fire against the source, keeping it consistent.
+function deleteAttachedTrapsByIds(db: Database, alias: string, ids: number[]): number {
+  if (ids.length === 0) return 0;
+  // Count rows that actually existed (like deleteTrapsByIds): run().changes is
+  // unreliable here because the FTS delete trigger and FK cascades inflate it.
+  const exists = db.prepare(`SELECT 1 FROM ${alias}.traps WHERE id = ?`);
+  const del = db.prepare(`DELETE FROM ${alias}.traps WHERE id = ?`);
+  let deleted = 0;
+  for (const id of ids) {
+    if (!exists.get(id)) continue;
+    del.run(id);
+    deleted++;
+  }
+  return deleted;
+}
+
+function countAttachedProjectTraps(db: Database, alias: string, projectPath: string): number {
+  const row = db
+    .query(`SELECT COUNT(*) as c FROM ${alias}.traps WHERE scope = 'project' AND project_path = ?`)
+    .get(projectPath) as { c: number };
+  return row.c;
 }
 
 function buildScopeMigrationResult(

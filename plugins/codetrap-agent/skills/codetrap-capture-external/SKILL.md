@@ -41,7 +41,7 @@ If a candidate is useful but needs a narrower scope, ask for or propose edits be
 For each confirmed candidate, call:
 
 ```bash
-codetrap add --json '<trap-json>' --output-json
+codetrap add --input-json '<trap-json>' --json
 ```
 
 Then attach the external source as evidence:

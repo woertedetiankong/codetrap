@@ -40,7 +40,7 @@ describe("MCP tool payloads", () => {
       owner: "platform",
       ranking_signals: true,
     });
-    const cards = JSON.parse(searchResponse.content[0].text);
+    const cards = JSON.parse(searchResponse.content[0].text).results;
 
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({
@@ -111,7 +111,7 @@ describe("MCP tool payloads", () => {
       mode: "fts",
       cwd: projectCwd,
     });
-    const cards = JSON.parse(searchResponse.content[0].text);
+    const cards = JSON.parse(searchResponse.content[0].text).results;
 
     expect(cards).toHaveLength(1);
     expect(cards[0].next_action.details_args).toEqual({ id: added.id, scope: "project" });
@@ -195,5 +195,114 @@ describe("MCP tool payloads", () => {
     const detail = handleResourceRead(serverStore, uri);
     const details = JSON.parse(detail.contents[0].text);
     expect(details.trap.title).toBe("Resolve resources from cwd");
+  });
+
+  test("search_traps honors config/env search defaults (M26)", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-defaults-"));
+    mkdirSync(join(cwd, ".codetrap"));
+    const store = new TrapStore(cwd, undefined);
+    for (const n of [1, 2, 3]) {
+      store.add({
+        title: `Shared token trap ${n}`,
+        category: "convention",
+        scope: "project",
+        context: "When testing that search honors the configured default limit.",
+        mistake: "Hardcoding the MCP limit ignored the user's configured default.",
+        fix: "Read searchDefaultsFromConfig in the MCP handler like the CLI does.",
+      });
+    }
+
+    const previous = process.env.CODETRAP_SEARCH_LIMIT;
+    process.env.CODETRAP_SEARCH_LIMIT = "1";
+    try {
+      const response = await handleToolCall(store, "search_traps", {
+        query: "Shared token trap",
+        scope: "project",
+        mode: "fts",
+      });
+      // Without the fix the default limit was hardcoded to 20 and all three matched.
+      expect(JSON.parse(response.content[0].text).results).toHaveLength(1);
+    } finally {
+      if (previous === undefined) delete process.env.CODETRAP_SEARCH_LIMIT;
+      else process.env.CODETRAP_SEARCH_LIMIT = previous;
+    }
+  });
+
+  test("search_traps warns when no project scope resolves, and stays silent once cwd resolves one (M27)", async () => {
+    const serverCwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-noproject-"));
+    const projectCwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-withproject-"));
+    mkdirSync(join(projectCwd, ".codetrap"));
+    const store = new TrapStore(serverCwd, undefined);
+
+    const noProject = JSON.parse(
+      (await handleToolCall(store, "search_traps", { query: "anything", scope: "project" })).content[0].text
+    );
+    expect(noProject.warning).toContain("No project scope resolved");
+
+    const resolved = JSON.parse(
+      (await handleToolCall(store, "search_traps", { query: "anything", scope: "project", cwd: projectCwd })).content[0].text
+    );
+    expect(resolved.warning).toBeUndefined();
+  });
+
+  test("capture_candidate proposes a candidate without writing to the trap database (M28)", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-capture-"));
+    mkdirSync(join(cwd, ".codetrap"));
+    const store = new TrapStore(cwd, undefined);
+
+    const response = await handleToolCall(store, "capture_candidate", {
+      title: "Route agent captures through candidate review",
+      category: "convention",
+      scope: "project",
+      context: "When an agent wants to record a lesson through MCP.",
+      mistake: "Writing straight to the trap database skips human review.",
+      fix: "Capture a candidate and let a human accept or reject it.",
+      kind: "correction",
+      related_files: ["src/mcp/server.ts"],
+    });
+    const payload = JSON.parse(response.content[0].text);
+    expect(payload.success).toBe(true);
+    expect(payload.status).toBe("proposed");
+    expect(payload.candidate_id).toMatch(/^cand-\d+$/);
+    expect(payload.candidate_count).toBe(1);
+
+    // The candidate is inbox-only — nothing was committed to traps.db.
+    const list = JSON.parse((await handleToolCall(store, "list_traps", { scope: "project" })).content[0].text);
+    expect(list).toEqual([]);
+  });
+
+  test("capture_candidate requires a resolvable project (M28)", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-capture-noproject-"));
+    const store = new TrapStore(cwd, undefined);
+
+    const response = await handleToolCall(store, "capture_candidate", {
+      title: "No project here",
+      category: "convention",
+      scope: "project",
+      context: "When capturing outside an initialized project.",
+      mistake: "Silently dropping the capture confuses the agent.",
+      fix: "Return a clear error telling the caller to pass cwd.",
+    });
+    expect(response.isError).toBe(true);
+    expect(JSON.parse(response.content[0].text).error).toContain("requires a project");
+  });
+
+  test("doctor returns a health report for the resolved project (M28)", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-doctor-"));
+    mkdirSync(join(cwd, ".codetrap"));
+    const store = new TrapStore(cwd, undefined);
+    store.add({
+      title: "Doctor should count this trap",
+      category: "bug",
+      scope: "project",
+      context: "When diagnosing project health over MCP.",
+      mistake: "MCP-only clients had no way to run doctor.",
+      fix: "Expose a doctor tool that reuses buildDoctorReport.",
+    });
+
+    const report = JSON.parse((await handleToolCall(store, "doctor", { cwd })).content[0].text);
+    expect(report.project_root).not.toBeNull();
+    expect(report.traps.project).toBe(1);
+    expect(Array.isArray(report.next_actions)).toBe(true);
   });
 });

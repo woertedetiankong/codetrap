@@ -99,6 +99,65 @@ describe("semantic and hybrid search", () => {
     expect(results[0]?.sources).toEqual(["fts", "semantic"]);
   });
 
+  test("diagnostics survive an empty result set", async () => {
+    const repo = new TrapRepository(openDatabase(":memory:"));
+    const outcome = await repo.searchWithDiagnostics("anything at all", { mode: "hybrid" });
+    expect(outcome.results).toEqual([]);
+    expect(outcome.diagnostics[0]?.code).toBe("semantic_unavailable");
+  });
+
+  test("hybrid search reports a partial embedding index out-of-band", async () => {
+    const repo = new TrapRepository(openDatabase(":memory:"), new MockEmbedder());
+    repo.add(trap({ title: "Use fetchWrapper for HTTP requests" }));
+    await repo.ensureEmbeddings();
+    repo.add(trap({
+      title: "Newest fetch retry trap",
+      category: "api",
+      tags: ["fetch"],
+      context: "When retrying fetch calls.",
+      mistake: "New traps rank keyword-only until reindexed.",
+      fix: "Surface the partial index instead of hiding the bias.",
+    }));
+
+    const outcome = await repo.searchWithDiagnostics("fetch", { mode: "hybrid" });
+    expect(outcome.diagnostics.map((diagnostic) => diagnostic.code)).toContain("partial_index");
+    expect(outcome.diagnostics.find((diagnostic) => diagnostic.code === "partial_index")?.message)
+      .toContain("1 of 2");
+  });
+
+  test("semantic mode reports stale embeddings instead of silently dropping traps", async () => {
+    const repo = new TrapRepository(openDatabase(":memory:"), new MockEmbedder());
+    const id = repo.add(trap());
+    await repo.ensureEmbeddings();
+    repo.update(id, { fix: "Use the new fetchWrapper helper." });
+
+    const outcome = await repo.searchWithDiagnostics("remote API calls", { mode: "semantic" });
+    expect(outcome.results).toEqual([]);
+    const partial = outcome.diagnostics.find((diagnostic) => diagnostic.code === "partial_index");
+    expect(partial?.message).toContain("1 of 1");
+    expect(partial?.message).toContain("embeddings reindex");
+  });
+
+  test("new and edited traps are embedded on write when a provider is available", async () => {
+    const repo = new TrapRepository(openDatabase(":memory:"), new MockEmbedder());
+    const id = repo.add(trap());
+
+    expect(await repo.ensureEmbeddingForTrap(id)).toBe(true);
+    expect(repo.getEmbedding(id)).not.toBeNull();
+    // Fresh embedding: nothing to do on a second call.
+    expect(await repo.ensureEmbeddingForTrap(id)).toBe(false);
+
+    repo.update(id, { fix: "Use the new fetchWrapper helper." });
+    expect(repo.getEmbedding(id)).toBeNull();
+    expect(await repo.ensureEmbeddingForTrap(id)).toBe(true);
+    expect(repo.getEmbedding(id)).not.toBeNull();
+
+    // No provider: a quiet no-op, not an error.
+    const bare = new TrapRepository(openDatabase(":memory:"));
+    const bareId = bare.add(trap());
+    expect(await bare.ensureEmbeddingForTrap(bareId)).toBe(false);
+  });
+
   test("embedding generation runs in batches and reports batch count", async () => {
     const repo = new TrapRepository(openDatabase(":memory:"), new MockEmbedder());
     repo.add(trap({ title: "Use fetchWrapper for HTTP requests" }));

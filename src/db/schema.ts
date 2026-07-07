@@ -1,6 +1,10 @@
 import type { Database } from "bun:sqlite";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { CATEGORIES, SEVERITIES, SCOPES, SCHEMA_VERSION } from "../lib/constants";
 import { buildTrapSearchText } from "../lib/trap-search-document";
+
+const LEGACY_EMBEDDINGS_TABLE = "trap_embeddings_legacy_v5";
 
 export function initSchema(db: Database): void {
   // Schema version table — add migrations here when breaking schema changes are needed
@@ -10,20 +14,53 @@ export function initSchema(db: Database): void {
     );
   `);
 
-  const versionRow = db.query("SELECT version FROM schema_version").get() as { version: number } | null;
-  const current = versionRow?.version ?? 0;
-
-  if (current < SCHEMA_VERSION) {
-    applyMigrations(db, current);
+  const current = readSchemaVersion(db);
+  if (current > SCHEMA_VERSION) {
+    throw new Error(
+      `Database schema version ${current} is newer than this codetrap build (supports up to ${SCHEMA_VERSION}). Upgrade codetrap.`
+    );
   }
+  if (current === SCHEMA_VERSION && !tableExists(db, LEGACY_EMBEDDINGS_TABLE)) return;
 
-  if (!versionRow) {
-    db.exec(`
-      INSERT INTO schema_version (version) VALUES (${SCHEMA_VERSION})
-    `);
-  } else if (current === 0) {
-    db.prepare("UPDATE schema_version SET version = ?").run(SCHEMA_VERSION);
-  }
+  backupBeforeMigration(db, current);
+
+  // One immediate transaction serializes concurrent openers and makes the
+  // whole migration all-or-nothing: a crash mid-way rolls back instead of
+  // leaving half-renamed tables behind.
+  db.transaction(() => {
+    const version = readSchemaVersion(db);
+    if (version < SCHEMA_VERSION) {
+      setSchemaVersion(db, version);
+      applyMigrations(db, version);
+    } else if (tableExists(db, LEGACY_EMBEDDINGS_TABLE)) {
+      // A pre-fix binary crashed between renaming trap_embeddings and copying
+      // it, then stamped v6 with an empty table on the next open. Finish the
+      // copy instead of orphaning the legacy rows forever.
+      copyLegacyEmbeddings(db);
+    }
+  }).immediate();
+}
+
+function readSchemaVersion(db: Database): number {
+  const row = db.query("SELECT MAX(version) AS version FROM schema_version").get() as { version: number | null };
+  return row.version ?? 0;
+}
+
+function setSchemaVersion(db: Database, version: number): void {
+  db.exec("DELETE FROM schema_version");
+  db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(version);
+}
+
+function backupBeforeMigration(db: Database, fromVersion: number): void {
+  const filename = db.filename;
+  if (!filename || filename === ":memory:") return;
+  if (!tableExists(db, "traps")) return;
+
+  const backupDir = join(dirname(filename), "backups");
+  mkdirSync(backupDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = join(backupDir, `${basename(filename)}.pre-migration-v${fromVersion}.${timestamp}.backup`);
+  writeFileSync(backupPath, db.serialize());
 }
 
 function applyMigrations(db: Database, from: number): void {
@@ -195,15 +232,25 @@ function migrateEmbeddingProfiles(db: Database): void {
     );
   `);
 
+  if (tableExists(db, LEGACY_EMBEDDINGS_TABLE)) {
+    // Resume a migration that a pre-fix binary abandoned after the rename.
+    createProfileAwareEmbeddingsTable(db);
+    copyLegacyEmbeddings(db);
+    return;
+  }
+
   const hasTrapEmbeddings = tableExists(db, "trap_embeddings");
   if (!hasTrapEmbeddings || columnExists(db, "trap_embeddings", "profile_id")) {
     createProfileAwareEmbeddingsTable(db);
     return;
   }
 
-  db.exec("ALTER TABLE trap_embeddings RENAME TO trap_embeddings_legacy_v5");
+  db.exec(`ALTER TABLE trap_embeddings RENAME TO ${LEGACY_EMBEDDINGS_TABLE}`);
   createProfileAwareEmbeddingsTable(db);
+  copyLegacyEmbeddings(db);
+}
 
+function copyLegacyEmbeddings(db: Database): void {
   db.exec(`
     INSERT OR IGNORE INTO embedding_profiles (
       id, provider, model, dimensions, passage_version, created_at, updated_at
@@ -216,10 +263,10 @@ function migrateEmbeddingProfiles(db: Database): void {
       passage_version,
       MIN(updated_at),
       MAX(updated_at)
-    FROM trap_embeddings_legacy_v5
+    FROM ${LEGACY_EMBEDDINGS_TABLE}
     GROUP BY provider, model, dimensions, passage_version;
 
-    INSERT OR REPLACE INTO trap_embeddings (
+    INSERT OR IGNORE INTO trap_embeddings (
       trap_id, profile_id, passage_hash, embedding, updated_at
     )
     SELECT
@@ -228,9 +275,10 @@ function migrateEmbeddingProfiles(db: Database): void {
       passage_hash,
       embedding,
       updated_at
-    FROM trap_embeddings_legacy_v5;
+    FROM ${LEGACY_EMBEDDINGS_TABLE}
+    WHERE trap_id IN (SELECT id FROM traps);
 
-    DROP TABLE trap_embeddings_legacy_v5;
+    DROP TABLE ${LEGACY_EMBEDDINGS_TABLE};
   `);
 }
 

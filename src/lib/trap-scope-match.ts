@@ -48,7 +48,23 @@ export function normalizePath(path: string): string {
 
 export function globMatchesPath(glob: string, path: string): boolean {
   const normalizedGlob = normalizePath(glob);
-  return new RegExp(`^${globToRegExp(normalizedGlob)}$`).test(path);
+  const regex = new RegExp(`^${globToRegExp(normalizedGlob)}$`);
+  if (regex.test(path)) return true;
+
+  // A relative glob can never literally match an absolute path. Global-scope
+  // traps have no project root to relativize against, so try each suffix of
+  // the path's segments instead of silently excluding the trap.
+  if (!normalizedGlob.startsWith("/") && isAbsoluteNormalizedPath(path)) {
+    const segments = path.split("/").filter(Boolean);
+    for (let start = 0; start < segments.length; start++) {
+      if (regex.test(segments.slice(start).join("/"))) return true;
+    }
+  }
+  return false;
+}
+
+function isAbsoluteNormalizedPath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:\//.test(path);
 }
 
 function pathCandidates(trap: Trap, path: string): string[] {
@@ -94,8 +110,15 @@ function globToRegExp(glob: string): string {
     const char = glob[i];
     const next = glob[i + 1];
     if (char === "*" && next === "*") {
-      out += ".*";
-      i++;
+      if (glob[i + 2] === "/") {
+        // `**/` matches zero or more directories, so `**/*.ts` also matches
+        // top-level files like `index.ts`.
+        out += "(?:[^/]*/)*";
+        i += 2;
+      } else {
+        out += ".*";
+        i++;
+      }
     } else if (char === "*") {
       out += "[^/]*";
     } else if (char === "?") {

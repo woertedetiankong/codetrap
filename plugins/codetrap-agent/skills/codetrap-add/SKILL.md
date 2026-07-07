@@ -51,7 +51,7 @@ Pick the best-fitting category:
 Convert the user's description into this JSON structure, show the draft to the user, and ask for explicit confirmation before writing it as confirmed memory:
 
 ```bash
-codetrap add --json '{
+codetrap add --input-json '{
   "title": "<one-line summary>",
   "category": "<category>",
   "scope": "<project|global>",

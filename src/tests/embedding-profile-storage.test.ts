@@ -1,5 +1,8 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { openDatabase } from "../db/connection";
 import { TrapRepository } from "../db/repository";
 import { initSchema } from "../db/schema";
@@ -151,6 +154,116 @@ describe("embedding profile storage", () => {
       });
     } finally {
       db.close();
+    }
+  });
+
+  test("recovers legacy embeddings orphaned by an interrupted v5→v6 migration", () => {
+    const db = new Database(":memory:");
+    try {
+      // Simulate the crash state a pre-fix binary left behind: version already
+      // stamped 6, new-shape table empty, legacy rows orphaned.
+      db.exec(`
+        CREATE TABLE schema_version (version INTEGER NOT NULL);
+        INSERT INTO schema_version (version) VALUES (6);
+
+        CREATE TABLE traps (
+          id INTEGER PRIMARY KEY
+        );
+        INSERT INTO traps (id) VALUES (1);
+
+        CREATE TABLE embedding_profiles (
+          id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          model TEXT NOT NULL,
+          dimensions INTEGER NOT NULL,
+          passage_version INTEGER NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE trap_embeddings (
+          trap_id INTEGER NOT NULL REFERENCES traps(id) ON DELETE CASCADE,
+          profile_id TEXT NOT NULL REFERENCES embedding_profiles(id) ON DELETE CASCADE,
+          passage_hash TEXT NOT NULL,
+          embedding BLOB NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (trap_id, profile_id)
+        );
+
+        CREATE TABLE trap_embeddings_legacy_v5 (
+          trap_id INTEGER PRIMARY KEY,
+          provider TEXT NOT NULL,
+          model TEXT NOT NULL,
+          dimensions INTEGER NOT NULL,
+          passage_version INTEGER NOT NULL,
+          passage_hash TEXT NOT NULL,
+          embedding BLOB NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+      db.prepare(`
+        INSERT INTO trap_embeddings_legacy_v5 (
+          trap_id, provider, model, dimensions, passage_version, passage_hash, embedding, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        1,
+        "jina",
+        "jina-embeddings-v5-text-small",
+        1024,
+        1,
+        "legacy-hash",
+        encodeEmbedding(new Float32Array([1, 0])),
+        "2026-06-06 00:00:00"
+      );
+
+      initSchema(db);
+
+      expect(db.query("SELECT trap_id, profile_id, passage_hash FROM trap_embeddings").get()).toEqual({
+        trap_id: 1,
+        profile_id: "jina:jina-embeddings-v5-text-small:1024:p1",
+        passage_hash: "legacy-hash",
+      });
+      expect(
+        db.query("SELECT name FROM sqlite_master WHERE name = 'trap_embeddings_legacy_v5'").get()
+      ).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
+  test("refuses to open a database from a newer codetrap", () => {
+    const db = new Database(":memory:");
+    try {
+      db.exec(`
+        CREATE TABLE schema_version (version INTEGER NOT NULL);
+        INSERT INTO schema_version (version) VALUES (99);
+      `);
+      expect(() => initSchema(db)).toThrow(/newer than this codetrap/);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("snapshots a file-backed database before applying migrations", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codetrap-migration-backup-"));
+    const dbPath = join(dir, "traps.db");
+    const first = openDatabase(dbPath);
+    first.close();
+
+    // Force a re-migration on the next open.
+    const downgrade = new Database(dbPath);
+    downgrade.exec("UPDATE schema_version SET version = 5");
+    downgrade.close();
+
+    const reopened = openDatabase(dbPath);
+    try {
+      expect((reopened.query("SELECT version FROM schema_version").get() as { version: number }).version).toBe(6);
+      const backups = readdirSync(join(dir, "backups"));
+      expect(backups).toHaveLength(1);
+      expect(backups[0]).toContain("traps.db.pre-migration-v5.");
+    } finally {
+      reopened.close();
     }
   });
 

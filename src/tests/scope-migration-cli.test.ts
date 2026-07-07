@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { openDatabase } from "../db/connection";
 import * as queries from "../db/queries";
+import { applyScopeMigration } from "../lib/scope-migration";
 import { TrapStore } from "../lib/store";
 import { runCli, tempDir, tempProjectDir, trap } from "./helpers";
 
@@ -220,6 +221,86 @@ describe("scope repair and project migration CLI", () => {
     ], destination, home);
     expect(bothModes.exitCode).toBe(1);
     expect(bothModes.stderr).toContain("choose either --dry-run or --apply");
+  });
+
+  test("apply keeps the source FTS index and evidence consistent after the attached delete (M3)", () => {
+    const home = tempDir("codetrap-home-", { realpath: true });
+    const source = tempProjectDir("codetrap-m3-fts-source-", { realpath: true });
+    const destination = tempProjectDir("codetrap-m3-fts-dest-", { realpath: true });
+    const sourceStore = new TrapStore(source, undefined);
+    const moved = sourceStore.add(trap({ scope: "project", title: "Indexed source trap", category: "bug" }));
+    sourceStore.addEvidence(moved.id, { source_type: "commit", source_ref: "sha1" }, "project");
+
+    const result = runCli([
+      "migrate-project",
+      "--from-project-path",
+      source,
+      "--to-project-path",
+      destination,
+      "--apply",
+      "--json",
+    ], destination, home);
+    expect(result.exitCode).toBe(0);
+
+    const sourceDb = openDatabase(join(source, ".codetrap", "traps.db"));
+    try {
+      expect((sourceDb.query("SELECT COUNT(*) as c FROM traps").get() as { c: number }).c).toBe(0);
+      // The attached DELETE must fire the source FTS delete trigger and the
+      // evidence FK cascade, or the source keeps orphaned index/evidence rows.
+      expect(sourceDb.query("SELECT rowid FROM traps_fts WHERE traps_fts MATCH ?").all("Indexed")).toHaveLength(0);
+      expect((sourceDb.query("SELECT COUNT(*) as c FROM trap_evidence").get() as { c: number }).c).toBe(0);
+    } finally {
+      sourceDb.close();
+    }
+
+    const destTrap = new TrapStore(destination, undefined)
+      .list({ scope: "project", status: "all" })[0].traps
+      .find((candidate) => candidate.title === "Indexed source trap");
+    expect(destTrap?.project_path).toBe(destination);
+  });
+
+  test("a failed apply rolls back both databases — no duplication, no loss (M3)", () => {
+    const source = tempProjectDir("codetrap-m3-rollback-source-", { realpath: true });
+    const destination = tempProjectDir("codetrap-m3-rollback-dest-", { realpath: true });
+    const sourceDbPath = join(source, ".codetrap", "traps.db");
+    const destDbPath = join(destination, ".codetrap", "traps.db");
+
+    const seedSource = openDatabase(sourceDbPath);
+    let records;
+    try {
+      queries.insertTrap(seedSource, trap({ scope: "project", title: "Must survive a failed migration", project_path: source }));
+      records = queries.exportProjectTrapsByPath(seedSource, source);
+    } finally {
+      seedSource.close();
+    }
+    const seedDest = openDatabase(destDbPath);
+    try {
+      queries.insertTrap(seedDest, trap({ scope: "project", title: "Pre-existing destination trap", project_path: destination }));
+    } finally {
+      seedDest.close();
+    }
+
+    // Append a ghost whose source id does not exist, so the delete count won't
+    // match the insert count and the transaction throws mid-flight — after the
+    // destination inserts have already run. The fix must roll back both sides.
+    const withGhost = [...records, { ...records[0], id: records[0].id + 100000, title: "ghost" }];
+    expect(() => applyScopeMigration(sourceDbPath, destDbPath, withGhost, source, destination))
+      .toThrow(/Expected to delete 2 source traps, deleted 1/);
+
+    const afterSource = openDatabase(sourceDbPath);
+    try {
+      // Source keeps its trap (the delete was rolled back).
+      expect(queries.countProjectTrapsByPath(afterSource, source)).toBe(1);
+    } finally {
+      afterSource.close();
+    }
+    const afterDest = openDatabase(destDbPath);
+    try {
+      // Destination gained nothing (both inserts were rolled back).
+      expect(queries.countProjectTrapsByPath(afterDest, destination)).toBe(1);
+    } finally {
+      afterDest.close();
+    }
   });
 });
 

@@ -3,6 +3,7 @@ import type { Scope } from "./constants";
 export type TrapMutationResult = {
   scope: Scope;
   success: boolean;
+  error?: string;
 };
 
 export type AddTrapEvidenceResult = TrapMutationResult & {
@@ -28,9 +29,9 @@ export function resolveScopedMutation<TTarget extends ScopedMutationTarget, TExt
   return { scope: opts.fallbackScope ?? "global", ...fallback() };
 }
 
-export function mutationJsonPayload<T extends { success: boolean }>(
+export function mutationJsonPayload<T extends { success: boolean; error?: string }>(
   value: T,
   error: string
 ): T | (T & { error: string }) {
-  return value.success ? value : { ...value, error };
+  return value.success ? value : { ...value, error: value.error ?? error };
 }

@@ -65,7 +65,7 @@ export function formatSessionNote(note: SessionNote): string {
   const lines = [
     `### ${note.created_at} ${note.kind}`,
     "",
-    note.text.trim(),
+    escapeNoteBody(note.text.trim()),
   ];
   if (note.source_ref) {
     lines.push("", `Source ref: ${note.source_ref}`);
@@ -200,6 +200,16 @@ function parseNoteBlock(created_at: string, kind: SessionNote["kind"], lines: st
   let inRelatedFiles = false;
 
   for (const line of trimOuterBlankLines(lines)) {
+    // Escaped body lines round-trip verbatim and are never treated as
+    // metadata, so a note body can't inject a note header, Source ref, or
+    // Related files block (M20).
+    const unescaped = unescapeNoteBodyLine(line);
+    if (unescaped !== null) {
+      inRelatedFiles = false;
+      textLines.push(unescaped);
+      continue;
+    }
+
     const sourceMatch = line.match(/^Source ref:\s*(.+)$/);
     if (sourceMatch) {
       sourceRef = sourceMatch[1].trim() || null;
@@ -251,4 +261,35 @@ function formatAcceptedCandidates(candidates: CandidateTrap[]): string {
 
 function isSessionNoteKind(value: string): value is SessionNote["kind"] {
   return (SESSION_NOTE_KINDS as readonly string[]).includes(value);
+}
+
+// A note body line is "structural" if, written verbatim, the notes parser
+// would misread it as a note header or hoist it into Source ref / Related
+// files metadata. We escape such lines (and any line already backslash-armored
+// over a structural core) with a single leading backslash so the round-trip is
+// lossless and a note body cannot inject metadata (M20). This protects fenced
+// code too, since escaping is line-based and fence-agnostic.
+function isStructuralNoteLine(line: string): boolean {
+  const header = line.match(/^###\s+(\S+)\s+(\S+)\s*$/);
+  if (header && isSessionNoteKind(header[2])) return true;
+  if (/^Source ref:\s*(.+)$/.test(line)) return true;
+  if (line.trim() === "Related files:") return true;
+  return false;
+}
+
+function escapeNoteBody(text: string): string {
+  return text.split("\n").map(escapeNoteBodyLine).join("\n");
+}
+
+function escapeNoteBodyLine(line: string): string {
+  const core = line.replace(/^\\+/, "");
+  return isStructuralNoteLine(core) ? `\\${line}` : line;
+}
+
+// Returns the unescaped line when `line` is an escaped structural line (strip
+// exactly one backslash), or null when it is ordinary text to be read as-is.
+function unescapeNoteBodyLine(line: string): string | null {
+  if (!line.startsWith("\\")) return null;
+  const core = line.replace(/^\\+/, "");
+  return isStructuralNoteLine(core) ? line.slice(1) : null;
 }
