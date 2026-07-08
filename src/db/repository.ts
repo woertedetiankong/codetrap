@@ -158,6 +158,14 @@ export class TrapRepository {
     return queries.countProjectTrapsByPath(this.db, projectPath);
   }
 
+  readProjectMeta(): queries.ProjectMetaRow | null {
+    return queries.readProjectMeta(this.db);
+  }
+
+  upsertProjectMeta(projectId: string, projectPath: string | null): void {
+    queries.upsertProjectMeta(this.db, projectId, projectPath);
+  }
+
   transaction<T>(callback: () => T): T {
     return this.db.transaction(callback)();
   }

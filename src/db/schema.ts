@@ -32,10 +32,13 @@ export function initSchema(db: Database): void {
     if (version < SCHEMA_VERSION) {
       setSchemaVersion(db, version);
       applyMigrations(db, version);
-    } else if (tableExists(db, LEGACY_EMBEDDINGS_TABLE)) {
-      // A pre-fix binary crashed between renaming trap_embeddings and copying
-      // it, then stamped v6 with an empty table on the next open. Finish the
-      // copy instead of orphaning the legacy rows forever.
+    }
+    // A pre-fix binary crashed between renaming trap_embeddings and copying it,
+    // then stamped v6 with an empty table on the next open. Finish the copy
+    // instead of orphaning the legacy rows forever. This runs independent of the
+    // version bump above so a DB already at the current version (or a DB carried
+    // past v6 by a later migration) still gets its orphaned legacy rows copied.
+    if (tableExists(db, LEGACY_EMBEDDINGS_TABLE)) {
       copyLegacyEmbeddings(db);
     }
   }).immediate();
@@ -217,6 +220,25 @@ function applyMigrations(db: Database, from: number): void {
     migrateEmbeddingProfiles(db);
     db.prepare("UPDATE schema_version SET version = ?").run(6);
   }
+
+  if (from < 7) {
+    // A1: give each database a single-row record of its stable project identity
+    // (minted in .codetrap/project.json). Additive — existing rows are untouched
+    // and the row is populated lazily by the store, so this migration is a pure
+    // table create with no data rewrite.
+    createProjectMetaTable(db);
+    db.prepare("UPDATE schema_version SET version = ?").run(7);
+  }
+}
+
+function createProjectMetaTable(db: Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_meta (
+      project_id TEXT NOT NULL,
+      project_path TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
 }
 
 function migrateEmbeddingProfiles(db: Database): void {

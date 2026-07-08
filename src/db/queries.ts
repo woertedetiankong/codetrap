@@ -328,6 +328,25 @@ export function insertTrapRecord(db: Database, record: TrapRecordInsert): number
   return Number(result.lastInsertRowid);
 }
 
+export type ProjectMetaRow = { project_id: string; project_path: string | null };
+
+export function readProjectMeta(db: Database): ProjectMetaRow | null {
+  return db
+    .query("SELECT project_id, project_path FROM project_meta LIMIT 1")
+    .get() as ProjectMetaRow | null;
+}
+
+// Single-row table (mirrors schema_version): rewrite it so a project DB always
+// reflects exactly one stable identity, even if a prior write left a stray row.
+export function upsertProjectMeta(db: Database, projectId: string, projectPath: string | null): void {
+  db.transaction(() => {
+    db.exec("DELETE FROM project_meta");
+    db.prepare(
+      "INSERT INTO project_meta (project_id, project_path, updated_at) VALUES (?, ?, datetime('now'))"
+    ).run(projectId, projectPath);
+  })();
+}
+
 export function updateTrapSupersedesId(db: Database, id: number, supersedesId: number): boolean {
   const result = db.prepare("UPDATE traps SET supersedes_id = ? WHERE id = ?").run(supersedesId, id);
   return result.changes > 0;

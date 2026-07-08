@@ -49,8 +49,13 @@ export const DEFAULT_TRAP_STATUS: TrapStatus = "active";
 
 // Increment this when schema changes in a breaking way.
 // Migrations are stored in src/db/migrations.ts
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 // Directory and file names
 export const CODETRAP_DIR = ".codetrap";
 export const TRAPS_DB_FILE = "traps.db";
+// A1: a project's stable identity lives in this sidecar file, minted once at
+// `init`. Traps are stored per-project (in .codetrap/traps.db), so the DB moves
+// with the directory on a rename; the id gives the project an identity that does
+// not depend on its absolute path (which becomes display metadata).
+export const PROJECT_META_FILE = "project.json";

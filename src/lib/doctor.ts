@@ -3,8 +3,10 @@ import type { TrapOperations } from "./trap-operations";
 import type { EmbeddingRuntimeStatus } from "./embedding-runtime";
 import type { EmbeddingStateSummary, EmbeddingStatsResult, HybridFallbackReason } from "./embedding-health";
 import { createScopeContext } from "./scope-context";
+import { defaultScopePathResolver } from "./scope-path";
 import { hybridFallbackReason } from "./embedding-health";
 import type { ProjectCandidateReviewSummary } from "./session-review";
+import type { ProjectIdentity } from "./project-identity";
 
 export type DoctorNextAction = {
   command: string;
@@ -16,6 +18,12 @@ export type DoctorReport = {
   project_root: string | null;
   project_db: string | null;
   global_db: string;
+  // A1: stable project identity (from .codetrap/project.json). `project_id` is
+  // null outside a project or when the identity file is unreadable;
+  // `project_moved` is true when the recorded creation path no longer matches the
+  // current root — proof that identity is the id, not the (display-only) path.
+  project_id: string | null;
+  project_moved: boolean;
   traps: {
     project: number | null;
     global: number;
@@ -47,9 +55,12 @@ export async function buildDoctorReport(
   const embeddingRuntime = await store.embeddingRuntimeHealth();
   const semanticAvailable = embeddingRuntime.available;
   const diagnostics = store.diagnostics();
+  const identity = safeProjectIdentity(store);
 
   return {
     ...scope,
+    project_id: identity?.id ?? null,
+    project_moved: projectMoved(identity, scope.project_root),
     traps: {
       project: stats.project?.total ?? null,
       global: stats.global?.total ?? 0,
@@ -68,12 +79,28 @@ export async function buildDoctorReport(
   };
 }
 
+function safeProjectIdentity(store: TrapStore): ProjectIdentity | null {
+  try {
+    return store.projectIdentity();
+  } catch {
+    // A corrupt/unwritable project.json must not crash `doctor` — it is the
+    // command a user runs to diagnose exactly that kind of problem.
+    return null;
+  }
+}
+
+function projectMoved(identity: ProjectIdentity | null, projectRoot: string | null): boolean {
+  if (!identity || !identity.path || !projectRoot) return false;
+  return !defaultScopePathResolver.same(identity.path, projectRoot);
+}
+
 export function formatDoctorText(report: DoctorReport): string {
   return [
     `cwd: ${report.cwd}`,
     `project_root: ${report.project_root ?? "(none)"}`,
     `project_db: ${report.project_db ?? "(none)"}`,
     `global_db: ${report.global_db}`,
+    `project_id: ${report.project_id ?? "(none)"}${report.project_moved ? " (project moved; id is stable, path is display-only)" : ""}`,
     `project_traps: ${report.traps.project ?? "(none)"}`,
     `global_traps: ${report.traps.global}`,
     "Embeddings:",

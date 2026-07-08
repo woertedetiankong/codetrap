@@ -14,7 +14,11 @@ describe("web server port fallback (M32)", () => {
     const host = "127.0.0.1";
     const fetch = async () => new Response("ok");
 
-    const first = serveOnAvailablePort({ host, port: 47380, fetch });
+    // Let the OS pick a free ephemeral port (port 0) for the first server, then
+    // start the second at that exact port to force a real in-use collision. This
+    // avoids depending on any fixed port number, which can be leftover-bound on
+    // busy machines (the original test hardcoded 47380 and flaked there).
+    const first = serveOnAvailablePort({ host, port: 0, fetch });
     try {
       // Starting at first.port forces an in-use collision; the old dead-code
       // check would rethrow here, so reaching the assertion proves the fallback.

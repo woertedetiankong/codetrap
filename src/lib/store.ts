@@ -27,6 +27,7 @@ import {
   setCodetrapEmbeddingSettings,
 } from "./config";
 import { summarizeEmbeddingState, type EmbeddingStateSummary, type EmbeddingStatsResult } from "./embedding-health";
+import { ensureProjectIdentity, type ProjectIdentity } from "./project-identity";
 import { normalizeScope, ScopedRepositoryContext, type ScopedRepository } from "./scope-context";
 import { importTrapArchive, type TrapArchiveImportResult } from "./trap-archive";
 import { importRecordToTrapRecordInsert } from "./trap-codec";
@@ -66,6 +67,7 @@ export type TrapEmbeddingStatus = {
 export class TrapStore {
   private readonly scopes: ScopedRepositoryContext;
   private readonly embeddings: EmbeddingRuntime;
+  private identitySynced = false;
 
   constructor(
     cwd: string,
@@ -84,12 +86,38 @@ export class TrapStore {
       throw new Error("Not in a project. Run 'codetrap init' first, or use --scope global.");
     }
 
+    if (scope === "project") this.syncProjectIdentityBestEffort();
     const id = this.scopes.repositoryFor(scope).add({
       ...input,
       scope,
       project_path: scope === "project" ? this.scopes.projectRoot() : null,
     });
     return { id, scope };
+  }
+
+  // A1: the project's stable identity (id in .codetrap/project.json, mirrored
+  // into the DB's project_meta row). Returns null outside a project. Ensures the
+  // identity exists (lazy mint) so projects created before A1 gain an id on first
+  // read. `doctor` uses this to show a path-independent id and detect a move.
+  projectIdentity(): ProjectIdentity | null {
+    const root = this.scopes.projectRoot();
+    if (!root) return null;
+    const identity = ensureProjectIdentity(root);
+    const entry = this.scopes.repositoryEntry("project");
+    if (entry) entry.repository.upsertProjectMeta(identity.id, root);
+    this.identitySynced = true;
+    return identity;
+  }
+
+  // Identity is display metadata; never let a corrupt or unwritable
+  // project.json block a trap write. Memoized so it runs at most once per store.
+  private syncProjectIdentityBestEffort(): void {
+    if (this.identitySynced) return;
+    try {
+      this.projectIdentity();
+    } catch {
+      this.identitySynced = true;
+    }
   }
 
   async search(

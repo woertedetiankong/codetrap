@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { ensureProjectIdentity } from "./lib/project-identity";
 import { findProjectRoot } from "./lib/scope";
 import { resolveScopePath } from "./lib/scope-path";
 import { TrapStore } from "./lib/store";
@@ -47,12 +48,20 @@ if (args.length === 0) {
       "Error: refusing to run 'init' in your home directory — ~/.codetrap is the global trap store, not a project. cd into a project directory first."
     );
     process.exit(1);
-  } else if (findProjectRoot(cwd)) {
-    console.log("Project already initialized.");
   } else {
-    const dir = join(cwd, ".codetrap");
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    console.log(`Initialized .codetrap/ in ${cwd}`);
+    const existingRoot = findProjectRoot(cwd);
+    if (existingRoot) {
+      // A1: lazily mint an identity for projects created before A1 shipped.
+      const identity = ensureProjectIdentity(existingRoot);
+      console.log("Project already initialized.");
+      console.log(`Project id: ${identity.id}`);
+    } else {
+      const dir = join(cwd, ".codetrap");
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      const identity = ensureProjectIdentity(cwd);
+      console.log(`Initialized .codetrap/ in ${cwd}`);
+      console.log(`Project id: ${identity.id}`);
+    }
   }
 } else {
   try {

@@ -90,8 +90,9 @@ For a quick manual check, agents can run `codetrap search "<task keywords>" --mo
 - **Chinese + mixed-language search** — CJK bigram tokenizer, synonym map for Chinese-English terms
 - **MCP server** — optional tools + resources for AI agent integration
 - **Embedding cache** with multi-profile freshness tracking — Jina/Ollama vectors can coexist and stale ones auto-invalidate
+- **Stable project identity** — `codetrap init` mints a durable id in `.codetrap/project.json`, so a project's identity survives renames (the path is display-only metadata); `doctor` surfaces it
 - **Doctor diagnostics** — scope, database, and embedding health in text or JSON
-- **Schema migrations** — in-code migration system from v0 through current v6
+- **Schema migrations** — in-code migration system from v0 through current v7
 - **Single-binary builds** — `bun build --compile` produces standalone binaries in `dist/`
 
 ## Directory Structure

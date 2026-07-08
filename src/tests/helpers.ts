@@ -1,7 +1,45 @@
 import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { join, sep } from "node:path";
 import type { TrapInput } from "../domain/trap";
+
+// On Windows, os.tmpdir() (e.g. C:\Users\<me>\AppData\Local\Temp) lives INSIDE
+// os.homedir() (e.g. C:\Users\<me>). findProjectRoot walks up from a temp cwd
+// looking for `.codetrap` and stops at the given home boundary — but when the
+// test's tempHome is itself under the real HOME, the walk finds the REAL user's
+// `.codetrap` before reaching the sandbox home, so test sandboxes leak into the
+// host config (see the project-identity / onboarding / web-console failures).
+//
+// Fix: when the system tmpdir is nested under the real home, root temp dirs at
+// a sibling of the real home instead (e.g. C:\Users\... becomes C:\Users). An
+// explicit CODETRAP_TEST_TMP override wins over both. The chosen base must be
+// writable (mkdtempSync asserts that) and never itself the real home.
+function testTmpRoot(): string {
+  const override = process.env.CODETRAP_TEST_TMP;
+  if (override) return override;
+  const tmp = realpathish(tmpdir());
+  const home = realpathish(homedir());
+  if (home && tmp !== home && isWithin(tmp, home)) {
+    // tmp is under home — climb out to the real home's parent (a sibling root).
+    const parent = home.slice(0, home.lastIndexOf(sep));
+    return parent && parent !== home ? parent : tmp;
+  }
+  return tmp;
+}
+
+function realpathish(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+function isWithin(child: string, parent: string): boolean {
+  const c = child.toLowerCase();
+  const p = parent.toLowerCase();
+  return c === p || c.startsWith(p.endsWith(sep) ? p : p + sep);
+}
 
 export type CliResult = {
   exitCode: number | null;
@@ -32,7 +70,7 @@ export function trap(overrides: Partial<TrapInput> = {}): TrapInput {
 }
 
 export function tempDir(prefix: string, options: TempDirOptions = {}): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const dir = mkdtempSync(join(testTmpRoot(), prefix));
   return options.realpath ? realpathSync(dir) : dir;
 }
 
