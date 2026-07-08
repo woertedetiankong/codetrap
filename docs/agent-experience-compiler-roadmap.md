@@ -50,11 +50,7 @@ One-line positioning (English):
 codetrap compiles real coding-agent work history into human-approved guardrails.
 ```
 
-One-line positioning (Chinese):
 
-```text
-codetrap 把真实 AI 编程协作历史编译成用户批准的下一次行动护栏。
-```
 
 More complete product positioning:
 
