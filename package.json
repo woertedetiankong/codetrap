@@ -45,6 +45,7 @@
     "codetrap": "bin/codetrap"
   },
   "scripts": {
+    "postinstall": "node scripts/postinstall.mjs",
     "dev": "bun run src/index.ts",
     "install:cli": "ln -sf \"$PWD/bin/codetrap\" \"$(bun pm bin -g)/codetrap\"",
     "build:release": "bun run scripts/build-release.ts",

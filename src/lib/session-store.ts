@@ -267,6 +267,10 @@ export class SessionStore {
         updated_at: closedAt,
       };
       this.writeSession(updated);
+      // L21: the notes header is written once at start with "Status: active";
+      // refresh it on close so implementation-notes.md doesn't claim the session
+      // is still active forever.
+      this.rewriteNotesHeaderStatus(updated);
       writeFileAtomic(this.recapPath(updated.id), formatRecap(updated, notes, candidates));
       this.writeIndexEntry(updated, notes, candidates, recapSummary(updated, notes, candidates));
       if (this.readActive()?.active_session_id === updated.id) this.clearActive();
@@ -733,6 +737,18 @@ export class SessionStore {
 
   private notesPath(id: string): string {
     return join(this.sessionDir(id), NOTES_FILE);
+  }
+
+  // L21: rewrite only the header's Status line (the region before "## Timeline"),
+  // leaving the appended note bodies untouched.
+  private rewriteNotesHeaderStatus(session: SessionMetadata): void {
+    const path = this.notesPath(session.id);
+    const content = this.readOptionalText(path);
+    if (content === null) return;
+    const splitAt = content.indexOf("## Timeline");
+    const headerEnd = splitAt === -1 ? content.length : splitAt;
+    const header = content.slice(0, headerEnd).replace(/^Status: .*$/m, `Status: ${session.status}`);
+    writeFileAtomic(path, header + content.slice(headerEnd));
   }
 
   private recapPath(id: string): string {

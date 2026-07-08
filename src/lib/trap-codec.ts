@@ -51,6 +51,12 @@ export function normalizeTrapForExport(trap: Trap): Omit<TrapExportRecord, "evid
   return {
     ...trap,
     path_globs: parseTrapPathGlobs(trap.path_globs),
+    // L4: emit zoned RFC-3339 UTC so downstream `new Date(...)` doesn't reparse
+    // SQLite's naive "YYYY-MM-DD HH:MM:SS" as local time.
+    created_at: sqliteTimestampToIso(trap.created_at),
+    updated_at: sqliteTimestampToIso(trap.updated_at),
+    valid_from: sqliteTimestampToIso(trap.valid_from),
+    valid_until: sqliteTimestampToIso(trap.valid_until),
   };
 }
 
@@ -58,7 +64,28 @@ export function normalizeEvidenceForExport(evidence: TrapEvidence): TrapExportEv
   return {
     ...evidence,
     related_files: parseEvidenceRelatedFiles(evidence.related_files),
+    observed_at: sqliteTimestampToIso(evidence.observed_at),
   };
+}
+
+// L4: SQLite stores timestamps as naive UTC ("2026-07-07 12:00:00"). Convert to
+// RFC-3339 ("2026-07-07T12:00:00Z") for export; leave anything already zoned or
+// unrecognized untouched.
+export function sqliteTimestampToIso<T extends string | null | undefined>(value: T): T {
+  if (typeof value !== "string") return value;
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return value;
+  return `${value.replace(" ", "T")}Z` as T;
+}
+
+// Inverse of sqliteTimestampToIso for the import path: parse a zoned/ISO string
+// back to SQLite's canonical form so the DB stays internally consistent (list
+// ordering, lifecycle comparisons). Canonical or unparseable values pass through.
+export function isoToSqliteTimestamp<T extends string | null | undefined>(value: T): T {
+  if (typeof value !== "string") return value;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 19).replace("T", " ") as T;
 }
 
 export function importRecordToTrapInput(record: TrapImportRecord): TrapInput {
@@ -86,7 +113,7 @@ export function importRecordToTrapRecordInsert(
 ): Omit<Trap, "id"> {
   const input = importRecordToTrapInput(record);
   const fields = encodeTrapInsertFields(input);
-  const createdAt = record.created_at ?? sqliteNow();
+  const createdAt = isoToSqliteTimestamp(record.created_at) ?? sqliteNow();
   return {
     title: input.title,
     category: input.category,
@@ -103,15 +130,15 @@ export function importRecordToTrapRecordInsert(
     status: parseTrapImportStatus(record.status),
     // Remapped after the whole batch inserts, once destination ids are known.
     supersedes_id: null,
-    valid_from: record.valid_from ?? createdAt,
-    valid_until: record.valid_until ?? null,
+    valid_from: isoToSqliteTimestamp(record.valid_from) ?? createdAt,
+    valid_until: isoToSqliteTimestamp(record.valid_until) ?? null,
     project_path: input.scope === "project" ? projectPath : null,
     path_globs: fields.path_globs,
     module: input.module ?? null,
     owner: input.owner ?? null,
     hit_count: record.hit_count ?? 0,
     created_at: createdAt,
-    updated_at: record.updated_at ?? createdAt,
+    updated_at: isoToSqliteTimestamp(record.updated_at) ?? createdAt,
   };
 }
 

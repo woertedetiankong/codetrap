@@ -26,6 +26,7 @@ import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
 import { CANDIDATES_FILE, sessionRelativeFile } from "../lib/session-codec";
 import { buildDoctorReport } from "../lib/doctor";
+import { CODETRAP_VERSION } from "../lib/version";
 import {
   listRequestFromArgs,
   searchRequestFromArgs,
@@ -92,6 +93,9 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
         if (!result) {
           return toMcpTextError("not found");
         }
+        // L6: mirror the CLI `show` command so MCP reads also count as hits —
+        // otherwise the "top traps" resources are meaningless for MCP-only users.
+        operations.hitTrap(args.id, result.scope);
         return toMcpTextJson(toTrapDetailsJson(result));
       }
 
@@ -210,7 +214,7 @@ export async function start(): Promise<void> {
   const store = new TrapStore(process.cwd());
 
   const server = new Server(
-    { name: "codetrap", version: "0.1.0" },
+    { name: "codetrap", version: CODETRAP_VERSION },
     { capabilities: { tools: {}, resources: {} } }
   );
 

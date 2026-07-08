@@ -51,6 +51,38 @@ describe("web API", () => {
     expect((await ok.json()).projects[0].root).toBe(project);
   });
 
+  test("refuses a project param for an initialized project that is not in the session registry (M30)", async () => {
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-registered-", { realpath: true });
+    const outsider = tempProjectDir("codetrap-web-outsider-", { realpath: true });
+    addWebProject(project, home);
+    // `outsider` is a real initialized codetrap project on disk, but it was
+    // never opened in this session, so it must not be reachable via ?project=.
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+
+    const blocked = await api(handler, `/api/traps?project=${encodeURIComponent(outsider)}`);
+    expect(blocked.status).toBe(403);
+    expect((await blocked.json()).error).toContain("not open in this codetrap web session");
+
+    // Once it is explicitly added (as the project switcher does), it is allowed.
+    addWebProject(outsider, home);
+    const allowed = await api(handler, `/api/traps?project=${encodeURIComponent(outsider)}`);
+    expect(allowed.status).toBe(200);
+  });
+
+  test("accepts offset=0 on the traps listing (L19)", async () => {
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-offset-", { realpath: true });
+    addWebProject(project, home);
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+
+    const zero = await api(handler, `/api/traps?project=${encodeURIComponent(project)}&offset=0`);
+    expect(zero.status).toBe(200);
+
+    const negative = await api(handler, `/api/traps?project=${encodeURIComponent(project)}&offset=-1`);
+    expect(negative.status).toBe(400);
+  });
+
   test("lists trap library entries across project and global scopes with filters", async () => {
     const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
     const project = tempProjectDir("codetrap-web-library-", { realpath: true });

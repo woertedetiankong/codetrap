@@ -37,6 +37,36 @@ describe("OllamaEmbedder", () => {
     expect(Array.from(embeddings[1])).toEqual([0, 1, 0]);
   });
 
+  test("prepends the qwen3 retrieval instruction to queries but not passages", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = async (_input: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ embeddings: [[1, 0, 0]] }));
+    };
+    const embedder = new OllamaEmbedder({ model: "qwen3-embedding:0.6b", dimensions: 3, fetch: fetcher });
+
+    await embedder.embed(["how do I fix the bug"], "retrieval.query");
+    await embedder.embed(["how do I fix the bug"], "retrieval.passage");
+
+    expect((bodies[0]!.input as string[])[0]).toBe(
+      "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: how do I fix the bug"
+    );
+    expect((bodies[1]!.input as string[])[0]).toBe("how do I fix the bug");
+  });
+
+  test("leaves queries unmodified for non-qwen3 models", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    const fetcher = async (_input: string | URL | Request, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ embeddings: [[1, 0, 0]] }));
+    };
+    const embedder = new OllamaEmbedder({ model: "embeddinggemma", dimensions: 3, fetch: fetcher });
+
+    await embedder.embed(["plain query"], "retrieval.query");
+
+    expect((capturedBody.input as string[])[0]).toBe("plain query");
+  });
+
   test("passes an abort signal so a wedged server cannot hang search forever", async () => {
     let capturedSignal: AbortSignal | null | undefined;
     const fetcher = async (_input: string | URL | Request, init?: RequestInit) => {

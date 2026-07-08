@@ -26,4 +26,11 @@ describe("search normalizer", () => {
     expect(query).toContain("请求");
     expect(query).toContain("fetch");
   });
+
+  test("marks a single-char CJK query token as a prefix so it can match bigrams (M9)", () => {
+    expect(normalizeQuery("缓")).toBe("缓*");
+    // Indexed text never marks single-char CJK content as a prefix.
+    expect(bigramCJK("缓")).toEqual(["缓"]);
+    expect(bigramCJK("缓", { prefixSingleChar: true })).toEqual(["缓*"]);
+  });
 });

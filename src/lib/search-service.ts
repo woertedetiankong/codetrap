@@ -3,7 +3,7 @@ import * as embeddingQueries from "../db/embedding-queries";
 import * as queries from "../db/queries";
 import type { TrapSearchDiagnostic, TrapSearchResult } from "../domain/trap";
 import type { SearchMode, TrapStatus } from "./constants";
-import { cosineSimilarity } from "./embedder";
+import { cosineSimilarity, EmbeddingDimensionMismatchError } from "./embedder";
 import {
   embeddingRuntimeFrom,
   type EmbeddingRuntime,
@@ -131,14 +131,44 @@ export class SearchService {
   }
 
   private retrieveFtsCandidates(query: string, plan: SearchRetrievalPlan): TrapSearchResult[] {
-    const candidates = queries
-      .searchTraps(this.db, query, plan.ftsStorageFilter)
-      .map((result) => ({
-        ...result,
-        sources: ["fts"] as ("fts")[],
-        score: ftsScore(result.rank),
-      }));
-    return this.policy.prepareRetrievedResults(candidates, "fts", plan);
+    // A3: `module`/`owner` are enforced in SQL, so the first `candidateLimit`
+    // ranked rows are already a complete candidate set for them — but a `--path`
+    // glob can only be evaluated in JS, *after* the SQL LIMIT. A selective path
+    // can discard the whole first page while matching traps sit deeper in the
+    // ranking, so without paging those traps are silently lost. Page through the
+    // ranked matches until we have enough applicable candidates.
+    if (!plan.applicabilityFilter.path) {
+      const candidates = this.mapFtsRows(queries.searchTraps(this.db, query, plan.ftsStorageFilter));
+      return this.policy.prepareRetrievedResults(candidates, "fts", plan);
+    }
+    return this.retrieveFtsCandidatesByPath(query, plan);
+  }
+
+  private retrieveFtsCandidatesByPath(query: string, plan: SearchRetrievalPlan): TrapSearchResult[] {
+    const target = plan.candidateLimit;
+    const pageSize = Math.max(target, 50);
+    // Bound the scan so a broad query against a large index can't turn one
+    // search into an unbounded table walk. FTS MATCH already restricts the pool
+    // to query-matching rows, so this ceiling is only a pathological-case backstop.
+    const scanLimit = Math.max(target * 20, 1000);
+    const applicable: TrapSearchResult[] = [];
+    let offset = 0;
+    while (applicable.length < target && offset < scanLimit) {
+      const rows = queries.searchTraps(this.db, query, { ...plan.ftsStorageFilter, limit: pageSize, offset });
+      if (rows.length === 0) break;
+      applicable.push(...this.policy.filterResults(this.mapFtsRows(rows), plan.applicabilityFilter));
+      offset += rows.length;
+      if (rows.length < pageSize) break; // ranked matches exhausted
+    }
+    return applicable.slice(0, target);
+  }
+
+  private mapFtsRows(rows: TrapSearchResult[]): TrapSearchResult[] {
+    return rows.map((result) => ({
+      ...result,
+      sources: ["fts"] as ("fts")[],
+      score: ftsScore(result.rank),
+    }));
   }
 
   private async retrieveSemanticCandidates(
@@ -152,6 +182,12 @@ export class SearchService {
 
     const config = this.embeddings.config();
     if (!config) throw this.embeddings.unavailableError();
+    if (queryEmbedding.length !== config.dimensions) {
+      // The provider returned a query vector of an unexpected size — comparing
+      // it against the stored embeddings would be meaningless. Fail loudly so
+      // hybrid falls back to FTS with a diagnostic instead of ranking on noise.
+      throw new EmbeddingDimensionMismatchError(config.dimensions, queryEmbedding.length);
+    }
     const candidates = embeddingQueries.getAllFreshEmbeddings(this.db, config, plan.semanticStorageFilter);
 
     const results = candidates

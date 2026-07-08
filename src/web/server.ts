@@ -155,7 +155,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
       module: optionalQuery(url, "module"),
       owner: optionalQuery(url, "owner"),
       limit: optionalNumberQuery(url, "limit"),
-      offset: optionalNumberQuery(url, "offset"),
+      offset: optionalNumberQuery(url, "offset", 0),
     });
     return jsonResponse({
       project_root: projectRoot,
@@ -369,13 +369,28 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
 function projectRootFromQuery(url: URL, context: WebContext): string {
   const project = url.searchParams.get("project") ?? context.currentProjectRoot;
   if (!project) throw new WebHttpError(400, "project is required.");
-  return resolveWebProjectRoot(project, context.home);
+  return assertRegisteredProject(resolveWebProjectRoot(project, context.home), context);
 }
 
 function projectRootFromBody(body: Record<string, unknown>, context: WebContext): string {
   const project = optionalStringBodyField(body, "projectRoot") ?? context.currentProjectRoot;
   if (!project) throw new WebHttpError(400, "projectRoot is required.");
-  return resolveWebProjectRoot(project, context.home);
+  return assertRegisteredProject(resolveWebProjectRoot(project, context.home), context);
+}
+
+// M30: resolveWebProjectRoot() will happily resolve any initialized project on
+// disk, so a token-bearing caller could read/mutate a project that was never
+// opened in this session just by passing its path in `?project=`. Constrain
+// data routes to the session's project set: the launch project plus anything
+// explicitly added through POST /api/projects (which is what the UI ever sends).
+function assertRegisteredProject(root: string, context: WebContext): string {
+  if (root === context.currentProjectRoot) return root;
+  const registry = loadWebProjectRegistry(context.home);
+  if (registry.projects.some((project) => project.root === root)) return root;
+  throw new WebHttpError(
+    403,
+    `Project ${root} is not open in this codetrap web session. Add it from the project switcher first.`
+  );
 }
 
 function requiredQuery(url: URL, key: string): string {
@@ -395,11 +410,14 @@ function optionalQuery(url: URL, key: string): string | undefined {
   return value || undefined;
 }
 
-function optionalNumberQuery(url: URL, key: string): number | undefined {
+function optionalNumberQuery(url: URL, key: string, min = 1): number | undefined {
   const value = optionalQuery(url, key);
   if (!value) return undefined;
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) throw new WebHttpError(400, `${key} must be a positive integer.`);
+  // L19: offset legitimately starts at 0; only limit needs to be positive.
+  if (!Number.isInteger(parsed) || parsed < min) {
+    throw new WebHttpError(400, `${key} must be an integer >= ${min}.`);
+  }
   return parsed;
 }
 

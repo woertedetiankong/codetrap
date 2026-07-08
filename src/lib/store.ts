@@ -117,7 +117,7 @@ export class TrapStore {
       diagnostics.push(...outcome.diagnostics.map((diagnostic) => ({ ...diagnostic, scope: scoped.scope })));
     }
 
-    return { groups, diagnostics };
+    return { groups: limitAcrossScopes(groups, limit), diagnostics };
   }
 
   async embedTrapBestEffort(id: number, scope: string): Promise<boolean> {
@@ -231,14 +231,15 @@ export class TrapStore {
   embeddingStats(opts: { scope?: string } = {}): TrapEmbeddingStats {
     const scope = opts.scope ? normalizeScope(opts.scope) : null;
     const config = this.embeddingConfig();
+    const providerAvailable = this.embeddings.available();
     const project = scope === "global"
       ? null
       : this.scopes.repositoryEntry("project")
-      ? summarizeEmbeddingState(this.scopes.repositoryFor("project").embeddingStats(config, { scope: "project" }), config)
+      ? summarizeEmbeddingState(this.scopes.repositoryFor("project").embeddingStats(config, { scope: "project" }), config, providerAvailable)
       : null;
     const global = scope === "project"
       ? null
-      : summarizeEmbeddingState(this.scopes.repositoryFor("global").embeddingStats(config, { scope: "global" }), config);
+      : summarizeEmbeddingState(this.scopes.repositoryFor("global").embeddingStats(config, { scope: "global" }), config, providerAvailable);
     return {
       project,
       global,
@@ -419,4 +420,33 @@ export class TrapStore {
       fallback
     );
   }
+}
+
+// L14: each scope is searched with the full `limit`, so an unconstrained merge
+// returned up to 2×limit cards and always listed global behind project. Treat
+// `limit` as a total budget and keep the globally top-scored results, then
+// regroup preserving the per-scope display order.
+function limitAcrossScopes(
+  groups: { results: TrapSearchResult[]; scope: string }[],
+  limit: number
+): { results: TrapSearchResult[]; scope: string }[] {
+  const total = groups.reduce((sum, group) => sum + group.results.length, 0);
+  if (total <= limit) return groups;
+
+  const flat = groups.flatMap((group) => group.results);
+  const scoreOf = (result: TrapSearchResult): number => result.score ?? result.rank ?? 0;
+  const keep = new Set(
+    flat
+      .map((_, index) => index)
+      .sort((a, b) => scoreOf(flat[b]) - scoreOf(flat[a]) || a - b)
+      .slice(0, limit)
+  );
+
+  let index = 0;
+  const trimmed: { results: TrapSearchResult[]; scope: string }[] = [];
+  for (const group of groups) {
+    const results = group.results.filter(() => keep.has(index++));
+    if (results.length > 0) trimmed.push({ results, scope: group.scope });
+  }
+  return trimmed;
 }

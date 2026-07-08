@@ -25,11 +25,17 @@ export type HybridFallbackReason = "semantic_unavailable" | "semantic_no_candida
 
 export function summarizeEmbeddingState(
   counts: EmbeddingStateCounts,
-  config: EmbeddingConfig | null
+  config: EmbeddingConfig | null,
+  // L12: whether the provider can actually embed (e.g. Jina has an API key,
+  // Ollama adapter is constructed). A configured-but-keyless Jina yields a
+  // non-null config yet must report provider_available: false, matching the
+  // doctor's semantic_available. Defaults to config presence for callers that
+  // don't know runtime availability.
+  providerAvailable: boolean = config !== null
 ): EmbeddingStateSummary {
   return {
     ...counts,
-    provider_available: config !== null,
+    provider_available: providerAvailable,
     provider: config?.provider ?? null,
     model: config?.model ?? null,
     dimensions: config?.dimensions ?? null,

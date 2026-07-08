@@ -106,7 +106,7 @@ codetrap/
 │   ├── commands/command-result.ts  CLI command results + rendering
 │   ├── mcp/
 │   │   ├── server.ts         MCP stdio transport + handlers
-│   │   ├── tools.ts          10 MCP tool definitions
+│   │   ├── tools.ts          12 MCP tool definitions
 │   │   └── resources.ts      4 MCP resource URIs
 │   ├── domain/trap.ts        Trap types, builders, schemas
 │   ├── domain/session.ts     Session, note, and candidate trap types
@@ -336,7 +336,8 @@ codetrap add_trap_evidence <id> \
 | Tool | Description |
 |---|---|
 | `search_traps` | Compact action-card search across active traps |
-| `add_trap` | Record a new trap |
+| `add_trap` | Record a new trap directly |
+| `capture_candidate` | Propose a pitfall for human review instead of writing it directly — writes a candidate to the session inbox for `session accept`/`reject` or the web console (preferred for the capture→review→accept workflow) |
 | `get_trap` | Drill down into full trap details and evidence |
 | `list_traps` | List traps with filters |
 | `update_trap` | Edit an existing trap |
@@ -345,6 +346,9 @@ codetrap add_trap_evidence <id> \
 | `archive_trap` | Archive a trap so default search skips it |
 | `supersede_trap` | Mark a trap as replaced by another |
 | `get_stats` | Database statistics |
+| `doctor` | Diagnose project health: trap/embedding counts, hybrid-search availability, mis-scoped traps, and pending candidate review (pass `cwd` to target a project) |
+
+Accepting or rejecting a candidate is intentionally *not* an MCP tool — it stays on the CLI (`codetrap session accept`/`reject`) and the web review console, so the human-review gate is not driven entirely by the capturing agent.
 
 ### Resources
 

@@ -2,6 +2,7 @@ import type { RankingSignal, Trap, TrapSearchResult } from "../domain/trap";
 import type { TrapStatus } from "./constants";
 import { EmbeddingProviderUnavailableError } from "./embedder";
 import { parseTrapPathGlobs, parseTrapTags } from "./trap-json-fields";
+import { bigramCJK } from "./search-normalizer";
 import {
   hasSpecificPathMatch,
   trapMatchesApplicability,
@@ -24,6 +25,7 @@ export type SearchStorageFilter = {
   module?: string;
   owner?: string;
   limit?: number;
+  offset?: number;
 };
 
 export type SemanticStorageFilter = {
@@ -45,7 +47,6 @@ export interface SearchRetrievalPlan {
 export interface RankingConfig {
   rrfK: number;
   semanticMinScore: number;
-  lengthNormAnchor: number;
   maxBoost: number;
   titleTokenBoost: number;
   tagTokenBoost: number;
@@ -59,7 +60,6 @@ export interface RankingConfig {
 export const DEFAULT_RANKING_CONFIG: RankingConfig = {
   rrfK: 60,
   semanticMinScore: 0.3,
-  lengthNormAnchor: 500,
   maxBoost: 0.45,
   titleTokenBoost: 0.16,
   tagTokenBoost: 0.2,
@@ -165,12 +165,12 @@ export class TrapSearchPolicy {
     addRankedResults(byId, ftsResults, "fts", this.ranking);
     addRankedResults(byId, semanticResults, "semantic", this.ranking);
 
+    // M10: no length normalization here. The fused score is a rank-reciprocal
+    // (RRF) sum; bm25 already length-normalizes the FTS side and cosine is
+    // length-invariant, so an extra sqrt(anchor/length) factor just double-
+    // penalizes long traps — enough to push a top hit down ~60 positions.
     const fused = [...byId.values()]
-      .map((result) => ({
-        ...result,
-        score: applyLengthNormalization(result.score, result.trap, this.ranking),
-        rank: applyLengthNormalization(result.score, result.trap, this.ranking),
-      }))
+      .map((result) => ({ ...result, rank: result.score }))
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
     return this.rankResults(fused, query, opts, limit);
@@ -230,12 +230,6 @@ function addRankedResults(
       sources: [source],
     });
   });
-}
-
-function applyLengthNormalization(score: number, trap: Trap, ranking: RankingConfig): number {
-  const length = `${trap.context}\n${trap.mistake}\n${trap.fix}`.length;
-  if (length <= ranking.lengthNormAnchor) return score;
-  return score * Math.sqrt(ranking.lengthNormAnchor / length);
 }
 
 function applyReranking(
@@ -344,7 +338,11 @@ function analyzeQuery(query: string): QueryInfo {
 }
 
 function tokenize(value: string): Set<string> {
-  return new Set((value.match(/[A-Za-z0-9_.$/@:-]+/g) ?? []).map((token) => token.toLowerCase()));
+  const tokens = new Set((value.match(/[A-Za-z0-9_.$/@:-]+/g) ?? []).map((token) => token.toLowerCase()));
+  // L10: the ASCII-only regex gave CJK queries no rerank signals at all. Add the
+  // same CJK bigrams the index/query normalizer uses so title/tag boosts apply.
+  for (const gram of bigramCJK(value)) tokens.add(gram);
+  return tokens;
 }
 
 function isIdentifierLike(token: string): boolean {

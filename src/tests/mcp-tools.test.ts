@@ -87,6 +87,27 @@ describe("MCP tool payloads", () => {
     expect(details.evidence[0].related_files).toEqual(["src/api.ts"]);
   });
 
+  test("get_trap increments the hit count so top-traps resources work for MCP-only clients (L6)", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-hit-"));
+    mkdirSync(join(cwd, ".codetrap"));
+    const store = new TrapStore(cwd, undefined);
+    const added = store.add({
+      title: "Use fetchWrapper for HTTP requests",
+      category: "api",
+      scope: "project",
+      context: "When making network requests, use the project fetchWrapper.",
+      mistake: "Calling fetch directly bypasses retry and error handling.",
+      fix: "Use fetchWrapper and follow the HTTP request convention.",
+      tags: ["http"],
+      severity: "error",
+    });
+
+    expect(store.getDetails(added.id, "project")!.trap.hit_count).toBe(0);
+    await handleToolCall(store, "get_trap", { id: added.id, scope: "project", cwd });
+    await handleToolCall(store, "get_trap", { id: added.id, scope: "project", cwd });
+    expect(store.getDetails(added.id, "project")!.trap.hit_count).toBe(2);
+  });
+
   test("tool calls can resolve project scope from an explicit cwd", async () => {
     const serverCwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-server-"));
     const projectCwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-project-"));

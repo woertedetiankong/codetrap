@@ -43,7 +43,12 @@ function parseStringArrayField(value: TrapStringArrayInput): string[] {
   try {
     const parsed = JSON.parse(value);
     if (Array.isArray(parsed)) return parsed.map(String);
-    return typeof parsed === "string" && parsed !== "" ? [parsed] : [];
+    // L1: a JSON scalar (e.g. "123" → 123, "true" → true) is still data. Keep
+    // it as a single element instead of silently dropping it; only null/objects
+    // (which cannot be a string-list member) collapse to [].
+    if (typeof parsed === "string") return parsed === "" ? [] : [parsed];
+    if (typeof parsed === "number" || typeof parsed === "boolean") return [String(parsed)];
+    return [];
   } catch {
     return [value];
   }

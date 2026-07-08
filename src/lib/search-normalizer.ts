@@ -1,4 +1,6 @@
-const CJK_RUN = /[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]+/gu;
+// L11: include the astral CJK Unified Ideographs Extension B\u2013F block so those
+// characters bigram instead of dropping out entirely.
+const CJK_RUN = /[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af\u{20000}-\u{2fa1f}]+/gu;
 const ASCII_TOKEN = /[A-Za-z0-9_.$/@:-]+/g;
 
 const SYNONYMS: Record<string, string[]> = {
@@ -36,12 +38,19 @@ export const SEARCH_TEXT_FIELD_NAMES = [
   "owner",
 ] as const;
 
-export function bigramCJK(input: string): string[] {
+export type CJKGramOptions = {
+  // The index stores multi-character CJK content as bigrams, so a lone CJK
+  // character in a *query* can never match as an exact term. Mark it as a
+  // prefix (`缓*`) instead so it matches any token that starts with it.
+  prefixSingleChar?: boolean;
+};
+
+export function bigramCJK(input: string, opts: CJKGramOptions = {}): string[] {
   const grams: string[] = [];
   for (const run of input.matchAll(CJK_RUN)) {
     const chars = Array.from(run[0]);
     if (chars.length === 1) {
-      grams.push(chars[0]);
+      grams.push(opts.prefixSingleChar ? `${chars[0]}*` : chars[0]);
       continue;
     }
     for (let i = 0; i < chars.length - 1; i++) {
@@ -51,15 +60,17 @@ export function bigramCJK(input: string): string[] {
   return grams;
 }
 
-export function buildSearchText(fields: SearchTextFields): string {
-  const source = fieldsToText(fields);
+export function buildSearchText(fields: SearchTextFields, opts: CJKGramOptions = {}): string {
+  // L11: NFKC folds full-width ASCII (ＡＢＣ → ABC) and compatibility forms so
+  // they tokenize instead of normalizing to nothing.
+  const source = fieldsToText(fields).normalize("NFKC");
   const tokens = new Set<string>();
 
   for (const token of source.match(ASCII_TOKEN) ?? []) {
     tokens.add(token.toLowerCase());
   }
 
-  for (const gram of bigramCJK(source)) {
+  for (const gram of bigramCJK(source, opts)) {
     addTokenWithSynonyms(tokens, gram);
   }
 
@@ -74,7 +85,7 @@ export function buildSearchText(fields: SearchTextFields): string {
 }
 
 export function normalizeQuery(query: string): string {
-  return buildSearchText({ title: query });
+  return buildSearchText({ title: query }, { prefixSingleChar: true });
 }
 
 function addTokenWithSynonyms(tokens: Set<string>, token: string): void {

@@ -15,5 +15,15 @@ if (tag !== expected) {
   process.exit(1);
 }
 
+// L7/L9: CODETRAP_VERSION is the CLI/MCP version string. tsconfig rootDir keeps
+// package.json out of src, so this release gate is what keeps them in lockstep.
+const { CODETRAP_VERSION } = await import("../src/lib/version");
+if (CODETRAP_VERSION !== packageJson.version) {
+  console.error(
+    `src/lib/version.ts CODETRAP_VERSION (${CODETRAP_VERSION}) does not match package version ${packageJson.version}.`
+  );
+  process.exit(1);
+}
+
 console.log(`Release tag ${tag} matches package version ${packageJson.version}.`);
 

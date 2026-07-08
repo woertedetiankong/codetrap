@@ -41,6 +41,16 @@ export class EmbeddingProviderUnavailableError extends Error {
   }
 }
 
+export class EmbeddingDimensionMismatchError extends Error {
+  constructor(
+    readonly expected: number,
+    readonly actual: number
+  ) {
+    super(`Embedding dimension mismatch: expected ${expected}, got ${actual}.`);
+    this.name = "EmbeddingDimensionMismatchError";
+  }
+}
+
 const EMBED_QUERY_TIMEOUT_MS = 10_000;
 const EMBED_BATCH_TIMEOUT_MS = 60_000;
 const HEALTH_TIMEOUT_MS = 3_000;
@@ -79,6 +89,7 @@ export class JinaEmbedder implements EmbeddingProvider {
           model: this.model,
           input: texts,
           task,
+          dimensions: this.dimensions,
         }),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -109,6 +120,11 @@ export class JinaEmbedder implements EmbeddingProvider {
         if (!Array.isArray(row.embedding)) {
           throw new Error("Jina embeddings response is missing an embedding vector.");
         }
+        if (row.embedding.length !== this.dimensions) {
+          throw new Error(
+            `Jina embeddings returned ${row.embedding.length} dimensions, expected ${this.dimensions}.`
+          );
+        }
         return Float32Array.from(row.embedding);
       });
   }
@@ -133,6 +149,13 @@ export const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434";
 export const DEFAULT_OLLAMA_MODEL = "qwen3-embedding:0.6b";
 export const DEFAULT_OLLAMA_DIMENSIONS = 1024;
 
+// qwen3-embedding is instruction-tuned: retrieval queries must carry a task
+// instruction prefix while passages are embedded bare. Without it, queries and
+// passages embed in the same way and retrieval quality drops.
+// https://huggingface.co/Qwen/Qwen3-Embedding-0.6B#usage
+export const QWEN3_QUERY_INSTRUCTION =
+  "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: ";
+
 export class OllamaEmbedder implements EmbeddingProvider {
   readonly provider = "ollama";
   readonly model: string;
@@ -147,9 +170,10 @@ export class OllamaEmbedder implements EmbeddingProvider {
     this.fetchImpl = options.fetch ?? fetch;
   }
 
-  async embed(texts: string[], _task: EmbeddingTask): Promise<Float32Array[]> {
+  async embed(texts: string[], task: EmbeddingTask): Promise<Float32Array[]> {
     if (texts.length === 0) return [];
 
+    const input = this.applyQueryInstruction(texts, task);
     const timeoutMs = embedTimeoutMs(texts.length);
     let response: Response;
     try {
@@ -160,7 +184,7 @@ export class OllamaEmbedder implements EmbeddingProvider {
         },
         body: JSON.stringify({
           model: this.model,
-          input: texts,
+          input,
           dimensions: this.dimensions,
           truncate: true,
         }),
@@ -197,6 +221,11 @@ export class OllamaEmbedder implements EmbeddingProvider {
       }
       return Float32Array.from(embedding);
     });
+  }
+
+  private applyQueryInstruction(texts: string[], task: EmbeddingTask): string[] {
+    if (task !== "retrieval.query" || !/qwen3/i.test(this.model)) return texts;
+    return texts.map((text) => `${QWEN3_QUERY_INSTRUCTION}${text}`);
   }
 
   async health(): Promise<OllamaProviderHealth> {
@@ -266,7 +295,13 @@ export function decodeEmbedding(blob: Uint8Array | ArrayBuffer): Float32Array {
 }
 
 export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
-  if (a.length !== b.length || a.length === 0) return 0;
+  if (a.length !== b.length) {
+    // A silent 0 here hides a real dimension change (e.g. a provider that
+    // switched embedding size), which would make semantic search quietly
+    // return nothing. Surface it so callers fall back / reindex instead.
+    throw new EmbeddingDimensionMismatchError(a.length, b.length);
+  }
+  if (a.length === 0) return 0;
 
   let dot = 0;
   let normA = 0;

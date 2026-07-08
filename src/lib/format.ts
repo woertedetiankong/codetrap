@@ -12,13 +12,26 @@ export function formatTrapShort(t: Trap, scopeLabel: string): string {
 export function formatTrapActionCard(card: TrapActionCard): string {
   const sev = SEVERITY_ICONS[card.severity as Severity] ?? card.severity;
   const sourceLabel = card.sources.length > 0 ? card.sources.join("+") : "unknown";
+  // L13: bm25, cosine, and RRF scores live on different scales, so an unlabeled
+  // number makes a top hybrid hit (~0.03 RRF) read like near-zero confidence.
+  // Name the ranking basis so the magnitude is interpreted correctly.
+  const basis = rankingBasis(card.sources);
   return `\
 [${card.scope}] [${sev}] #${card.trap_id} ${card.title}
 Why relevant: ${card.why_relevant}
 Avoid: ${card.avoid}
 Do instead: ${card.do_instead}
-Score: ${formatScore(card.score)} (${sourceLabel})
+Score: ${formatScore(card.score)} (${sourceLabel}${basis ? `, ${basis}` : ""})
 Next: codetrap show ${card.trap_id} --scope ${card.scope} --json`;
+}
+
+function rankingBasis(sources: string[]): string | null {
+  const hasFts = sources.includes("fts");
+  const hasSemantic = sources.includes("semantic");
+  if (hasFts && hasSemantic) return "rrf";
+  if (hasFts) return "bm25";
+  if (hasSemantic) return "cosine";
+  return null;
 }
 
 export function formatTrapDetail(t: Trap, scopeLabel: string): string {

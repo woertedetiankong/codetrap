@@ -61,7 +61,7 @@ export function insertTrap(db: Database, input: TrapInput): number {
 export function searchTraps(
   db: Database,
   query: string,
-  opts: { category?: string; scope?: string; limit?: number; status?: TrapStatusFilter; module?: string; owner?: string } = {}
+  opts: { category?: string; scope?: string; limit?: number; offset?: number; status?: TrapStatusFilter; module?: string; owner?: string } = {}
 ): TrapSearchResult[] {
   const prepared = prepareFTSQuery(normalizeQuery(query));
   if (!prepared) return [];
@@ -73,6 +73,14 @@ export function searchTraps(
 
   params.push(opts.limit ?? 20);
 
+  // Only append OFFSET when paging so the common no-offset query keeps a
+  // stable SQL string (and thus a single cached prepared statement).
+  let pagination = "LIMIT ?";
+  if (opts.offset && opts.offset > 0) {
+    pagination += " OFFSET ?";
+    params.push(opts.offset);
+  }
+
   const rows = db
     .query(
       `
@@ -81,7 +89,7 @@ export function searchTraps(
     JOIN traps t ON t.id = f.rowid
     WHERE ${conditions.join(" AND ")}
     ORDER BY rank
-    LIMIT ?
+    ${pagination}
   `
     )
     .all(...params) as (Trap & { rank: number })[];
@@ -159,7 +167,10 @@ export function addTrapEvidence(db: Database, trapId: number, input: TrapEvidenc
       INSERT INTO trap_evidence (
         trap_id, source_type, source_ref, observed_at, related_files, note
       )
-      VALUES (?, ?, ?, COALESCE(?, datetime('now')), ?, ?)
+      -- L3: normalize observed_at to SQLite's canonical 'YYYY-MM-DD HH:MM:SS'
+      -- via datetime() so a caller-supplied ISO string (with 'T'/'Z') doesn't
+      -- interleave incorrectly with datetime('now') values under lexical sort.
+      VALUES (?, ?, ?, COALESCE(datetime(?), datetime('now')), ?, ?)
     `
     )
     .run(
@@ -175,7 +186,7 @@ export function addTrapEvidence(db: Database, trapId: number, input: TrapEvidenc
 
 export function listTrapEvidence(db: Database, trapId: number): TrapEvidence[] {
   return db
-    .query("SELECT * FROM trap_evidence WHERE trap_id = ? ORDER BY observed_at DESC, id DESC")
+    .query("SELECT * FROM trap_evidence WHERE trap_id = ? ORDER BY datetime(observed_at) DESC, id DESC")
     .all(trapId) as TrapEvidence[];
 }
 
@@ -225,7 +236,10 @@ const supersedingTrapSql = `
 `;
 
 export function incrementHitCount(db: Database, id: number): void {
-  db.prepare("UPDATE traps SET hit_count = hit_count + 1, updated_at = datetime('now') WHERE id = ?").run(id);
+  // L2: viewing a trap must not bump updated_at — otherwise merely reading a
+  // trap reorders `list` (which sorts by updated_at DESC). hit_count is its own
+  // signal; the FTS AFTER UPDATE trigger only re-syncs the index, not timestamps.
+  db.prepare("UPDATE traps SET hit_count = hit_count + 1 WHERE id = ?").run(id);
 }
 
 export function getTopTraps(db: Database, scope: string, limit = 20): Trap[] {

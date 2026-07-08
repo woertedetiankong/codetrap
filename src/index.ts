@@ -1,10 +1,14 @@
 #!/usr/bin/env bun
 
 import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { findProjectRoot } from "./lib/scope";
+import { resolveScopePath } from "./lib/scope-path";
 import { TrapStore } from "./lib/store";
-import { run } from "./commands/router";
+import { CODETRAP_VERSION } from "./lib/version";
+import { executeCommand } from "./commands/workflow";
+import { renderCommandResult } from "./commands/command-result";
 
 const args = process.argv.slice(2);
 
@@ -12,8 +16,21 @@ if (args.length === 0) {
   showHelp();
 } else if (args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
   showHelp();
+} else if (args[0] === "--version" || args[0] === "-v" || args[0] === "version") {
+  console.log(CODETRAP_VERSION);
 } else if (args[0] === "serve") {
-  import("./mcp/server").then((m) => m.start());
+  if (args.slice(1).some(isHelpArg)) {
+    showServeHelp();
+  } else {
+    // L8: await + catch so a failed MCP startup exits non-zero instead of
+    // rejecting an unhandled promise.
+    await import("./mcp/server")
+      .then((m) => m.start())
+      .catch((error) => {
+        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+      });
+  }
 } else if (args[0] === "web") {
   if (args.slice(1).some(isHelpArg)) {
     showWebHelp();
@@ -23,7 +40,14 @@ if (args.length === 0) {
   }
 } else if (args[0] === "init") {
   const cwd = process.cwd();
-  if (findProjectRoot(cwd)) {
+  if (resolveScopePath(cwd) === resolveScopePath(homedir())) {
+    // L18: `.codetrap` in $HOME *is* the global store, so an init there creates
+    // a dir that every project command then ignores. Refuse with guidance.
+    console.error(
+      "Error: refusing to run 'init' in your home directory — ~/.codetrap is the global trap store, not a project. cd into a project directory first."
+    );
+    process.exit(1);
+  } else if (findProjectRoot(cwd)) {
     console.log("Project already initialized.");
   } else {
     const dir = join(cwd, ".codetrap");
@@ -33,7 +57,7 @@ if (args.length === 0) {
 } else {
   try {
     const store = new TrapStore(process.cwd());
-    await run(args, store);
+    renderCommandResult(await executeCommand(args, store));
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
@@ -71,6 +95,8 @@ function showHelp(): void {
   console.log("  migrate-project       Move project traps between initialized projects");
   console.log("  serve                 Start MCP server (for Claude Code)");
   console.log("");
+  console.log("  --version, -v         Print the codetrap version");
+  console.log("");
   console.log("Flags:");
   console.log("  --scope project|global  Filter by scope");
   console.log("  --category <name>       Filter by category");
@@ -96,6 +122,15 @@ function showHelp(): void {
   console.log("  --codex-home <path>    With setup codex, override CODEX_HOME/default ~/.codex");
   console.log("  --agents-file <path>   With setup codex, choose AGENTS.md target");
   console.log("  --no-agents            With setup codex, install skills without editing AGENTS.md");
+}
+
+function showServeHelp(): void {
+  console.log("codetrap serve — start the MCP server (stdio transport, for Claude Code / Codex)");
+  console.log("");
+  console.log("Usage:");
+  console.log("  codetrap serve");
+  console.log("");
+  console.log("Wire it into an MCP client, e.g.: codex mcp add codetrap -- codetrap serve");
 }
 
 function showWebHelp(): void {

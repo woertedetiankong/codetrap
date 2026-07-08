@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../db/connection";
 import { TrapRepository } from "../db/repository";
-import { parseArgs } from "../commands/router";
+import { parseArgs } from "../commands/command-args";
 import { prepareFTSQuery } from "../lib/fts-query";
 import { trap } from "./helpers";
 

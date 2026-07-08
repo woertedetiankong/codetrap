@@ -1,35 +1,158 @@
-# codetrap Mature Product Roadmap: Agent Experience Compiler
+# codetrap Mature Product Roadmap v2: Agent Experience Compiler
 
-Date: 2026-06-22
-Status: Product direction / long-term roadmap
+Date: 2026-06-22 (v1)
+Updated: 2026-07-07 (v2)
+Status: Product direction / long-term roadmap — authoritative parent plan
 Scope: Parent plan for codetrap mature product evolution
+Clients served: **Codex and Claude Code, symmetrically** (Cursor and others: future)
 
-This document records codetrap's mature product goals. It is not a single implementation task, nor a commitment for the current release. Future development should treat this document as a parent plan, and then use the implementation-journal to build a task dossier, implementation log, and handoff for each milestone.
+This document is the parent plan for all future codetrap development. It is written
+to be consumed both by humans and by an autonomous implementing agent. Individual
+milestones must use the implementation-journal (task dossier, implementation log,
+handoff) — see §19.
 
-This version makes one key conceptual elevation over the original plan:
+What changed in v2:
+
+- Added §1 First Principles: the derivation chain the whole design rests on.
+- Added §4 UX Principles & Budgets: review experience is now a first-class,
+  measurable part of the product, with numeric budgets.
+- **Dual-client symmetry (Codex + Claude Code) promoted to a hard requirement** (§3.1).
+  v1 was implicitly Codex-first; that assumption is removed everywhere.
+- **Evolution path re-sequenced** (§16): the empirical proof point now comes FIRST
+  (Phase 0), before any schema stabilization. Evidence before architecture.
+- Added §13 Multi-Client Engineering Requirements derived from a competitor case
+  study (mempal): session-store concurrency locking, self-describing MCP protocol,
+  per-client doctor, candidate provenance and cross-client dedup.
+- Added §14 External Validation: a public benchmark is now a roadmap item.
+- Added §15 Anti-Goals with rationale (notably: no inter-agent message bus).
+- Resolved the v1 design tension in the coverage check (§9.3): coverage judgment is
+  agent-assisted; the CLI verifies references deterministically.
+- Consolidated the trust red lines into one section (§3.2) instead of repeating
+  them in every chapter.
+- MVP destination subset defined: `pitfall_trap` + `skip` end-to-end first; all
+  other destinations remain proposal-only stubs until Phase 2 (§11).
+
+---
+
+## 0. How to Use This Document (for the implementing agent)
+
+If you are an AI agent implementing this roadmap:
+
+1. Work the phases in §16 **in order**. Do not skip Phase 0. Do not begin
+   stabilizing schemas or building the Web inbox before Phase 0's acceptance
+   criteria are met and recorded.
+2. For each milestone, create a task dossier under
+   `docs/tasks/<YYYY-MM-DD>-<slug>/` per §19. One dossier per milestone.
+   Do not create process artifacts about process artifacts.
+3. Every red line in §3.2 is a hard constraint on every phase. If a task appears
+   to require crossing one, stop and surface it to the user instead.
+4. Every user-visible claim you add to README or templates must be true of the
+   shipped code in the same release (§3.3).
+5. When this document and reality diverge, update this document with status and
+   evidence links only — do not fork the plan into new standalone vision docs.
+
+---
+
+## 1. First Principles
+
+### 1.1 The irreducible problem
+
+AI coding agents repeat mistakes across sessions and projects because what they
+learn is not persisted in a form that changes future behavior. Raw history
+(sessions, transcripts, summaries) is abundant but inert; guardrails are scarce
+but active. The product converts one into the other.
+
+### 1.2 What makes a lesson actually change behavior
+
+A stored lesson changes a future agent action only if all four hold:
 
 ```text
-codetrap does not hardcode "what was learned".
-codetrap provides a typed, auditable, reviewable experience compiler layer
-that lets AI coding tools such as Codex, Claude Code, and Cursor safely
-propose experience candidates.
+1. Trigger   — it is recalled at the right moment (pre-flight, on-topic).
+2. Action    — it prescribes what to do differently, not just what happened.
+3. Injection — a runtime path actually delivers it to the agent (search hit,
+               guidance file, skill, automation).
+4. Trust     — it is true, current, evidenced, and human-approved, so both the
+               user and the agent can rely on it.
 ```
 
-In other words:
+Anything that fails one of these is a note, not a guardrail. The candidate
+quality bar (§8.4), the destinations model (§11), and runtime eligibility (§12)
+are all direct consequences of this list.
+
+### 1.3 The two scarce resources
+
+Everything codetrap does economizes two scarce resources:
 
 ```text
-Agent / Skill understands the real work history;
-codetrap CLI handles evidence, structure, validation, dedup, staging,
-  and the durable write gate;
-Web Learning Inbox handles human review;
-Durable destinations make confirmed experience influence the next agent action.
+1. User attention   — review bandwidth. Every candidate surfaced spends it.
+2. Agent context    — injection token budget. Every runtime guardrail spends it.
+```
+
+Raw history is free; these two are not. Therefore:
+
+- Signal-to-noise of the candidate stream is THE core product metric.
+- A high-precision small trap database beats a large polluted one.
+- `skip` is a first-class product outcome, not a failure: it is how the system
+  buys back user attention on every future review.
+- An overflowing review inbox is a product failure equal to a missed lesson.
+
+### 1.4 Division of labor (compiler, not brain)
+
+Judging "what was learned" from messy history is probabilistic — that is LLM
+work, and it belongs to the agent (Codex, Claude Code). Validating structure,
+evidence, duplication, and gating durable writes is deterministic — that is
+compiler work, and it belongs to the codetrap CLI.
+
+```text
+Agent / Skill:   understands real work history, drafts candidates.
+codetrap CLI:    evidence, schema, validation, dedup, staging, write gates.
+Web Inbox:       human review and approval.
+Destinations:    make confirmed experience influence the next agent action.
+```
+
+Trust requires the deterministic layer to gate the probabilistic one, never the
+reverse. The CLI must not hardcode learning judgment (no keyword rules like
+"session contains 'test failed' → auto-create trap"); the agent must not be able
+to bypass schema validation or the durable write gate.
+
+### 1.5 The riskiest assumption — evidence before architecture
+
+The single assumption the entire flywheel rests on:
+
+```text
+An agent mining real work history can produce lesson candidates that a real
+user actually accepts, at a rate that justifies the review time.
+```
+
+This is unproven. It is also cheap to test (§16 Phase 0) and has a written
+falsifier (§17). Therefore the roadmap sequences the empirical test BEFORE
+stabilizing data models, building the Web inbox, or wiring destinations.
+If the falsifier fires, the correct response is to strengthen evidence packs,
+coverage checks, and quality scoring — not to build more architecture.
+
+### 1.6 One-line positioning
+
+```text
+codetrap compiles real coding-agent work history into human-approved guardrails.
+```
+
+Fuller form:
+
+```text
+codetrap mines real coding-agent work history, lets agents draft reusable
+lessons, validates those lessons with evidence and coverage checks, lets humans
+approve what becomes durable, and injects approved lessons back into future
+agent work as traps, project guidance, skills, custom agents, automations,
+evals, docs updates, or reviewed skips.
 ```
 
 ---
 
-## 1. Core Judgment
+## 2. Product Positioning and Boundaries
 
-codetrap should not stop at being a "failure log repository," nor should it bloat into a general-purpose Agent Memory platform. Its mature form should be a local-first, agent-assisted, human-approved **Agent Experience Compiler**.
+codetrap should not stop at being a "failure log repository," nor bloat into a
+general-purpose agent memory platform. Its mature form is a local-first,
+agent-assisted, human-approved **Agent Experience Compiler**.
 
 The mature flywheel:
 
@@ -44,184 +167,213 @@ real work history
   -> next agent is smarter
 ```
 
-One-line positioning (English):
-
-```text
-codetrap compiles real coding-agent work history into human-approved guardrails.
-```
-
-
-
-More complete product positioning:
-
-```text
-codetrap mines real coding-agent work history, lets agents draft reusable lessons,
-validates those lessons with evidence and coverage checks, lets humans approve what
-becomes durable, and injects approved lessons back into future agent work as traps,
-project guidance, skills, custom agents, automations, evals, docs updates, or reviewed skips.
-```
-
 Key boundaries:
 
-- codetrap does not own all raw history.
-- codetrap only owns experience that is reviewable, durable, and actionable.
+- codetrap does not own all raw history; it owns experience that is reviewable,
+  durable, and actionable.
 - codetrap does not cram every experience into `traps.db`.
-- codetrap does not replace the semantic judgment of agents such as Codex, Claude Code, or Cursor.
-- The codetrap CLI should not hardcode "what experience is worth saving."
-- `.codetrap/sessions` is a candidate and review workspace, not the sole source of experience discovery for the mature product.
-- Automation is only responsible for discovery, clustering, drafting, triage, validation, and staging; final durability must be confirmed by the user.
+- codetrap does not replace the semantic judgment of agents.
+- `.codetrap/sessions` is a candidate and review workspace, not the sole source
+  of experience discovery.
+- Automation covers discovery, clustering, drafting, triage, validation, and
+  staging; final durability is always confirmed by the user.
 
 ---
 
-## 2. Why Upgrade
+## 3. Hard Requirements
 
-Existing codetrap already solves a clear problem: before an agent starts work, it retrieves confirmed traps to avoid repeating mistakes. That direction still holds, but it only covers a small part of experience.
+### 3.1 Dual-client symmetry: Codex + Claude Code
 
-In real usage, more reusable signals appear in user and agent history:
+codetrap serves Codex and Claude Code as **co-equal first-class clients**. Any
+feature, doc, or example that assumes Codex-only is a defect. Concretely:
 
-- Project preferences the user repeatedly corrects the agent on.
-- The same class of failure recurring across sessions.
-- A release, retrospective, debugging, evaluation, or docs-update flow being performed manually many times.
-- Tasks that suit delegation to a bounded specialist subagent.
-- Periodic checks that should become automation proposals.
-- External articles, issues, blogs, or papers exposing pitfalls likely to be hit later.
-- Retrieval queries that represent recall behavior worth protecting.
-- Content that looks reasonable but is too broad, poorly evidenced, stale, sensitive, or one-off, and should explicitly be skipped.
+| Concern | Codex | Claude Code |
+|---|---|---|
+| Setup command | `codetrap setup codex` | `codetrap setup claude` (to build) |
+| Skills / entry points | `~/.codex/skills` bundle | Claude Code plugin skills / slash commands (to build) |
+| Project guidance | `AGENTS.md` (template append) | `CLAUDE.md` (same template) |
+| History source (pull mode) | Codex local sessions, task/rollout summaries | `~/.claude/projects/<slug>/` JSONL transcripts |
+| Agent-native sources | Codex Memories | Claude Code session summaries / memory dir |
+| MCP | optional, same server | optional, same server (`.mcp.json`) |
+| Doctor checks | per-client integration health | per-client integration health |
 
-If every experience is compressed into a trap, the database gets dirty.
-If none of these experiences are recorded, the user never feels "the more I use it, the better it understands me."
-If the agent directly creates skills, automations, AGENTS patches, or traps, the user loses trust.
+Symmetry rules:
 
-The mature product needs a candidate model one layer above the trap: `LessonCandidate`.
+- One CLI contract; two thin client adapters. Adding a third client later must
+  not require touching the compiler layer.
+- The packaged template (`plugins/codetrap-agent/templates/AGENTS.codetrap.md`)
+  remains the single source of truth for agent guidance in both clients.
+- The learning-review entry point exists in both clients
+  (`$codetrap-learning-review` as a Codex skill AND as a Claude Code
+  skill/command) and both delegate to the identical CLI commands.
+- The shared behavioral contract is additionally embedded in the MCP server's
+  initialize instructions (§13.2), so a client that only speaks MCP still
+  learns the workflow without per-client prompt configuration.
 
----
+### 3.2 Trust red lines (consolidated — apply to every phase)
 
-## 3. Product Principles
+Explicit trigger only:
 
-### 3.1 codetrap is a compiler, not a brain
+- Learning review runs only when the user explicitly triggers it (skill
+  invocation, CLI command, Web button, explicit MCP call).
+- No agent auto-scanning of history during ordinary coding tasks. No background
+  scanning by the CLI. No silent reads on Web open. No implicit MCP escalation
+  from ordinary search into learning review.
 
-The codetrap core should not use fragile keyword rules to decide "what was learned."
+Dry-run by default; no durable write before user confirmation:
 
-It should NOT do:
+- Generating candidates and reports: allowed.
+- Writing confirmed traps, editing AGENTS/CLAUDE guidance, installing skills,
+  creating custom agents, enabling automations, merging eval fixtures: only
+  after explicit per-item user confirmation, each with a visible diff and a
+  rollback path.
+- `accepted` does not equal runtime injection. Only lessons merged into a
+  durable destination in a runtime-eligible state may influence agent behavior.
 
-```text
-session contains "test failed" -> auto-create pitfall_trap
-session contains "release" -> auto-create skill_candidate
-session contains "every day" -> auto-create automation_idea
-session contains "AGENTS" -> auto-edit AGENTS.md
-```
+Privacy and evidence:
 
-It SHOULD do:
+- Do not copy full session transcripts into codetrap. Store source manifest,
+  evidence pointers, short excerpts, hashes, dates, and necessary metadata.
+- Sensitive or external sources require redaction and explicit confirmation.
 
-```text
-agent / skill understands history and drafts candidates;
-codetrap handles:
-- source manifest
-- evidence refs
-- redaction
-- schema validation
-- coverage check
-- risk flags
-- skip archive
-- staging review
-- durable write gate
-```
+### 3.3 Documentation accuracy invariant
 
-What may be hardcoded is the product contract and the safety boundary; what should not be hardcoded is the learning judgment.
+Every release, the README command table, directory structure, MCP tool list,
+and install instructions must be true of the shipped code. Template files are
+the single source of truth; README points to them. Rationale: the leading
+competitor (mempal) ships a README whose install command references a crate
+layout that does not exist and understates its own tool count by 2x —
+documentation rot destroys exactly the user trust this product sells.
+codetrap's current README accuracy is a competitive asset; it is now an
+invariant, verified in release preflight.
 
-### 3.2 Explicit trigger, no silent background scanning
+### 3.4 Process discipline cap
 
-Learning review must be explicitly triggered by the user.
-
-Allowed triggers:
-
-```text
-$codetrap-learning-review
-codetrap learn review --since 30d --limit 10 --dry-run
-user clearly says: scan the last 30 days of Codex sessions and generate LessonCandidates
-clicking in the Web: Start Learning Review
-explicit MCP call: codetrap.learn.review
-```
-
-Disallowed triggers:
-
-```text
-agent auto-scans history during an ordinary coding task
-CLI periodically scans user sessions in the background
-Web silently reads Codex history on open
-MCP implicitly triggered into a learning review by an ordinary search
-```
-
-### 3.3 Dry-run by default, no durable write before user confirmation
-
-The default behavior must be:
-
-```text
-generating candidates and reports: OK
-writing confirmed traps: not OK
-editing AGENTS.md: not OK
-installing skills: not OK
-creating custom agents: not OK
-enabling automations: not OK
-polluting eval fixtures: not OK
-```
-
-`accepted` does not equal runtime injection.
-Only experience that has entered a durable destination and is in a runtime-eligible state may influence the next agent action.
-
-### 3.4 Typed destinations over unified ingestion
-
-The value of the mature product is not "store everything," but "put experience into the right long-term carrier."
+One task dossier per milestone (§19). No specs about specs, no audits of
+audits. If a proposed document does not change what gets built or how it is
+verified, do not write it. (Competitor cautionary tale: 112 numbered specs of
+which three are separate "completion audits" of the same completion.)
 
 ---
 
-## 4. Mature Product System
+## 4. UX Principles and Budgets
 
-The mature codetrap consists of six systems:
+The review experience IS the product. If review feels like data entry, the
+flywheel stops regardless of how good the mining is.
+
+### 4.1 The user is approving learning, not entering data
+
+- Candidate cards lead with the human question: "should the agent behave
+  differently next time, and how?" — not with JSON fields.
+- Progressive disclosure: shortlist → card → evidence drill-down on demand.
+  Low-context card first; never force reading raw evidence to make an obvious
+  call.
+- Every card states its recommended destination and why, so the default action
+  is one click, and editing is the exception.
+
+### 4.2 Numeric UX budgets (test against these)
+
+```text
+Time-to-first-value:      < 10 minutes from install to first useful pre-flight
+                          search hit or first accepted lesson.
+Review batch:             10 candidates reviewable in < 5 minutes by a user
+                          familiar with the project.
+Triage actions:           accept / edit / skip / reject reachable in one
+                          keystroke or one click from the card.
+Inbox cap:                soft cap ~30 pending candidates; beyond it, new
+                          reviews warn and suggest triage first.
+Staleness:                pending candidates untouched for 60 days are
+                          auto-marked stale (needs_more_evidence), never
+                          silently deleted.
+Learning review runtime:  a 30-day pull-mode review completes in minutes, not
+                          hours; long steps stream progress.
+```
+
+These budgets are acceptance criteria for the Web inbox and skill UX phases,
+not aspirations.
+
+### 4.3 Trust receipts
+
+After every learning review and every review session, show a receipt:
+
+```text
+staged: N candidates    skipped: M (reasons archived)
+durable writes: 0 (nothing was written to traps.db, guidance, skills,
+agents, automations, or evals)
+```
+
+The §16 Phase 0 red-line verification generalizes into this permanent UI
+element. Users should never have to wonder whether something was silently
+written; the product tells them, every time.
+
+### 4.4 Inbox hygiene is a feature
+
+- `skip` archives carry a reason and suppress re-proposal of the same lesson.
+- Duplicate candidates are merged or superseded at staging time, not surfaced
+  twice for the user to notice.
+- The inbox is empty-able: a user who processes all cards reaches a genuine
+  "inbox zero" state, with stale items parked out of view.
+- Silence beats noise: when mining finds nothing above the quality bar, the
+  correct output is "nothing worth your review" plus skips — never filler
+  candidates to look productive.
+
+### 4.5 Setup and doctor UX
+
+- `codetrap setup codex` / `codetrap setup claude`: one command per client,
+  idempotent, self-healing on re-run after upgrade (safe to re-run always).
+- `codetrap doctor` reports per-client integration health: skill installed?
+  guidance appended and current? MCP registered? MCP server version matches
+  CLI binary version? (Clients spawn MCP servers at startup; after a binary
+  upgrade the old server may still be running — doctor must detect and say
+  "restart your client," because the failure is otherwise invisible.)
+- Error messages name the fix, not just the failure.
+
+---
+
+## 5. Mature Product System
+
+Six systems:
 
 ```text
 1. Experience Sources
 2. Agent-native Discovery
 3. Lesson Candidate Layer
 4. codetrap Compiler Layer
-5. Learning Review Web Workbench
+5. Learning Review Web Workbench (Learning Inbox)
 6. Durable Destinations + Runtime Guardrail Injection
 ```
 
 ---
 
-## 5. Experience Sources
+## 6. Experience Sources
 
-Experience sources are divided into first-class sources, agent-native sources, and supplementary sources.
+### 6.1 First-class sources (dual-client)
 
-### 5.1 First-class sources
-
-First-class sources are what the mature product should support and validate first:
+Codex side:
 
 - Codex local sessions
 - Codex task summaries / rollout summaries
-- Codex memories, when the user explicitly allows it and the agent can access them
+- Codex Memories, when the user explicitly allows access
+
+Claude Code side:
+
+- Claude Code local session transcripts (`~/.claude/projects/<slug>/` JSONL)
+- Claude Code session summaries
+- Claude Code memory directory contents, when the user explicitly allows access
+
+Shared / codetrap-native:
+
 - `.codetrap/sessions`
-- existing traps
-- pending candidates
-- existing skills
-- existing custom agents / subagents
-- existing automations
-- AGENTS / CLAUDE / Cursor rules / project guidance
+- existing traps, pending candidates
+- existing skills, custom agents / subagents, automations
+- AGENTS.md / CLAUDE.md / project guidance
 - docs / roadmap / dogfood log / eval fixtures
 
-### 5.2 Agent-native sources
+### 6.2 Agent-native sources
 
-Some history or context can only be reliably accessed by a specific agent, for example:
-
-- Codex Memories
-- Chronicle, if the user enables it
-- Codex app internal task summaries
-- Claude Code session summaries
-- Cursor / Windsurf / other agent local context
-- custom skills, subagents, and automations the agent already knows about
-
-The codetrap core should not assume it can read these sources directly. It should support **agent-submitted candidates**:
+Some context is only reliably accessible to a specific agent (memories,
+internal task summaries, client-side session state). The codetrap core must not
+assume it can read these directly. It supports **agent-submitted candidates**:
 
 ```text
 Agent reads the history it can access
@@ -230,70 +382,48 @@ Agent reads the history it can access
   -> codetrap does schema, evidence, coverage, risk, staging
 ```
 
-### 5.3 Supplementary sources
+### 6.3 Supplementary sources
 
-Supplementary sources can enhance discovery, but are not required for the basic mature form:
+User corrections, review feedback, test/command failures, external articles /
+issues / blogs / papers, and future optional integrations (GitHub Issues,
+Slack, Jira, Linear, Notion). Principles:
 
-- user corrections
-- review feedback
-- test failures / command failures
-- external articles, issues, blogs, papers
-- cross-tool duplicate work found by Chronicle
-- future optional integrations: Slack, Jira, Linear, GitHub Issues, Notion, etc.
-
-Principles:
-
-- Reading these sources is for discovering experience, not for bulk-importing raw history into codetrap.
-- No background scanning by default.
-- Learning review must be explicitly triggered by the user.
-- For sensitive or external sources, prefer storing an evidence pointer, short excerpt, hash, date, and source type instead of copying the full text.
-- Broader sources like Chronicle are used for discovery only; important facts should be confirmed back in the relevant source system.
+- Reading these is for discovering experience, not bulk-importing raw history.
+- For sensitive or external sources, store an evidence pointer, short excerpt,
+  hash, date, and source type instead of the full text.
+- Discovery-only breadth tools are for finding leads; important facts get
+  confirmed in the source system.
 
 ---
 
-## 6. Agent-native Discovery
+## 7. Agent-Native Discovery
 
-Agent-native discovery is an important entry point for the mature product.
-
-### 6.1 Why agent-native discovery is needed
-
-codetrap is an experience tool used by AI coding tools. Different agents access history, memory, task summaries, skills, subagents, and automations differently.
-
-Therefore, the codetrap CLI should not be required to understand all sources on its own. A more sensible division of labor is:
+### 7.1 Division of labor
 
 ```text
-Codex Skill / Claude command / Cursor workflow
-  -> asks the user for scope
-  -> uses the sessions / memories / summaries the agent itself can access
+Codex Skill / Claude Code skill or command
+  -> asks the user for scope (or confirms an explicitly given scope)
+  -> uses the sessions / memories / summaries that agent can access
   -> drafts candidates
   -> calls codetrap CLI to stage
 ```
 
-The codetrap core only owns the stable contract.
+The codetrap core owns only the stable contract.
 
-### 6.2 Recommended skill entry point
-
-The mature product should provide an explicit skill, for example:
+### 7.2 Entry points (one per client, same contract)
 
 ```text
-$codetrap-learning-review
+$codetrap-learning-review     (Codex skill)
+/codetrap-learning-review     (Claude Code skill or slash command)
 ```
 
-Responsibilities:
-
-```text
-Help the user explicitly trigger a codetrap learning review:
-read the Codex sessions / memories / rollout summaries / existing skills / agents / automations
-  available within the specified time range,
-dry-run generate LessonCandidates,
-hand them to the codetrap CLI for validation and staging,
-and finally guide the user into the Web Learning Inbox for review.
-```
+Both delegate to identical CLI commands and produce identical artifacts under
+`.codetrap/learning/reviews/<review-id>/`.
 
 Default parameters:
 
 ```text
-source: Codex sessions, adding memories / summaries when needed
+source: the invoking client's own sessions (plus memories/summaries if allowed)
 range: last 30 days, or all available history if shorter
 limit: 10 LessonCandidates
 mode: dry-run
@@ -301,138 +431,81 @@ write_durable: false
 output: .codetrap/learning/reviews/<review-id>/
 ```
 
-If the user has already specified the scope, for example:
+Scope handling UX:
+
+- If the user already specified scope ("scan the last 30 days and generate 10
+  candidates"), do not re-ask; state the red-line confirmation and proceed:
 
 ```text
-read the last 30 days of Codex sessions and dry-run generate 10 LessonCandidates
+I will read the last 30 days of <client> sessions and generate at most 10
+LessonCandidates. This run is dry-run only; results go to
+.codetrap/learning/reviews/<review-id>/. I will not write traps.db, not edit
+guidance, not install skills, not create agents, not enable automations.
 ```
 
-the skill should not ask again; it only needs to confirm the red lines:
+- If the user gave no scope, ask once, briefly (last 7 days / last 30 days
+  (default) / custom dates / last N sessions).
+- `allow_implicit_invocation: false` — the skill only runs when explicitly
+  invoked.
+
+### 7.3 Discovery prompt (shared core, client-specific source lists)
 
 ```text
-I will read the last 30 days of Codex sessions and generate at most 10 LessonCandidates.
-This run is dry-run only; results are written to .codetrap/learning/reviews/<review-id>/.
-I will not write to traps.db, not edit AGENTS.md, not install any skill, not create any custom agent, and not enable any automation.
-```
-
-If the user only says:
-
-```text
-run a codetrap learning review for me
-```
-
-the skill should briefly ask for scope:
-
-```text
-Which range should I scan?
-1. Last 7 days
-2. Last 30 days (default)
-3. Custom start/end dates
-4. Last N sessions
-```
-
-### 6.3 Security principles for the skill
-
-The learning review skill should only allow explicit invocation and should not be triggered implicitly.
-
-Recommended principle:
-
-```text
-allow_implicit_invocation: false
-```
-
-Safety rules:
-
-- Do not auto-scan history during an ordinary coding task.
-- Dry-run by default.
-- Do not write `traps.db`.
-- Do not edit `AGENTS.md`, `CLAUDE.md`, or Cursor rules.
-- Do not install or modify skills.
-- Do not create or modify custom agents / subagents.
-- Do not enable automations.
-- Do not copy full Codex session transcripts into codetrap.
-- Store only the source manifest, evidence pointer, short excerpt, hash, date, and necessary metadata.
-
-### 6.4 codetrap-flavored discovery prompt
-
-A generic Codex prompt can be adapted into the upper-layer prompt of a codetrap skill:
-
-```text
-Look back over my recent work from the requested range, defaulting to the last 30 days
-or all available history if shorter, and identify reusable lessons worth staging for
-codetrap review.
+Look back over my recent work from the requested range (default: last 30 days
+or all available history if shorter) and identify reusable lessons worth
+staging for codetrap review.
 
 Use available evidence in this order:
-- Recent Codex sessions and task summaries.
-- Codex Memories and rollout summaries, when explicitly available, to find patterns repeated across sessions.
-- Chronicle, if enabled, for discovery only; confirm important details in the relevant source system when possible.
-- Existing traps, pending candidates, AGENTS/CLAUDE/Cursor guidance, skills, custom agents, automations, docs, and eval fixtures,
-  so you reuse or extend what already exists instead of duplicating it.
+- This client's recent sessions and task summaries.
+- This client's memories / rollout summaries, when explicitly available, to
+  find patterns repeated across sessions.
+- Existing traps, pending candidates, AGENTS/CLAUDE guidance, skills, custom
+  agents, automations, docs, and eval fixtures — so you extend what exists
+  instead of duplicating it.
 
-Look broadly for lessons that are repeated, costly, error-prone, context-heavy,
-or likely to improve future agent behavior.
+Look for lessons that are repeated, costly, error-prone, context-heavy, or
+likely to improve future agent behavior.
 
-Choose the smallest appropriate LessonCandidate type:
-- pitfall_trap: repeated failure or misuse pattern.
-- project_convention: stable project or team preference.
-- skill_candidate: reusable workflow or playbook.
-- custom_agent_candidate: bounded specialist role or investigation task suitable for delegation.
-- automation_idea: scheduled or recurring check, report, reminder, or monitor.
-- search_eval_case: query or recall behavior that should be protected.
-- docs_guidance: README, roadmap, install docs, or agent guidance update.
-- skip: too one-off, ambiguous, sensitive, broad, risky, or poorly evidenced.
+Choose the smallest appropriate LessonCandidate type (see types table).
+First produce a compact shortlist with: title, type, trigger, lesson,
+recommended action, supporting evidence and dates, frequency/confidence,
+existing coverage, risk, recommended destination, and why it is or is not
+worth staging.
 
-First produce a compact shortlist with:
-- candidate title
-- type
-- trigger
-- lesson
-- recommended action
-- supporting evidence and dates
-- frequency / confidence
-- existing coverage
-- risk
-- recommended destination
-- why it is or is not worth staging
+Stage only high-confidence missing proposals. Do not write traps.db, edit
+guidance, install skills, create agents, enable automations, or merge eval
+fixtures. Do not create speculative, overlapping, or overly broad assets.
 
-Stage only high-confidence missing proposals.
-Do not write traps.db.
-Do not edit AGENTS.md.
-Do not install skills.
-Do not create custom agents.
-Do not enable automations.
-Do not merge eval fixtures.
-Do not create speculative, overlapping, or overly broad assets.
-
-Finish with:
-- what was staged
-- what was deliberately skipped
-- what needs more evidence before packaging
-- confirmation that no durable destination was modified
+Finish with: what was staged, what was deliberately skipped, what needs more
+evidence, and confirmation that no durable destination was modified.
 ```
 
 ---
 
-## 7. Lesson Candidate Layer
+## 8. Lesson Candidate Layer
 
-The mature product should introduce the higher-level concept `LessonCandidate`. A trap is one kind of lesson, not the whole of it.
+`LessonCandidate` is the concept one layer above the trap. A trap is one kind
+of lesson, not the whole of it.
 
-### 7.1 Candidate types
+### 8.1 Candidate types
 
 | Type | Applicable scenario | Recommended destination | Red line |
 |---|---|---|---|
-| `pitfall_trap` | failure mode, misuse pattern, a pit that is easy to step on repeatedly | confirmed trap + evidence + lifecycle | do not auto-write `traps.db` |
-| `project_convention` | project preference, team norm, boundary constraint | AGENTS/CLAUDE/Cursor guidance patch proposal | do not silently edit agent guidance |
-| `skill_candidate` | repeated workflow, SOP, reusable playbook | staged skill draft | do not auto-install, do not auto-trigger |
-| `custom_agent_candidate` | bounded specialist role, investigation task, delegable role | custom subagent proposal | do not auto-create or enable subagent |
-| `automation_idea` | periodic check, report, reminder, monitor | automation proposal | do not auto-enable, no external side effects |
-| `search_eval_case` | query/case whose retrieval quality must be protected | eval candidate / fixture proposal | do not pollute fixtures, no ordinary no-results |
-| `docs_guidance` | README, roadmap, install docs, agent guidance that needs updating | docs patch proposal | do not write temporary ideas as long-term facts |
-| `skip` | generic knowledge, one-off task, insufficient evidence, too risky | skip record / archive reason | do not let low-quality candidates keep reappearing |
+| `pitfall_trap` | repeated failure or misuse pattern | confirmed trap + evidence + lifecycle | no auto-write to `traps.db` |
+| `project_convention` | stable project/team preference or boundary | AGENTS/CLAUDE guidance patch proposal | no silent guidance edits |
+| `skill_candidate` | repeated workflow, SOP, reusable playbook | staged skill draft | no auto-install, no auto-trigger |
+| `custom_agent_candidate` | bounded specialist role suitable for delegation | custom subagent proposal | no auto-create or enable |
+| `automation_idea` | periodic check, report, reminder, monitor | automation proposal | no auto-enable, no external side effects |
+| `search_eval_case` | query/recall behavior worth protecting | eval fixture proposal | no fixture pollution |
+| `docs_guidance` | README/roadmap/docs/agent guidance update | docs patch proposal | no writing temporary ideas as long-term facts |
+| `skip` | one-off, ambiguous, sensitive, broad, or under-evidenced | skip archive with reason | low-quality candidates must not keep reappearing |
 
-### 7.2 Minimum fields per candidate
+MVP note: Phase 1 implements `pitfall_trap` and `skip` end-to-end (the trap
+lane already exists in the product today). All other types are accepted by the
+schema and staged as proposal stubs, but their destination workflows come in
+Phase 2 (§16).
 
-Each `LessonCandidate` must at least express:
+### 8.2 Minimum fields
 
 ```text
 id
@@ -445,6 +518,7 @@ lesson
 recommended_action
 evidence
 source_manifest_refs
+source_agent            # NEW in v2: codex | claude-code | <other>
 frequency
 confidence
 coverage
@@ -455,154 +529,112 @@ created_at
 updated_at
 ```
 
-Field semantics:
+`source_agent` records which client's history produced the candidate. It is
+required for provenance, for cross-client duplicate detection ("both agents
+learned the same lesson" must merge, not duplicate), and for per-client noise
+analysis. All other field semantics as v1: `trigger` = when it should be
+recalled; `lesson` = what was learned; `recommended_action` = what the agent
+should do differently; `evidence` = sources, dates, snippets, refs, hashes;
+`coverage` = overlap with existing traps/candidates/guidance/skills/agents/
+automations/docs/evals/skips; `risk` = misuse, over-breadth, staleness,
+privacy, sensitivity, external side effects; `runtime_eligibility` = whether
+and when it may enter runtime recall.
 
-- `title`: one-line summary.
-- `type`: recommended candidate type.
-- `trigger`: when it should be recalled.
-- `lesson`: what was learned.
-- `recommended_action`: what the agent should do next time.
-- `evidence`: sources, dates, snippets, related files, session/ref id, hash.
-- `source_manifest_refs`: points to the list of sources used by this review.
-- `frequency`: number of occurrences or repeated signal.
-- `confidence`: confidence level.
-- `coverage`: whether it is already covered by a trap, pending candidate, AGENTS, CLAUDE, Cursor rules, skill, custom agent, automation, docs, eval, or skip.
-- `risk`: misuse, overly broad, stale, privacy, sensitive, external-side-effect risk.
-- `recommended_destination`: recommended long-term carrier.
-- `runtime_eligibility`: whether and when it may enter runtime recall.
-- `status`: current review status.
-
-### 7.3 Recommended state machine
+### 8.3 State machine
 
 ```text
-proposed
-  -> edited
-  -> staged
-  -> accepted
-  -> merged
+proposed -> edited -> staged -> accepted -> merged
+bypass:  rejected | skipped | superseded
 ```
 
-Bypass states:
+- `proposed`: generated, not yet reviewed.
+- `edited`: content modified by user or agent.
+- `staged`: entered a destination proposal/draft; no durable write.
+- `accepted`: user accepts candidate + destination; not necessarily written.
+- `merged`: written into a long-term carrier with a rollback path.
+- `rejected`: not adopted.
+- `skipped`: explicitly archived with a reason; suppresses repeat noise.
+- `superseded`: covered by an existing or better candidate.
 
-```text
-rejected
-skipped
-superseded
-```
+Key principle: `accepted` ≠ runtime injection. Only
+merged/installed/enabled/fixture-accepted lessons may become runtime guardrails.
 
-State definitions:
+### 8.4 Quality bar
 
-- `proposed`: generated by the agent or CLI, not yet reviewed.
-- `edited`: the candidate content has been modified by the user or agent.
-- `staged`: entered a destination proposal/draft, but with no durable write.
-- `accepted`: the user accepts the candidate and its recommended destination, but it has not necessarily been written to a long-term carrier.
-- `merged`: written into a long-term carrier with a clear rollback path.
-- `rejected`: not adopted; usually not used for noise reduction.
-- `skipped`: explicitly archived with a skip reason, used to suppress repeated noise.
-- `superseded`: covered by an existing or better new candidate.
-
-Key principle:
-
-```text
-accepted does not equal runtime injection.
-merged / installed / enabled / fixture accepted is what may become a runtime guardrail.
-```
-
-### 7.4 Quality bar
-
-- Experience without a trigger condition cannot become a guardrail.
-- Experience without a recommended action cannot enter runtime.
-- Content with insufficient evidence should go to skip or watch, not be forced into durability.
-- Recurrence is not the only condition; high-cost experience that will clearly recur can also be a candidate.
-- Candidates duplicating existing content should merge, supersede, or skip, not be recreated.
-- Candidates whose misuse risk exceeds their benefit must not enter runtime.
-- Candidates from sensitive sources must go through redaction and explicit confirmation.
+- No trigger condition → cannot become a guardrail.
+- No recommended action → cannot enter runtime.
+- Insufficient evidence → skip or watch, never forced durability.
+- Recurrence is not required: high-cost lessons that will clearly recur qualify.
+- Duplicates of existing content merge, supersede, or skip — never re-enter.
+- Misuse risk exceeding benefit → must not enter runtime.
+- Sensitive-source candidates require redaction and explicit confirmation.
 
 ---
 
-## 8. codetrap Compiler Layer
+## 9. codetrap Compiler Layer
 
-The codetrap CLI is the compiler layer, not the brain that makes learning judgments.
+### 9.1 What the CLI owns
 
-### 8.1 What the CLI should own
-
-The CLI should own:
-
-- source discovery, when sources are locally readable files.
-- source manifest generation.
-- evidence pack generation.
-- evidence excerpt length limits.
-- redaction / privacy checks.
+- Source discovery for locally readable files (both clients' session dirs).
+- Source manifest generation; evidence pack generation; excerpt length limits.
+- Redaction / privacy checks.
 - LessonCandidate schema validation.
-- coverage check.
-- duplicate detection.
-- risk flagging.
-- skip archive.
-- staging review directory.
-- durable write gates.
+- Coverage verification (§9.3) and duplicate detection, including
+  cross-client dedup keyed on content similarity, not just IDs.
+- Risk flagging; skip archive; staging review directory.
+- Durable write gates.
 - JSON / Web / MCP contract.
 
-### 8.2 What the CLI should not own
+### 9.2 What the CLI must not hardcode
 
-The CLI should not hardcode:
+- Which natural-language summaries are traps / skills / automations.
+- Which project files should modify guidance.
+- Which candidates should enter runtime.
+- Support for only one client, only the last 30 days, or only 10 entries
+  (these are defaults, not limits).
 
-- which natural-language summaries are definitely traps.
-- which command sequences are definitely skills.
-- which date words are definitely automations.
-- which project files should definitely modify AGENTS.
-- which candidates should definitely enter runtime.
-- supporting only Codex.
-- reading only the last 30 days.
-- generating only 10 entries.
+### 9.3 Coverage check: agent-assisted, CLI-verified (v2 resolution)
 
-### 8.3 Two review modes
+v1 assigned "coverage check" wholly to the CLI. That contradicted "compiler,
+not brain": deciding whether a candidate duplicates free-text guidance in
+AGENTS.md is semantic judgment. v2 division:
 
-#### Mode A: Pull mode
-
-codetrap reads local sources itself:
-
-```bash
-codetrap learn review \
-  --source codex-sessions \
-  --since 30d \
-  --limit 10 \
-  --dry-run
+```text
+Agent (drafting): proposes coverage claims — "covered_by: trap #42",
+                  "overlaps: AGENTS.md section 'testing'", "no coverage found".
+CLI (staging):    deterministically verifies every claimed ref exists (trap
+                  IDs, file paths, section anchors, candidate IDs); runs FTS/
+                  hybrid similarity against existing traps and candidates and
+                  attaches a ranked "possible duplicates" report; flags
+                  candidates whose claims failed verification.
+Web (review):     shows the coverage report; the human makes the final
+                  merge / supersede / convert / reject call.
 ```
 
-Suitable for:
+The CLI never silently drops a candidate on semantic-similarity grounds alone;
+it stages with a duplicate warning. Deterministic verification gates; semantic
+judgment advises.
 
-- Codex local sessions
-- `.codetrap/sessions`
-- local dogfood log
-- local docs
-- agent logs at known paths
+### 9.4 Three review modes
 
-#### Mode B: Agent-submitted mode
+Mode A — Pull (codetrap reads local sources itself):
 
-The agent reads the context it can access, then submits candidates to codetrap:
+```bash
+codetrap learn review --source codex-sessions --since 30d --limit 10 --dry-run
+codetrap learn review --source claude-code-sessions --since 30d --limit 10 --dry-run
+```
+
+Mode B — Agent-submitted (agent reads what only it can access, then stages):
 
 ```bash
 codetrap learn stage \
-  --review-dir .codetrap/learning/reviews/2026-06-22-codex-30d \
+  --review-dir .codetrap/learning/reviews/<review-id> \
   --candidates lesson-candidates.json \
   --source-manifest source-manifest.json \
-  --validate \
-  --coverage-check \
-  --dry-run
+  --validate --coverage-check --dry-run
 ```
 
-Suitable for:
-
-- Codex Memories
-- Chronicle
-- Codex task summaries
-- Claude Code summaries
-- Cursor / Windsurf context
-- other agent-native memory
-
-#### Mode C: Hybrid mode
-
-codetrap first generates an evidence pack, the agent then drafts candidates, and codetrap finally stages:
+Mode C — Hybrid (recommended mature form):
 
 ```text
 codetrap learn evidence-pack
@@ -611,564 +643,379 @@ codetrap learn evidence-pack
   -> Web Learning Inbox
 ```
 
-This is the recommended mature form.
-
-### 8.4 Recommended command drafts
-
-Discover sources:
+### 9.5 Command surface (drafts)
 
 ```bash
-codetrap learn sources \
-  --source codex-sessions \
-  --since 30d \
-  --json
-```
-
-Generate an evidence pack:
-
-```bash
-codetrap learn evidence-pack \
-  --source codex-sessions \
-  --since 30d \
-  --out .codetrap/learning/reviews/2026-06-22-codex-30d
-```
-
-Direct review:
-
-```bash
-codetrap learn review \
-  --source codex-sessions \
-  --since 30d \
-  --limit 10 \
-  --dry-run
-```
-
-Exact date range:
-
-```bash
-codetrap learn review \
-  --source codex-sessions \
-  --from 2026-05-18 \
-  --to 2026-06-18 \
-  --limit 10 \
-  --dry-run
-```
-
-Last N sessions:
-
-```bash
-codetrap learn review \
-  --source codex-sessions \
-  --last-sessions 50 \
-  --limit 10 \
-  --dry-run
-```
-
-Stage agent-generated candidates:
-
-```bash
-codetrap learn stage \
-  --review-dir .codetrap/learning/reviews/<review-id> \
-  --validate \
-  --coverage-check \
-  --dry-run
-```
-
-Open the review:
-
-```bash
+codetrap learn sources --source <codex-sessions|claude-code-sessions|...> --since 30d --json
+codetrap learn evidence-pack --source <...> --since 30d --out .codetrap/learning/reviews/<id>
+codetrap learn review --source <...> [--since 30d | --from D --to D | --last-sessions N] --limit 10 --dry-run
+codetrap learn stage --review-dir <dir> --validate --coverage-check --dry-run
 codetrap web
 ```
 
 ---
 
-## 9. Learning Review Web Workbench
+## 10. Learning Review Web Workbench (Learning Inbox)
 
-Web Review should be upgraded from trap-only review into a Learning Inbox.
+Web Review upgrades from trap-only review into a Learning Inbox, honoring the
+UX budgets in §4.2.
 
-### 9.1 List view
-
-The list should let users quickly judge:
-
-```text
-[type] [title] [confidence] [frequency] [evidence dates] [recommended destination] [coverage] [risk] [status]
-```
-
-### 9.2 Detail page
-
-The detail page should show:
-
-- trigger condition.
-- candidate lesson.
-- recommended action.
-- supporting evidence.
-- source manifest.
-- coverage relationship with existing traps, pending candidates, AGENTS/CLAUDE/Cursor guidance, skills, custom agents, automations, docs, evals, and skip archive.
-- recommended destination and rationale.
-- risk notes.
-- current status and available actions.
-
-### 9.3 User actions
-
-Basic actions:
-
-- accept
-- edit
-- merge
-- supersede
-- convert type
-- reject
-- skip as one-off
-- stage proposal
-
-Different types have different confirmation strengths:
+List view — enough to triage without opening the card:
 
 ```text
-pitfall_trap:
-  accept -> confirmed trap proposal -> user confirms -> traps.db
-
-project_convention:
-  accept -> guidance patch proposal -> user reviews diff -> merge
-
-skill_candidate:
-  accept -> staged skill draft -> user installs explicitly
-
-custom_agent_candidate:
-  accept -> custom agent proposal -> user creates/enables explicitly
-
-automation_idea:
-  accept -> automation proposal -> user enables explicitly
-
-search_eval_case:
-  accept -> eval fixture proposal -> user merges into evals explicitly
-
-docs_guidance:
-  accept -> docs patch proposal -> user reviews diff -> merge
-
-skip:
-  accept skip -> archive reason -> suppress duplicate noise
+[type] [title] [confidence] [frequency] [evidence dates] [recommended
+destination] [coverage] [risk] [status] [source_agent]
 ```
 
-Key UX principles:
+Detail card — progressive disclosure order:
 
-- One unified entry, different destinations.
-- The Web can review in one place, but cannot ingest into one place.
-- The larger the side effect of a destination, the more explicit the confirmation.
-- The user should feel they are "approving learning," not "entering data into a database."
-- Show low-context candidate cards by default; drill into evidence on demand.
-- All durable writes should have a diff, confirmation, and a rollback path.
+1. Trigger, lesson, recommended action (the "what changes next time" block).
+2. Recommended destination and rationale; coverage report; risk notes.
+3. Evidence drill-down (excerpts, dates, source manifest) on demand.
+
+User actions: accept / edit / merge / supersede / convert type / reject /
+skip-as-one-off / stage proposal. Confirmation strength scales with destination
+side effects:
+
+```text
+pitfall_trap:           accept -> confirmed trap proposal -> confirm -> traps.db
+project_convention:     accept -> guidance patch proposal -> review diff -> merge
+skill_candidate:        accept -> staged skill draft -> explicit install
+custom_agent_candidate: accept -> agent proposal -> explicit create/enable
+automation_idea:        accept -> automation proposal -> explicit enable
+search_eval_case:       accept -> eval fixture proposal -> explicit merge
+docs_guidance:          accept -> docs patch proposal -> review diff -> merge
+skip:                   accept skip -> archive reason -> suppress noise
+```
+
+UX principles: one unified entry, different destinations; review in one place,
+never ingest into one place; the bigger the side effect, the more explicit the
+confirmation; every durable write has a diff, a confirmation, and a rollback
+path; end every session with the trust receipt (§4.3).
 
 ---
 
-## 10. Durable Destinations
+## 11. Durable Destinations
 
-Different experiences enter different long-term carriers.
+| Candidate | Durable destination | User confirmation | Rollback path | Phase |
+|---|---|---|---|---|
+| `pitfall_trap` | `traps.db` confirmed trap + evidence + lifecycle | required | delete / supersede / lifecycle status | **1 (MVP)** |
+| `skip` | skip archive with reason | accept skip | unskip / reopen | **1 (MVP)** |
+| `project_convention` | AGENTS/CLAUDE guidance patch | review diff | revert patch | 2 |
+| `docs_guidance` | docs patch proposal | review diff | revert patch | 2 |
+| `search_eval_case` | eval fixture proposal | merge fixture | remove fixture / mark obsolete | 2 |
+| `skill_candidate` | staged skill draft | explicit install | remove / disable skill | 3 |
+| `custom_agent_candidate` | custom subagent config draft | explicit create/enable | disable / remove agent | 3 |
+| `automation_idea` | automation proposal | explicit enable | disable automation | 3 |
 
-| Candidate | Durable destination | User confirmation | Rollback path |
-|---|---|---|---|
-| `pitfall_trap` | `traps.db` confirmed trap + evidence + lifecycle | required | delete / supersede / lifecycle status |
-| `project_convention` | AGENTS/CLAUDE/Cursor guidance patch | must review diff | revert patch |
-| `skill_candidate` | staged skill/playbook draft | must install | remove skill / disable skill |
-| `custom_agent_candidate` | custom subagent / agent config draft | must create/enable | disable / remove agent |
-| `automation_idea` | automation proposal | must enable | disable automation |
-| `search_eval_case` | eval fixture proposal | must merge fixture | remove fixture / mark obsolete |
-| `docs_guidance` | docs patch proposal | must review diff | revert patch |
-| `skip` | skip archive reason | accept skip | unskip / reopen |
-
-Red lines:
-
-- Do not auto-write `traps.db`.
-- Do not silently edit agent guidance.
-- Do not auto-install skills.
-- Do not auto-create custom agents.
-- Do not auto-enable automations.
-- Do not pollute eval fixtures.
-- Do not write temporary ideas as long-term facts.
-- Do not let low-quality candidates keep reappearing.
+Until a destination's workflow ships, its candidates stage as proposal stubs
+that the inbox can display, edit, and skip — they never dead-end or silently
+drop.
 
 ---
 
-## 11. Runtime Guardrail Injection
+## 12. Runtime Guardrail Injection
 
-Confirmed experience must be able to influence the next agent job; otherwise it is just notes, not a guardrail.
+Confirmed experience must influence the next agent job; otherwise it is notes.
 
-### 11.1 Runtime injection paths
+### 12.1 Injection paths (per client where they differ)
 
-- Confirmed `pitfall_trap` enters pre-flight search.
-- Confirmed `project_convention` enters agent guidance.
-- Confirmed `skill_candidate` becomes a triggerable workflow.
-- Confirmed `custom_agent_candidate` becomes a delegatable specialist role.
-- Confirmed `automation_idea` becomes a recurring action after user approval.
-- Confirmed `search_eval_case` protects retrieval quality.
-- Confirmed `docs_guidance` improves future human and agent context.
-- `skip` records suppress repeated noise.
+- Confirmed `pitfall_trap` → pre-flight search (`codetrap search --json`),
+  identical in both clients; surfaced via skills/guidance instructing pre-edit
+  checks, and via MCP `search_traps` for MCP-configured clients.
+- Confirmed `project_convention` → AGENTS.md (Codex) / CLAUDE.md (Claude Code),
+  from the same approved patch.
+- Confirmed `skill_candidate` → installable in the client's native skill
+  format (Codex skill dir / Claude Code plugin skill).
+- Confirmed `custom_agent_candidate` → client's native subagent format.
+- Confirmed `automation_idea` → runs only after user approval.
+- Confirmed `search_eval_case` → protects retrieval quality in evals.
+- `skip` records → suppress repeated noise.
 
-### 11.2 Runtime eligibility
+Note: hook-based injection (e.g., auto-prepending trap search results on prompt
+submit) is deliberately NOT on the roadmap. The competitor's experience shows
+hook integrations are operationally brittle (multi-artifact installs, client
+feature flags, restart requirements). Skills + guidance + MCP cover the need
+with far less fragility. Revisit only with strong user demand, as opt-in.
 
-Each lesson needs an independent field deciding whether it can enter runtime:
+### 12.2 Runtime eligibility
 
 ```text
-runtime_eligibility:
-  never
-  after_acceptance
-  after_durable_merge
-  manual_only
+runtime_eligibility: never | after_acceptance | after_durable_merge | manual_only
 ```
 
-Recommended defaults:
+Defaults:
 
 ```text
-pitfall_trap: after_durable_merge
-project_convention: after_durable_merge
+pitfall_trap: after_durable_merge         project_convention: after_durable_merge
 skill_candidate: manual_only until installed
 custom_agent_candidate: manual_only until enabled
 automation_idea: manual_only until enabled
-search_eval_case: never for runtime, yes for eval protection
-docs_guidance: after_durable_merge as documentation context
-skip: never for runtime, yes for suppression
+search_eval_case: never (runtime) / yes (eval protection)
+docs_guidance: after_durable_merge        skip: never (runtime) / yes (suppression)
 ```
 
 ---
 
-## 12. Mature Product Boundaries
+## 13. Multi-Client Engineering Requirements (v2, from competitor case study)
 
-Must hold:
+These are engineering prerequisites for two agents sharing one codetrap store.
+The competitor (mempal) hit each of these in production; codetrap adopts the
+lessons before, not after, the incident.
 
-- local-first.
-- CLI-first.
-- Web review as the main review UX.
-- MCP optional.
-- skill / agent workflow as the trigger and drafting layer.
-- user explicitly triggers learning review.
-- user explicitly confirms durable writes.
-- evidence is traceable.
-- source manifest is required.
-- coverage check always runs.
-- skip is a first-class result.
-- low-context action card / candidate card, drill down on demand.
+### 13.1 Concurrency safety for shared state
 
-Explicitly not doing:
+With Codex and Claude Code both active, concurrent writes are a normal
+scenario, not an edge case.
 
-- not building a general chat memory store.
-- not building a whole-codebase RAG.
-- not bulk-importing Codex session text into the codetrap database.
-- not silently scanning user history in the background.
-- not auto-writing confirmed traps.
-- not auto-editing AGENTS/CLAUDE/Cursor guidance.
-- not auto-installing skills.
-- not auto-creating custom agents.
-- not auto-enabling automations.
-- not saving generic knowledge, motivational summaries, or marketing copy as guardrails.
-- not letting low-confidence candidates enter runtime recall.
-- not hardcoding Codex-specific capabilities as the sole entry of the codetrap core.
+- Database layer: SQLite WAL + busy_timeout already handle `traps.db`
+  contention; add regression tests for simultaneous CLI/MCP writes.
+- **Session/file layer (the actual gap): `.codetrap/sessions/` active-state,
+  index, candidate inbox, and `.codetrap/learning/` review dirs are plain
+  files with no locking.** Two agents capturing simultaneously can interleave
+  and lose candidates. Requirement: per-resource advisory file locks around
+  read-modify-write critical sections (short timeout + retry with jitter;
+  lock-wait surfaced in JSON output for observability), plus tests that
+  exercise two concurrent `session capture` / `learn stage` invocations.
+- Dry-run paths take no locks (no writes, no race).
 
----
+### 13.2 Self-describing MCP protocol
 
-## 13. Recommended Evolution Path
+Embed the codetrap usage contract in the MCP server's initialize instructions:
+when to run pre-flight search, how to capture candidates, that accept/reject
+stays with the human, and that learning review is explicit-trigger-only. Any
+MCP client then learns the workflow with zero per-client prompt configuration.
+This is the single cheapest mechanism for keeping two (later N) clients
+behaviorally consistent, and it complements — never replaces — the guidance
+templates.
 
-This document is not an implementation breakdown, but later development can advance along the following capability layers. Each layer should have a task dossier, implementation log, handoff, and validation evidence.
+### 13.3 Per-client doctor
 
-### Layer A: Product language and data model
+`codetrap doctor` extends to per-client integration checks (§4.5): skill
+presence and version, guidance file presence and template currency, MCP
+registration, and CLI-binary vs running-MCP-server version match with a
+"restart your client" hint on mismatch.
 
-Goal: extend the product language from `CandidateTrap` to `LessonCandidate`.
+### 13.4 Provenance and cross-client dedup
 
-Mature outcomes:
-
-- Docs clearly state the relationship between lesson candidates and trap candidates.
-- Existing trap candidates can be seen as the `pitfall_trap` subset of lesson candidates.
-- Types, states, quality bar, evidence model, coverage model, risk model, and durable destination semantics are stable.
-- Add `custom_agent_candidate` to avoid pushing work suited to a subagent into a skill.
-
-Completion signals:
-
-- Later implementers no longer need to discuss "whether experience must be a trap."
-- Web/CLI/skill copy uniformly uses learning candidate / lesson candidate semantics.
-- Old trap review keeps working.
-
-### Layer B: Learning Review Trigger
-
-Goal: provide an explicit learning review entry point.
-
-Mature outcomes:
-
-- `codetrap learn review --dry-run` exists.
-- A `$codetrap-learning-review` skill or equivalent agent workflow exists.
-- The skill asks or confirms the time range: last 7 days, last 30 days, custom dates, last N sessions.
-- Dry-run by default.
-- No durable destination written before user confirmation.
-
-Completion signals:
-
-- The user can trigger it in one sentence: read the last 30 days of Codex sessions and dry-run generate 10 LessonCandidates.
-- The tool clearly states it will not write `traps.db`, not edit guidance, not install skills, and not enable automations.
-
-### Layer C: Experience Mining / Agent-native Discovery
-
-Goal: propose candidates from real Codex work history while allowing agent-native submission.
-
-Mature outcomes:
-
-- Pull mode can read the last N days of available Codex sessions / `.codetrap/sessions` / local docs.
-- Agent-submitted mode can receive LessonCandidates drafted by a Codex skill.
-- Hybrid mode can first generate an evidence pack, then let the agent draft candidates, and finally have codetrap stage them.
-- The tool outputs high-confidence candidates and explicit skips.
-- The tool checks existing coverage to avoid duplicate entries.
-
-Completion signals:
-
-- It can propose several editable candidates from real history.
-- Each candidate provides source dates, snippets, a source manifest ref, and a recommended destination.
-- Each skip has a reason and can be used for noise reduction.
-
-### Layer D: codetrap Compiler Validation
-
-Goal: compile agent-generated candidates into reviewable assets.
-
-Mature outcomes:
-
-- LessonCandidate schema validation.
-- evidence refs validation.
-- source manifest validation.
-- coverage report.
-- risk report.
-- duplicate / supersede suggestions.
-- staging review directory.
-
-Completion signals:
-
-- The agent cannot bypass schema and the durable write gate.
-- Low-quality candidates are flagged as skip / low confidence / needs more evidence.
-- The Web can read the same set of staged review artifacts.
-
-### Layer E: Learning Inbox
-
-Goal: upgrade Web Review into a unified candidate review console.
-
-Mature outcomes:
-
-- The user can browse all candidate types in the Web.
-- The user can edit, convert type, merge, reject, and skip.
-- The trap type reuses the existing accept / supersede / conflict review capability.
-- Non-trap types enter a proposal/draft first, with no high-risk writes.
-
-Completion signals:
-
-- The Web becomes the user's main entry for managing agent experience.
-- The user does not need to hand-write JSON or directly edit internal candidate files.
-
-### Layer F: Durable Destination Workflows
-
-Goal: let different experiences enter the right carrier.
-
-Mature outcomes:
-
-- `pitfall_trap` connects to the existing trap lifecycle.
-- `project_convention` generates a guidance patch proposal.
-- `skill_candidate` generates a staged skill draft.
-- `custom_agent_candidate` generates a custom agent proposal.
-- `automation_idea` generates an automation proposal.
-- `search_eval_case` enters eval review.
-- `docs_guidance` generates a docs patch proposal.
-- `skip` records the archive reason.
-
-Completion signals:
-
-- The user can solidify different candidates into different destinations from the same Learning Inbox.
-- Each destination has explicit confirmation, a diff, and a rollback path.
-
-### Layer G: Runtime Feedback Loop
-
-Goal: let solidified experience change the next agent behavior.
-
-Mature outcomes:
-
-- pre-flight search consumes confirmed traps.
-- agent guidance consumes confirmed conventions.
-- skills/playbooks can be triggered by the agent.
-- custom agents can be explicitly delegated to.
-- automations run after user approval.
-- search eval continuously protects recall quality.
-- skip archive suppresses repeated noise.
-
-Completion signals:
-
-- The user can see experience accepted in learning review being referenced or triggered in subsequent Codex / Claude Code / Cursor work.
-- "The more I use it, the better it understands me" becomes a perceptible product experience.
+`source_agent` on every candidate (§8.2); staging-time similarity check merges
+"same lesson, two clients" into one candidate with combined evidence rather
+than two inbox entries (§9.3). Accepted-trap evidence records which client's
+history produced it.
 
 ---
 
-## 14. First Proof Point
+## 14. External Validation
 
-The minimal proof is not a full implementation, but running one real-history learning review.
+An internal eval harness (Recall@5 / MRR on `search-eval.json`) already
+protects retrieval quality. What is missing is a **publicly legible benchmark**
+— the competitor's published LongMemEval numbers are its most credible asset,
+and codetrap currently has no equivalent artifact.
 
-Recommended proof point:
+Roadmap item (Phase 2, after the flywheel is proven):
+
+- Publish a reproducible retrieval benchmark: methodology, dataset (public or
+  released), scripts, and honest numbers including weak configurations.
+- Additionally publish flywheel metrics from real usage once available:
+  candidates proposed vs accepted vs skipped, and precision of the trap
+  database over time. Acceptance rate is this product's true north metric —
+  more honest than retrieval scores alone.
+
+---
+
+## 15. Anti-Goals
+
+Explicitly not doing, with rationale:
+
+- **No inter-agent message bus / cowork channel.** With two clients it is
+  tempting to make codetrap the coordination layer between them. The
+  competitor spent 18 spec cycles on inbox/tmux/presence/ack machinery bound
+  to fragile client internals (feature flags, hook artifacts, restart
+  semantics). codetrap's dual-client story is a **shared experience store**:
+  both agents read and contribute to the same traps and candidate inbox —
+  asynchronous collaboration within a contract codetrap fully controls.
+- No general chat memory store; no whole-codebase RAG.
+- No bulk-importing session text into the codetrap database.
+- No background scanning; no auto-writes of any durable destination (§3.2).
+- No hook-based runtime injection (rationale in §12.1).
+- No saving generic knowledge, motivational summaries, or marketing copy as
+  guardrails; no low-confidence candidates in runtime recall.
+- No client-specific capability hardcoded as the sole entry of the core.
+- No process artifacts that do not change what gets built (§3.4).
+
+---
+
+## 16. Evolution Path (v2 — re-sequenced: evidence before architecture)
+
+Each phase has acceptance criteria; a phase is done when they are recorded in
+its dossier, not when its code merges.
+
+### Phase 0 — Proof point (FIRST; before any schema stabilization)
+
+Run the riskiest-assumption test (§1.5) with minimal machinery: a hand-rolled
+discovery prompt per client, candidates as plain JSON files, review as a
+markdown checklist or the existing web console. No new schemas, no new CLI
+subcommands, no inbox UI.
 
 ```text
-User explicitly triggers:
-  $codetrap-learning-review
+Run once per client (this is also the first dual-client symmetry test):
+  Codex:       last 30 days of Codex sessions -> up to 10 LessonCandidates
+  Claude Code: last 30 days of Claude Code sessions -> up to 10 LessonCandidates
 
-Skill asks or confirms:
-  source = Codex sessions
-  range = last 30 days, or all available history if shorter
-  limit = 10
-  mode = dry-run
+Measure:
+  - acceptance: user willing to accept/edit/stage >= 3 of 10 per client
+  - actionability: each accepted candidate names the behavior change it causes
+  - cross-client overlap rate (how many lessons appear from both histories —
+    calibrates the dedup requirement)
+  - review time per 10 candidates (calibrates the §4.2 budget)
 
-System executes:
-  read the last 30 days of Codex sessions
-  optionally use Codex memories / summaries for repeated-pattern discovery
-  generate source manifest
-  generate evidence pack
-  draft 10 LessonCandidates
-  generate skip candidates
-  generate coverage report
-  stage to .codetrap/learning/reviews/<review-id>/
-
-User review:
-  the user is willing to accept / edit / stage at least 3
-  each accepted/editable candidate can clearly explain how the next agent behavior will change
-
-Red-line verification:
-  0 writes to traps.db before user confirmation
-  0 auto-edits to AGENTS/CLAUDE/Cursor guidance
-  0 auto-installs of skills
-  0 auto-creations of custom agents
-  0 auto-enables of automations
-  0 auto-pollutions of eval fixtures
+Red-line verification (trust receipt):
+  0 writes to traps.db before confirmation; 0 guidance edits; 0 skill installs;
+  0 agent creations; 0 automation enables; 0 fixture changes.
 ```
 
-If this holds, the product flywheel holds:
+If acceptance fails → §17 falsifier response: strengthen evidence packs,
+coverage, quality scoring; do NOT proceed to Phases 1-3 architecture.
 
-```text
-use -> leave history -> agent discovers experience -> codetrap compiles candidates
-   -> user confirms -> smarter next time
-```
+### Phase 1 — MVP compiler loop (pitfall_trap + skip, both clients)
 
----
+- Product language: `LessonCandidate` concept documented; existing
+  CandidateTrap is the `pitfall_trap` subset; old trap review keeps working.
+- Schema (informed by Phase 0 data, including `source_agent`), validation,
+  evidence refs, source manifest, staging dirs.
+- `codetrap learn sources | evidence-pack | review | stage` for BOTH
+  `codex-sessions` and `claude-code-sessions` pull modes + agent-submitted
+  mode.
+- `codetrap setup claude` + Claude Code skill/command; Codex skill updated to
+  the shared contract; MCP initialize instructions carry the contract (§13.2).
+- Session/learning file locking + concurrent-write tests (§13.1) — lands
+  before both clients are told to use the loop routinely.
+- Coverage: agent-claimed, CLI-verified, similarity-advised (§9.3).
+- Inbox v1: list + card + accept/edit/skip/reject for pitfall_trap and skip;
+  trust receipt; UX budgets measured.
 
-## 15. Falsifier
+Acceptance: a user on a real project runs learning review from either client,
+reviews in the inbox within budget, accepts >= 1 trap that later surfaces in a
+pre-flight search from the other client. Doctor passes per-client checks.
 
-If most candidates mined from real history take the following forms, then automatic experience mining is not yet mature:
+### Phase 2 — Low-risk destinations + external validation
 
-- vague trigger conditions.
-- unclear recommended actions.
-- insufficient evidence.
-- just generic summaries.
-- duplicating existing content.
-- the user does not want to save them.
-- unable to change the next agent behavior.
-- misuse risk higher than benefit.
-- involving sensitive history but with no redaction.
-- the agent can summarize it, but codetrap cannot audit the source.
-- pure prompts can create things, but with no review gate.
+- `project_convention` and `docs_guidance` patch-proposal workflows (diff,
+  confirm, revert); `search_eval_case` fixture proposals.
+- Cross-client dedup hardened with Phase 1 real data.
+- Public benchmark + flywheel metrics published (§14).
 
-If the falsifier holds, continue strengthening:
+Acceptance: a convention accepted in the inbox lands as an identical approved
+patch in AGENTS.md and CLAUDE.md; benchmark repo/scripts public.
 
-- semi-automatic capture.
-- evidence pack.
-- coverage check.
-- candidate quality scoring.
-- skip archive.
-- Learning Inbox UX.
+### Phase 3 — High-side-effect destinations + runtime loop closure
 
-Do not push automatic mining or automatic durable writes.
+- `skill_candidate`, `custom_agent_candidate`, `automation_idea` workflows
+  with explicit install/enable and rollback.
+- Runtime feedback evidence: accepted lessons observed changing subsequent
+  agent behavior in both clients; "the more I use it, the better it
+  understands me" is demonstrable, not aspirational.
 
----
-
-## 16. Relationship with Existing Documents / Mechanisms
-
-Existing mechanisms should be preserved and elevated semantically:
-
-- `codetrap session capture`: continue as a low-friction candidate entry; in the long run it can become one source of lesson candidate capture.
-- Web Review: evolve from trap review into the Learning Inbox.
-- `docs/dogfood-flywheel.md`: the current promotion lanes can serve as a prototype of lesson destinations.
-- `codetrap-capture-external`: capturing experience from external articles should become one of the Experience Sources, but the CLI still must not directly crawl the web.
-- `docs/codetrap-optimization-roadmap.zh-CN.md`: continues to be the main technical optimization route; this document is the mature product direction roadmap.
-- Codex skill / Claude command / Cursor workflow: serves as the agent-native discovery and user-friendly trigger layer, and does not replace the codetrap CLI/Web compiler and review gate.
-
-Misconceptions to avoid:
-
-- `.codetrap/sessions` is not the only source of a user's real history.
-- `traps.db` is not the only destination for all experience.
-- Web Review is not a pure database management interface, but the interface where the user reviews agent learning.
-- A skill is not an auto-installer for durable destinations, but an explicit trigger and drafting workflow.
-- The CLI is not a smart brain, but a reusable, testable, auditable compiler layer.
-- Codex-specific capabilities cannot become the sole assumption of the codetrap core.
+Acceptance: at least one lesson per destination type merged and later
+referenced or triggered in real subsequent work.
 
 ---
 
-## 17. How to Use the implementation-journal Going Forward
+## 17. Falsifier
 
-Any subsequent milestone implementing this document should:
-
-1. Treat this document as the parent plan.
-2. Write the current implementation slice in `docs/tasks/<YYYY-MM-DD>-<slug>/task-brief.md`.
-3. Write an `implementation-log.md` for decisions that affect the product model, data model, Web review, or CLI/MCP/skill contract.
-4. At the end of each phase, write a `handoff.md` explaining:
-   - which capability layer was completed.
-   - which red lines are still being honored.
-   - how the user can verify that no learning candidate auto-entered a durable destination.
-   - whether the source manifest and evidence are traceable.
-   - whether the coverage check ran.
-   - the next highest-ROI implementation task.
-5. Write back to this document or the main roadmap only with status and evidence links, not implementation details.
-
-Suggested task slug examples:
-
-- `lesson-candidate-model`
-- `learning-review-trigger-skill`
-- `codex-history-learning-review`
-- `agent-submitted-lesson-candidates`
-- `learning-inbox-web`
-- `lesson-durable-destinations`
-- `runtime-guardrail-feedback`
-- `custom-agent-candidate-destination`
+If most candidates mined from real history are: vague triggers, unclear
+actions, insufficient evidence, generic summaries, duplicates, unwanted by the
+user, unable to change next-agent behavior, riskier than beneficial, sensitive
+without redaction, or unauditable — then automatic experience mining is not yet
+mature. Response: strengthen semi-automatic capture, evidence packs, coverage
+checks, quality scoring, skip archive, and inbox UX. Do not push automatic
+mining or automatic durable writes. Do not build more architecture to
+compensate for weak candidate quality.
 
 ---
 
 ## 18. Mature Product Success Criteria
 
-When the mature product holds, it should satisfy:
-
-- After the user has used Codex / Claude Code / Cursor for a while, codetrap can propose evidence-backed learning candidates.
-- When the user reviews candidates, at least some of them clearly change future agent behavior.
-- The trap database stays high-precision and is not polluted by generic experience.
-- The Web Learning Inbox becomes the user's main entry for managing agent experience.
-- Confirmed experience can flow back into the next agent job instead of sitting in docs.
-- High-side-effect destinations such as skills, custom agents, automations, and guidance patches all have explicit confirmation and rollback paths.
-- The skip archive reduces repeated noise.
-- The user feels "the more I use it, the better it understands me" while still trusting that the system will not silently read, write, install, or enable things.
+- After real use of Codex and Claude Code, codetrap proposes evidence-backed
+  candidates from either client's history, and at least some clearly change
+  future agent behavior.
+- The trap database stays high-precision; the Learning Inbox is the user's
+  main entry for managing agent experience and respects the §4.2 budgets.
+- Confirmed experience flows back into the next agent job in both clients from
+  a single approval.
+- High-side-effect destinations all have explicit confirmation and rollback.
+- The skip archive measurably reduces repeated noise.
+- The user feels "the more I use it, the better it understands me" while
+  trusting — via ever-present receipts — that nothing is silently read,
+  written, installed, or enabled.
 
 ---
 
-## 19. Minimal Executable Summary
+## 19. Implementation Journal Protocol
 
-If you can only remember one sentence:
+Any milestone implementing this document:
+
+1. Treat this document as the parent plan.
+2. Write the slice in `docs/tasks/<YYYY-MM-DD>-<slug>/task-brief.md`.
+3. Keep an `implementation-log.md` for decisions affecting the product model,
+   data model, Web review, or CLI/MCP/skill contract.
+4. End each phase with `handoff.md`: capability layer completed; red lines
+   honored (with the trust-receipt evidence); source manifest and evidence
+   traceability; coverage check status; measured UX budgets where applicable;
+   next highest-ROI task.
+5. Write back to this document only status and evidence links, never
+   implementation detail. One dossier per milestone; no meta-process documents
+   (§3.4).
+
+Suggested task slugs:
 
 ```text
-codetrap does not remember everything itself, nor does it make every judgment for the agent;
-it compiles the experience the agent proposes from real work history into reviewable,
-traceable, dedupable, durable, and reinjectable guardrails.
+phase0-dual-client-proof-point
+lesson-candidate-model
+learning-review-cli-dual-source
+setup-claude-and-skill-parity
+session-store-concurrency-locks
+mcp-self-describing-contract
+learning-inbox-web-mvp
+coverage-agent-claimed-cli-verified
+convention-and-docs-destinations
+public-retrieval-benchmark
+skill-agent-automation-destinations
+runtime-feedback-evidence
+```
+
+---
+
+## 20. Minimal Executable Summary
+
+One sentence:
+
+```text
+codetrap does not remember everything itself, nor judge for the agent; it
+compiles the experience agents propose from real work history into reviewable,
+traceable, dedupable, durable, and reinjectable guardrails — for Codex and
+Claude Code symmetrically.
 ```
 
 Minimal architecture:
 
 ```text
-$codetrap-learning-review
-  -> ask/confirm range
+$codetrap-learning-review (Codex) / /codetrap-learning-review (Claude Code)
+  -> confirm scope + red lines
   -> agent-native discovery
-  -> LessonCandidate shortlist
+  -> LessonCandidate shortlist (source_agent tagged)
   -> codetrap learn stage --validate --coverage-check --dry-run
-  -> Web Learning Inbox
-  -> user-approved durable destination
-  -> runtime guardrail
+  -> Web Learning Inbox (trust receipt)
+  -> user-approved durable destination (diff + rollback)
+  -> runtime guardrail in both clients
 ```
 
-Minimal proof point:
+Minimal proof point (Phase 0):
 
 ```text
-last 30 days of Codex sessions
-  -> 10 LessonCandidates
-  -> at least 3 the user is willing to accept/edit/stage
-  -> 0 unconfirmed durable writes
-  -> at least 1 referenced or triggered in subsequent agent work
+last 30 days of Codex sessions AND last 30 days of Claude Code sessions
+  -> up to 10 LessonCandidates each
+  -> >= 3 per client the user accepts/edits/stages
+  -> 0 unconfirmed durable writes (receipt shown)
+  -> >= 1 accepted lesson later referenced in the other client's work
 ```

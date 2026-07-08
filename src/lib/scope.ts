@@ -1,12 +1,13 @@
-import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { CODETRAP_DIR, TRAPS_DB_FILE } from "./constants";
 import { defaultScopePathResolver, resolveScopePath, ScopePathResolver } from "./scope-path";
 
+// L5: path resolution must be side-effect free. Creating ~/.codetrap here made
+// *any* command in *any* directory materialize the global dir just by resolving
+// a path. The directory is created lazily when a database is actually opened
+// (see openDatabase in db/connection.ts).
 export function getGlobalDir(homeDir = homedir()): string {
-  const dir = defaultScopePathResolver.join(homeDir, CODETRAP_DIR);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  return dir;
+  return defaultScopePathResolver.join(homeDir, CODETRAP_DIR);
 }
 
 export function getGlobalDB(homeDir = homedir()): string {
@@ -30,6 +31,5 @@ export function findProjectRoot(
 
 export function getProjectDB(root: string): string {
   const dir = defaultScopePathResolver.join(root, CODETRAP_DIR);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return defaultScopePathResolver.join(dir, TRAPS_DB_FILE);
 }

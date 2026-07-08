@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
 import { getGlobalDB, getProjectDB } from "../lib/scope";
 import { initSchema } from "./schema";
@@ -6,6 +8,9 @@ const globalDBs = new Map<string, Database>();
 const projectDBs = new Map<string, Database>();
 
 export function openDatabase(path = ":memory:"): Database {
+  // L5: creating the DB is where the directory should come into being — SQLite
+  // won't create missing parent directories, and path resolution no longer does.
+  if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path);
   configureDatabase(db);
   return db;

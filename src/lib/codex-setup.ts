@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findProjectRoot } from "./scope";
 import agentsTemplateAsset from "../../plugins/codetrap-agent/templates/AGENTS.codetrap.md" with { type: "text" };
@@ -57,6 +57,7 @@ export type CodexSetupResult = {
     source: string;
     destination: string;
     status: CodexSetupStatus;
+    backup?: string;
   }>;
   agents: {
     path: string | null;
@@ -162,9 +163,25 @@ function installSkills(pluginRoot: string, codexHome: string, dryRun: boolean): 
       let status: CodexSetupStatus = unchanged ? "unchanged" : exists ? "updated" : "installed";
       if (dryRun && status === "installed") status = "would_install";
       if (dryRun && status === "updated") status = "would_update";
+      // L17: overwriting a user-edited skill used to discard their changes with
+      // no recovery path. Snapshot the existing directory first.
+      let backup: string | undefined;
+      if (!dryRun && exists && !unchanged) {
+        backup = backupExistingSkill(destination, codexHome);
+      }
       if (!dryRun && !unchanged) cpSync(source, destination, { recursive: true, force: true });
-      return { name: entry.name, source, destination, status };
+      return { name: entry.name, source, destination, status, ...(backup ? { backup } : {}) };
     });
+}
+
+// L17: copy an about-to-be-overwritten skill directory into a sibling backup
+// folder (outside skills/ so it is never mistaken for a skill) and return the path.
+function backupExistingSkill(destination: string, codexHome: string): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupDir = join(codexHome, "skill-backups", `${basename(destination)}.${stamp}`);
+  mkdirSync(dirname(backupDir), { recursive: true });
+  cpSync(destination, backupDir, { recursive: true });
+  return backupDir;
 }
 
 function installEmbeddedSkills(codexHome: string, dryRun: boolean): CodexSetupResult["skills"] {

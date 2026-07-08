@@ -42,7 +42,7 @@ export function scoreCandidateTrap(candidate: CandidateDraft): { score: number; 
       evidence_count: evidenceCount,
       conflict_checked: false,
       conflict_status: "none",
-      staleness_risk: "low",
+      staleness_risk: assessStalenessRisk(trap),
       suggested_action: suggestedAction(score),
       warnings,
     },
@@ -98,6 +98,26 @@ function isTooBroad(candidate: CandidateDraft): boolean {
     "写好代码",
   ];
   return broadPhrases.some((phrase) => combined.includes(phrase));
+}
+
+// L15: staleness_risk was hardcoded "low". Derive it from volatility markers in
+// the trap text — pinned version numbers, explicit dates/years, line-number
+// references, and "currently/temporary/deprecated" language all age quickly and
+// make a trap likely to go stale. (Keyword heuristics only; not gameproof.)
+function assessStalenessRisk(trap: CandidateDraft["trap"]): CandidateQuality["staleness_risk"] {
+  const text = [trap.title, trap.context, trap.mistake, trap.fix, trap.before_code ?? "", trap.after_code ?? ""]
+    .join(" ")
+    .toLowerCase();
+
+  let signals = 0;
+  if (/\bv?\d+\.\d+(\.\d+)?\b/.test(text)) signals++; // version-like: v1.2, 3.4.5
+  if (/\b20\d{2}\b/.test(text)) signals++; // a specific year
+  if (/\bline\s+\d+\b|:\d+\b/.test(text)) signals++; // line-number references
+  if (/currently|for now|temporar|as of|deprecat|until further|pending|目前|暂时|临时/.test(text)) signals++;
+
+  if (signals >= 2) return "high";
+  if (signals === 1) return "medium";
+  return "low";
 }
 
 function roundScore(value: number): number {
