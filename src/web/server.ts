@@ -5,6 +5,7 @@ import { loadCodetrapConfig, type EmbeddingProviderSetting, type EmbeddingSettin
 import { TrapStore } from "../lib/store";
 import { TrapOperations } from "../lib/trap-operations";
 import { SessionOperations } from "../lib/session-operations";
+import { parseExecutor, type Executor } from "../domain/learning";
 import { SessionStore } from "../lib/session-store";
 import { toListJson, toTrapDetailsJson } from "../lib/output-json";
 import { isRecord } from "../lib/value-types";
@@ -242,6 +243,10 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
       edit: optionalRecordBodyField(body, "trap"),
       acceptAnyway: booleanBodyField(body, "acceptAnyway"),
       supersedesId: optionalNumberBodyField(body, "supersedesId"),
+      // The review console is the user driving the decision themselves; an
+      // agent posting to this route must say so explicitly (§3.2).
+      executor: executorBodyField(body),
+      authorizedScope: optionalStringBodyField(body, "authorizedScope"),
     });
     if (!result.success) {
       throw new WebPayloadError(409, sessionConflictPayload(result));
@@ -254,6 +259,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
       scope: result.scope,
       evidence_id: result.evidence_id,
       superseded_id: result.superseded_id,
+      receipt: result.receipt,
     });
   }
 
@@ -264,8 +270,16 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
       candidateId: stringBodyField(body, "candidateId"),
       sessionId: optionalStringBodyField(body, "sessionId"),
       reason: optionalStringBodyField(body, "reason"),
+      executor: executorBodyField(body),
+      authorizedScope: optionalStringBodyField(body, "authorizedScope"),
     });
-    return jsonResponse({ success: true, session: result.session, candidate: result.candidate });
+    return jsonResponse({
+      success: true,
+      session: result.session,
+      candidate: result.candidate,
+      suppression: result.suppression,
+      receipt: result.receipt,
+    });
   }
 
   if (request.method === "POST" && url.pathname === "/api/session/delete") {
@@ -294,6 +308,17 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
   }
 
   throw new WebHttpError(404, "Not found");
+}
+
+// An unrecognized executor is bad input from the caller, so surface it as a
+// 400 like every other body-field validator rather than letting the generic
+// handler report a 500 server fault.
+function executorBodyField(body: Record<string, unknown>): Executor {
+  try {
+    return parseExecutor(optionalStringBodyField(body, "executor"));
+  } catch (error) {
+    throw new WebHttpError(400, error instanceof Error ? error.message : String(error));
+  }
 }
 
 function sessionOperations(projectRoot: string, home?: string): { traps: TrapOperations; sessions: SessionOperations } {

@@ -134,6 +134,30 @@ export function rejectCandidateInDocument(
   }));
 }
 
+/**
+ * The reverse of `acceptCandidateInDocument`: drop the durable-trap link and
+ * return the candidate to the review queue. Guarded on `accepted` so a rollback
+ * cannot silently resurrect a rejected or already-rolled-back candidate.
+ */
+export function rollbackCandidateInDocument(
+  candidates: CandidateTrap[],
+  candidateId: string,
+  args: { sessionId: string }
+): CandidateDocumentUpdateResult {
+  const candidate = candidates.find((item) => item.id === candidateId);
+  if (!candidate) throw new Error(`Candidate ${candidateId} not found in session ${args.sessionId}.`);
+  if (candidate.status !== "accepted") {
+    throw new Error(`Candidate ${candidateId} is ${candidate.status}, not accepted; nothing to roll back.`);
+  }
+
+  const { accepted_trap_id, accepted_scope, accepted_at, ...rest } = candidate;
+  const updated: CandidateTrap = { ...rest, status: "proposed" };
+  return {
+    candidates: candidates.map((item) => item.id === candidateId ? updated : item),
+    candidate: updated,
+  };
+}
+
 export function removeCandidatesFromDocument(
   candidates: CandidateTrap[],
   candidateIds: string[]

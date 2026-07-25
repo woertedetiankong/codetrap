@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { CandidateTrap, SessionMetadata, SessionNote } from "../domain/session";
 import { parseSessionNoteKind } from "../domain/session";
 import { buildTrapInput } from "../domain/trap";
@@ -94,13 +95,28 @@ export function mergeCandidateTraps(existing: CandidateTrap[], proposed: Candida
 }
 
 export function candidateTrapKey(candidate: CandidateTrap): string {
+  return trapContentKey(candidate.trap);
+}
+
+/**
+ * The identity of a lesson, independent of which session proposed it: the
+ * material fields normalized for whitespace and case. Two mining runs over the
+ * same evidence produce the same key, which is what lets a suppression survive
+ * a re-run (§16 Phase 1A).
+ */
+export function trapContentKey(trap: CandidateTrap["trap"]): string {
   return [
-    candidate.trap.title,
-    candidate.trap.context,
-    candidate.trap.mistake,
-    candidate.trap.fix,
-    candidate.trap.scope,
+    trap.title,
+    trap.context,
+    trap.mistake,
+    trap.fix,
+    trap.scope,
   ].map(normalizeKeyPart).join("\u0000");
+}
+
+/** Stable short hash of `trapContentKey`, used as the suppression fingerprint. */
+export function trapFingerprint(trap: CandidateTrap["trap"]): string {
+  return createHash("sha256").update(trapContentKey(trap)).digest("hex").slice(0, 32);
 }
 
 export function nextCandidateId(candidates: CandidateTrap[]): string {

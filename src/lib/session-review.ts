@@ -1,4 +1,5 @@
 import type { CandidateTrap, SessionIndexEntry, SessionMetadata } from "../domain/session";
+import type { LearningReceipt, SuppressionRecord } from "../domain/learning";
 import type { Scope } from "./constants";
 import { candidateAcceptedScope } from "./session-candidate-scope";
 import {
@@ -39,6 +40,7 @@ export type SessionAcceptPayload = {
   scope: string;
   evidence_id: number | null;
   superseded_id: number | null;
+  receipt: LearningReceipt;
 };
 
 export type SessionRejectPayload = {
@@ -47,6 +49,28 @@ export type SessionRejectPayload = {
   candidate_id: string;
   status: CandidateTrap["status"];
   reason: string | null;
+  suppression: SuppressionRecord;
+  receipt: LearningReceipt;
+};
+
+export type SessionRollbackPayload = {
+  success: true;
+  session_id: string;
+  candidate_id: string;
+  status: CandidateTrap["status"];
+  trap_id: number;
+  scope: string;
+  trap_deleted: boolean;
+  receipt: LearningReceipt;
+};
+
+export type SessionCaptureSuppressedPayload = {
+  success: true;
+  suppressed: true;
+  fingerprint: string;
+  title: string;
+  suppression: SuppressionRecord;
+  next_action: { command: string };
 };
 
 export type SessionCleanupPayload = {
@@ -164,6 +188,7 @@ export function sessionAcceptPayload(accepted: {
   scope: string;
   evidence_id: number | null;
   superseded_id: number | null;
+  receipt: LearningReceipt;
 }): SessionAcceptPayload {
   return {
     success: true,
@@ -174,12 +199,15 @@ export function sessionAcceptPayload(accepted: {
     scope: accepted.scope,
     evidence_id: accepted.evidence_id,
     superseded_id: accepted.superseded_id,
+    receipt: accepted.receipt,
   };
 }
 
 export function sessionRejectPayload(rejected: {
   session: SessionMetadata;
   candidate: CandidateTrap;
+  suppression: SuppressionRecord;
+  receipt: LearningReceipt;
 }): SessionRejectPayload {
   return {
     success: true,
@@ -187,7 +215,54 @@ export function sessionRejectPayload(rejected: {
     candidate_id: rejected.candidate.id,
     status: rejected.candidate.status,
     reason: rejected.candidate.rejection_reason ?? null,
+    suppression: rejected.suppression,
+    receipt: rejected.receipt,
   };
+}
+
+export function sessionRollbackPayload(rolledBack: {
+  session: SessionMetadata;
+  candidate: CandidateTrap;
+  trap_id: number;
+  scope: string;
+  trap_deleted: boolean;
+  receipt: LearningReceipt;
+}): SessionRollbackPayload {
+  return {
+    success: true,
+    session_id: rolledBack.session.id,
+    candidate_id: rolledBack.candidate.id,
+    status: rolledBack.candidate.status,
+    trap_id: rolledBack.trap_id,
+    scope: rolledBack.scope,
+    trap_deleted: rolledBack.trap_deleted,
+    receipt: rolledBack.receipt,
+  };
+}
+
+export function sessionCaptureSuppressedPayload(result: {
+  fingerprint: string;
+  title: string;
+  suppression: SuppressionRecord;
+}): SessionCaptureSuppressedPayload {
+  return {
+    success: true,
+    suppressed: true,
+    fingerprint: result.fingerprint,
+    title: result.title,
+    suppression: result.suppression,
+    next_action: { command: `codetrap session unsuppress ${result.fingerprint}` },
+  };
+}
+
+export function sessionCaptureSuppressedText(payload: SessionCaptureSuppressedPayload): string {
+  const when = payload.suppression.suppressed_at.slice(0, 10);
+  return [
+    `Suppressed: "${payload.title}" was rejected on ${when} and was not added to the inbox.`,
+    payload.suppression.reason ? `Reason: ${payload.suppression.reason}` : null,
+    `Fingerprint: ${payload.fingerprint}`,
+    `Allow it again: ${payload.next_action.command}`,
+  ].filter((line): line is string => line !== null).join("\n");
 }
 
 export function sessionCleanupPayload(result: {

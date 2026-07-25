@@ -60,7 +60,7 @@ describe("session maintenance", () => {
   test("re-accepting a candidate rolls back instead of inserting a duplicate trap", async () => {
     const { sessions, traps } = sessionHarness("codetrap-session-accept-atomic-");
     sessions.startSession({ goal: "accept atomicity" });
-    const captured = sessions.captureCandidate({
+    const captured = captureProposed(sessions, {
       trap: {
         title: "Guard session accept against double submission",
         category: "bug",
@@ -191,7 +191,7 @@ describe("session maintenance", () => {
     });
 
     sessions.startSession({ goal: "cross scope conflict" });
-    const captured = sessions.captureCandidate({
+    const captured = captureProposed(sessions, {
       trap: {
         title: "Use stable API client wrapper",
         category: "api",
@@ -229,7 +229,7 @@ describe("session maintenance", () => {
     });
 
     sessions.startSession({ goal: "module-only non-conflict" });
-    const captured = sessions.captureCandidate({
+    const captured = captureProposed(sessions, {
       trap: {
         title: "Cache dashboard summary queries",
         category: "performance",
@@ -303,4 +303,15 @@ function sessionHarness(prefix: string): { project: string; home: string; store:
 
 function sessionDir(project: string, id: string): string {
   return join(project, ".codetrap", "sessions", id);
+}
+
+// captureCandidate returns a union so callers must handle the suppressed
+// branch; these tests all exercise the un-suppressed path.
+function captureProposed(
+  sessions: SessionOperations,
+  request: Parameters<SessionOperations["captureCandidate"]>[0]
+) {
+  const result = sessions.captureCandidate(request);
+  if (result.suppressed) throw new Error(`Expected a proposed candidate, got a suppressed one: ${result.title}`);
+  return result;
 }

@@ -204,7 +204,7 @@ codetrap/
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
 | `embeddings` | Manage embedding profiles (`status`, `list`, `use ollama|jina`, `reindex`) |
-| `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, accept/reject candidates, and clean up session files |
+| `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, accept/reject/roll back candidates, inspect authorization receipts and suppressed lessons, and clean up session files |
 | `web` | Start the local review, trap library, insights, and Embeddings console |
 | `serve` | Start MCP server |
 
@@ -228,7 +228,7 @@ codetrap session candidates
 codetrap session candidate cand-001
 
 # Only after explicit human approval:
-codetrap session accept cand-001
+codetrap session accept cand-001 --executor agent --authorized-scope "cand-001 only"
 ```
 
 `session capture` is the low-friction post-flight path: an agent drafts a structured Markdown or JSON candidate, codetrap scores it and puts it in the session inbox, and nothing is written to `traps.db` until the candidate is accepted. If no session is active, capture creates a post-flight session, writes the candidate and recap, then closes it.
@@ -238,6 +238,36 @@ Pending candidates are surfaced through `codetrap session status`, `codetrap ses
 `session accept` writes the confirmed lesson through `TrapOperations`, attaches session evidence, and checks similar active traps before saving. `--edit-json` is applied before the conflict check, so edits to scope/module/title/tags/path globs affect both the saved trap and conflict detection. If a possible conflict is found, the candidate keeps its edited trap shape and conflict diagnostics; use `--accept-anyway` to keep both traps or `--supersedes <trap-id>` to preserve lifecycle history.
 
 > **Trust model:** the human-review gate is advisory, not enforced. `codetrap add`, the MCP `add_trap` tool, and `session accept` are all callable by the same agent that captured a candidate — codetrap cannot distinguish a human from an agent invoking the CLI. The packaged agent templates instruct agents to route lessons through the candidate inbox and wait for approval, but a misbehaving or misconfigured agent can write to `traps.db` directly. Review `codetrap list` / the web console periodically if that distinction matters to your workflow.
+
+#### Authorization receipts, rollback, and suppression
+
+Every durable learning decision leaves an append-only receipt in
+`.codetrap/receipts.jsonl` recording what was authorized, who executed it, and
+which lesson it applied to. `--executor` is a claim the caller makes, not a fact
+codetrap verifies — it defaults to `user`, and an agent committing on your
+instruction should pass `--executor agent`.
+
+```bash
+codetrap session accept cand-001 --executor agent --authorized-scope "cand-001 only"
+codetrap session receipts                  # the audit trail, newest first
+codetrap session rollback cand-001         # delete the trap, return the candidate to review
+```
+
+`session rollback` is the reverse of accept: it deletes the committed trap and
+puts the candidate back in the queue, so the store returns to its pre-accept
+state while the receipt log keeps the history. It also repairs a candidate left
+stranded by a bare `codetrap delete`.
+
+Rejecting a candidate suppresses that lesson project-wide, so the same lesson
+mined again from the same evidence does not come back to the inbox — including
+through `session close --propose-traps`. Suppression outlives the session it was
+decided in.
+
+```bash
+codetrap session reject cand-001 --reason "Too broad; would cause doc churn."
+codetrap session suppressions              # what is currently suppressed
+codetrap session unsuppress <fingerprint>  # allow the lesson to be captured again
+```
 
 Session maintenance commands keep temporary files from becoming stale context:
 
