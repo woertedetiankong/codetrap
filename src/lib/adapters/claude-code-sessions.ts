@@ -12,10 +12,12 @@ import {
   readJsonlHead,
   readJsonlLines,
   textFromContent,
+  TEXT_ONLY_LENS,
   toTurnRole,
   type DiscoverOptions,
   type ReadSessionResult,
   type SessionSourceAdapter,
+  type TurnLens,
   type SourceSessionRef,
 } from "../learning-source-adapter";
 
@@ -43,12 +45,16 @@ export const claudeCodeSessionsAdapter: SessionSourceAdapter = {
     return applyDiscoverFilters(refs, options, (ref) => cwdOfRef(ref.path));
   },
 
-  read(ref: SourceSessionRef, roots: string[]): ReadSessionResult {
-    return readClaudeCodeSession(ref, roots);
+  read(ref: SourceSessionRef, roots: string[], lens: TurnLens = TEXT_ONLY_LENS): ReadSessionResult {
+    return readClaudeCodeSession(ref, roots, lens);
   },
 };
 
-export function readClaudeCodeSession(ref: SourceSessionRef, roots: string[]): ReadSessionResult {
+export function readClaudeCodeSession(
+  ref: SourceSessionRef,
+  roots: string[],
+  lens: TurnLens = TEXT_ONLY_LENS
+): ReadSessionResult {
   assertInsideRoot(ref.path, roots);
   const { lines, lineCount, raw } = readJsonlLines(ref.path);
 
@@ -70,7 +76,7 @@ export function readClaudeCodeSession(ref: SourceSessionRef, roots: string[]): R
     if (!role) continue;
 
     const timestamp = asString(line.timestamp);
-    const text = messageText(line);
+    const text = messageText(line, lens);
     if (!text) continue;
 
     const normalized = normalizeTurn(turns.length, role, timestamp, text);
@@ -97,12 +103,12 @@ export function readClaudeCodeSession(ref: SourceSessionRef, roots: string[]): R
   return { session, manifest: manifestEntry(session, ref.path, raw, lineCount), redactions };
 }
 
-function messageText(line: Record<string, unknown>): string {
+function messageText(line: Record<string, unknown>, lens: TurnLens): string {
   // Turn content is under `message.content` for user/assistant lines and
   // directly under `content` for system lines.
   const message = asRecord(line.message);
-  if (message) return textFromContent(message.content);
-  return textFromContent(line.content);
+  if (message) return textFromContent(message.content, lens);
+  return textFromContent(line.content, lens);
 }
 
 function sessionIdFromPath(path: string): string {

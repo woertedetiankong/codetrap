@@ -4,7 +4,7 @@ import type { TrapOperations } from "../lib/trap-operations";
 import { SessionStore } from "../lib/session-store";
 import { SessionOperations } from "../lib/session-operations";
 import { LearningOperations } from "../lib/learning-operations";
-import { parseSinceDays } from "../lib/learning-sources";
+import { parseSinceDays, parseTurnLens } from "../lib/learning-sources";
 import { parseLearningSourceId, type LearningSourceId } from "../domain/learning-source";
 import { errorResult, jsonResult, textResult, type CommandResult } from "./command-result";
 import { errorFrom, parseArgs } from "./command-args";
@@ -83,6 +83,7 @@ function cmdLearnReview(args: string[], learning: LearningOperations): CommandRe
     limit: intOpt(opts.limit) ?? 10,
     projectOnly: opts["project-only"] !== undefined,
     sessionLimit: intOpt(opts["last-sessions"]),
+    lens: parseTurnLens(stringOpt(opts.include)),
   });
 
   if (opts.json !== undefined) return jsonResult(result);
@@ -92,6 +93,7 @@ function cmdLearnReview(args: string[], learning: LearningOperations): CommandRe
     // defaults, and a user must never have to guess how much was read.
     `  scope: since ${result.scope.since.slice(0, 10)}, at most ${result.scope.session_cap} session(s)` +
       `${result.scope.project_only ? ", this project only" : ", all projects"}`,
+    `  lens: message text${result.scope.lens.reasoning ? " + reasoning" : ""}${result.scope.lens.tools ? " + tool calls/results" : ""}`,
     `  read ${result.manifest_totals.files_read} file(s)` +
       `${result.manifest_totals.skipped_empty > 0 ? ` (${result.manifest_totals.skipped_empty} had no usable turns)` : ""}` +
       `, ${result.manifest_totals.redactions} redaction(s) applied.`,

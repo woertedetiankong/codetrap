@@ -9,7 +9,7 @@ import {
 } from "../domain/learning-source";
 import { claudeCodeSessionsAdapter } from "./adapters/claude-code-sessions";
 import { codexSessionsAdapter } from "./adapters/codex-sessions";
-import type { DiscoverOptions, SessionSourceAdapter } from "./learning-source-adapter";
+import { TEXT_ONLY_LENS, type DiscoverOptions, type SessionSourceAdapter, type TurnLens } from "./learning-source-adapter";
 
 const ADAPTERS: Record<LearningSourceId, SessionSourceAdapter> = {
   "codex-sessions": codexSessionsAdapter,
@@ -76,7 +76,8 @@ export function collectSessions(
   adapter: SessionSourceAdapter,
   home: string,
   options: DiscoverOptions | undefined,
-  now: Date
+  now: Date,
+  lens: TurnLens = TEXT_ONLY_LENS
 ): CollectedSessions {
   const roots = adapter.roots(home);
   const refs = adapter.discover(home, options);
@@ -87,7 +88,7 @@ export function collectSessions(
 
   let skippedEmpty = 0;
   for (const ref of refs) {
-    const result = adapter.read(ref, roots);
+    const result = adapter.read(ref, roots, lens);
     // §3.2 requires the manifest to report every file read, so a session that
     // yielded no usable turns still gets an entry — it was opened and hashed,
     // and an audit asking "what did codetrap read?" must not be told otherwise.
@@ -118,6 +119,19 @@ export function collectSessions(
       },
     },
   };
+}
+
+/** Parses `--include reasoning,tools` into a lens. */
+export function parseTurnLens(value: string | undefined): TurnLens {
+  if (!value) return TEXT_ONLY_LENS;
+  const lens: TurnLens = {};
+  for (const raw of value.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean)) {
+    if (raw === "reasoning") lens.reasoning = true;
+    else if (raw === "tools") lens.tools = true;
+    else if (raw === "all") { lens.reasoning = true; lens.tools = true; }
+    else throw new Error(`Invalid --include: ${raw}. Expected reasoning, tools, or all.`);
+  }
+  return lens;
 }
 
 export function parseSinceDays(value: string | undefined, now: Date): Date | undefined {

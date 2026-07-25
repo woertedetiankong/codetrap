@@ -42,6 +42,7 @@ import {
 } from "./candidate-dedup";
 import { verifyCoverage } from "./coverage-verify";
 import type { TrapOperations } from "./trap-operations";
+import type { TurnLens } from "./learning-source-adapter";
 
 export type LearnSourcesRequest = {
   source?: LearningSourceId;
@@ -55,6 +56,7 @@ export type LearnReviewRequest = {
   limit?: number;
   projectOnly?: boolean;
   sessionLimit?: number;
+  lens?: TurnLens;
 };
 
 /**
@@ -68,7 +70,12 @@ export const DEFAULT_REVIEW_SESSION_CAP = 20;
 export type LearnReviewResult = WrittenReview & {
   success: true;
   source: LearningSourceId;
-  scope: { since: string; session_cap: number; project_only: boolean };
+  scope: {
+    since: string;
+    session_cap: number;
+    project_only: boolean;
+    lens: { reasoning: boolean; tools: boolean };
+  };
   session_count: number;
   evidence_count: number;
   manifest_totals: SourceManifest["totals"];
@@ -160,7 +167,8 @@ export class LearningOperations {
         projectRoot: request.projectOnly ? this.projectRoot : undefined,
         limit: sessionLimit,
       },
-      now
+      now,
+      request.lens
     );
 
     if (collected.sessions.length === 0) {
@@ -204,6 +212,11 @@ export class LearningOperations {
         since: since.toISOString(),
         session_cap: sessionLimit,
         project_only: request.projectOnly === true,
+        // Recorded because it changes what the pack can possibly contain.
+        lens: {
+          reasoning: request.lens?.reasoning === true,
+          tools: request.lens?.tools === true,
+        },
       },
       session_count: collected.sessions.length,
       evidence_count: pack.evidence_count,

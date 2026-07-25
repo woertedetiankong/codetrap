@@ -95,7 +95,7 @@ export function buildEvidencePack(args: {
   const items: EvidenceItem[] = [];
 
   for (const session of args.sessions) {
-    for (const turn of session.turns.slice(0, perSessionCap)) {
+    for (const turn of sampleTurns(session.turns, perSessionCap)) {
       items.push({
         ref: evidenceRef(session.session_id, turn.index),
         source: session.source,
@@ -119,6 +119,25 @@ export function buildEvidencePack(args: {
     excerpt_char_cap: MAX_EXCERPT_CHARS,
     items,
   };
+}
+
+/**
+ * Spreads the cap evenly across the session instead of taking the head.
+ *
+ * `slice(0, cap)` sampled the first N turns, which on a long session is its
+ * opening few percent — where the user states the task and nothing has gone
+ * wrong yet. Every pack was therefore biased toward intentions and away from
+ * the failures, edits and corrections that occur later, which is precisely the
+ * material a lesson is made of.
+ */
+export function sampleTurns<T>(turns: T[], cap: number): T[] {
+  if (cap <= 0 || turns.length <= cap) return turns;
+  const step = turns.length / cap;
+  const sampled: T[] = [];
+  for (let index = 0; index < cap; index += 1) {
+    sampled.push(turns[Math.floor(index * step)]);
+  }
+  return sampled;
 }
 
 /** The stable pointer form `learn stage` verifies claimed evidence against. */

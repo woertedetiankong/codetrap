@@ -1217,6 +1217,21 @@ would be easier to build than candidate quality.
 > review artifacts need a publication-surface guard when a review runs inside a
 > public repo.
 > Evidence: `docs/tasks/2026-07-25-phase0-claude-code-proof-point/`.
+>
+> **Risk 4 RESOLVED — CONFIRMED, 2026-07-25.** The extractor blind spot was real
+> and large. Re-reading the same corpus with reasoning and tool traffic included
+> found **38 distinct failure shapes against the original lens's 1**, and 32 of
+> those 38 (84%) are specific to this project's own source. The one shape the
+> narrow lens did see was node module resolution — cluster C01, the single
+> lesson that reached a commit. The adapters had been reading 15% of the content,
+> and only from the opening of each session (a second artifact: evidence packs
+> head-truncated at 40 turns).
+> **Risk 3's evidence is therefore withdrawn.** "Only 1 of 34 candidates is
+> about the user's own source code" cannot support a positioning conclusion,
+> because the extractor that produced it could not see codebase evidence. §1.6
+> and §11 are not invalidated — they are simply no longer supported by that
+> number, and the question is open rather than answered.
+> Evidence: `docs/tasks/2026-07-25-extractor-blind-spot-experiment/`.
 
 ### Phase 1 — MVP compiler loop (five sequential vertical slices)
 

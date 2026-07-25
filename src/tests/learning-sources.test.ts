@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { codexSessionsAdapter, readCodexSession } from "../lib/adapters/codex-sessions";
 import { claudeCodeSessionsAdapter, readClaudeCodeSession } from "../lib/adapters/claude-code-sessions";
-import { collectSessions, inventorySource, parseSinceDays } from "../lib/learning-sources";
+import { collectSessions, inventorySource, parseSinceDays, parseTurnLens } from "../lib/learning-sources";
 import { assertInsideRoot, type SessionSourceAdapter } from "../lib/learning-source-adapter";
 import { excerpt, isHarnessNoise, redact } from "../lib/learning-redaction";
+import { sampleTurns } from "../lib/learning-review-dir";
 import type { NormalizedSession } from "../domain/learning-source";
 
 /**
@@ -228,7 +229,107 @@ describe("Phase 1C — source discovery and privacy", () => {
   });
 });
 
+describe("Extractor lens — what the reader is allowed to see", () => {
+  test("text only by default: reasoning and tool traffic are not read", () => {
+    const home = fixtureHome();
+    writeRichClaudeSession(home, "rich", "/mnt/d/project");
+    const session = readOnly(claudeCodeSessionsAdapter, home);
+    const all = session.turns.map((turn) => turn.text).join("\n");
+
+    expect(all).toContain("The build keeps timing out");
+    expect(all).not.toContain("thinking about the timeout");
+    expect(all).not.toContain("bun test");
+    expect(all).not.toContain("error TS2339");
+  });
+
+  test("--include all admits reasoning, tool calls and tool results", () => {
+    const home = fixtureHome();
+    writeRichClaudeSession(home, "rich", "/mnt/d/project");
+    const [ref] = claudeCodeSessionsAdapter.discover(home);
+    const { session } = claudeCodeSessionsAdapter.read(
+      ref,
+      claudeCodeSessionsAdapter.roots(home),
+      { reasoning: true, tools: true }
+    );
+    const all = session.turns.map((turn) => turn.text).join("\n");
+
+    expect(all).toContain("thinking about the timeout");
+    expect(all).toContain("[Bash]");
+    expect(all).toContain("bun test");
+    // The failure signature Phase 0's lens could not see.
+    expect(all).toContain("error TS2339");
+  });
+
+  test("an Edit is rendered with both sides, which is the closest thing to a diff", () => {
+    const home = fixtureHome();
+    writeRichClaudeSession(home, "rich", "/mnt/d/project");
+    const [ref] = claudeCodeSessionsAdapter.discover(home);
+    const { session } = claudeCodeSessionsAdapter.read(
+      ref,
+      claudeCodeSessionsAdapter.roots(home),
+      { tools: true }
+    );
+    const all = session.turns.map((turn) => turn.text).join("\n");
+    expect(all).toContain("[Edit]");
+    expect(all).toContain("old_string");
+    expect(all).toContain("new_string");
+  });
+
+  test("redaction still applies to the wider lens", () => {
+    const home = fixtureHome();
+    writeRichClaudeSession(home, "rich", "/mnt/d/project");
+    const [ref] = claudeCodeSessionsAdapter.discover(home);
+    const { session, redactions } = claudeCodeSessionsAdapter.read(
+      ref,
+      claudeCodeSessionsAdapter.roots(home),
+      { reasoning: true, tools: true }
+    );
+    const all = session.turns.map((turn) => turn.text).join("\n");
+    // A secret inside a Bash command must not survive just because the lens widened.
+    expect(all).not.toContain("sk-ant-abcdefghijklmnopqrstuvwxyz");
+    expect(all).toContain("[REDACTED:anthropic-key]");
+    expect(redactions).toBeGreaterThan(0);
+  });
+
+  test("--include rejects an unknown lens rather than silently ignoring it", () => {
+    expect(parseTurnLens(undefined)).toEqual({});
+    expect(parseTurnLens("reasoning")).toEqual({ reasoning: true });
+    expect(parseTurnLens("all")).toEqual({ reasoning: true, tools: true });
+    expect(() => parseTurnLens("diffs")).toThrow(/Invalid --include: diffs/);
+  });
+
+  test("evidence sampling spreads across the session instead of taking the head", () => {
+    const turns = Array.from({ length: 100 }, (_, index) => index);
+    const sampled = sampleTurns(turns, 10);
+    expect(sampled).toHaveLength(10);
+    expect(sampled[0]).toBe(0);
+    // Head-slicing would have ended at 9, missing everything after the opening.
+    expect(sampled[sampled.length - 1]).toBeGreaterThan(80);
+    expect(sampleTurns(turns, 200)).toHaveLength(100);
+  });
+});
+
 // --- fixtures -----------------------------------------------------------
+
+function writeRichClaudeSession(home: string, sessionId: string, cwd: string): void {
+  const dir = join(home, ".claude", "projects", cwd.replace(/[\\/]/g, "-"));
+  mkdirSync(dir, { recursive: true });
+  const base = { sessionId, cwd, version: "2.1.204", gitBranch: "main" };
+  const lines = [
+    JSON.stringify({ ...base, type: "user", timestamp: "2026-07-01T10:00:00.000Z", message: { role: "user", content: [{ type: "text", text: "The build keeps timing out." }] } }),
+    JSON.stringify({ ...base, type: "assistant", timestamp: "2026-07-01T10:00:01.000Z", message: { role: "assistant", content: [
+      { type: "thinking", thinking: "I am thinking about the timeout default." },
+      { type: "tool_use", name: "Bash", input: { command: "bun test && export KEY=sk-ant-abcdefghijklmnopqrstuvwxyz123456", description: "run tests" } },
+    ] } }),
+    JSON.stringify({ ...base, type: "user", timestamp: "2026-07-01T10:00:02.000Z", message: { role: "user", content: [
+      { type: "tool_result", content: [{ type: "text", text: "src/lib/x.ts(1,1): error TS2339: Property 'y' does not exist." }] },
+    ] } }),
+    JSON.stringify({ ...base, type: "assistant", timestamp: "2026-07-01T10:00:03.000Z", message: { role: "assistant", content: [
+      { type: "tool_use", name: "Edit", input: { file_path: "src/lib/x.ts", old_string: "const y = 1", new_string: "const z = 1" } },
+    ] } }),
+  ];
+  writeFileSync(join(dir, `${sessionId}.jsonl`), `${lines.join("\n")}\n`);
+}
 
 function fixtureHome(): string {
   return mkdtempSync(join(tmpdir(), "codetrap-1c-home-"));
