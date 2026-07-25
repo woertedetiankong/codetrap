@@ -1,7 +1,7 @@
-# codetrap Mature Product Roadmap v2: Agent Experience Compiler
+# codetrap Mature Product Roadmap v2.3: Agent Experience Compiler
 
 Date: 2026-06-22 (v1)
-Updated: 2026-07-07 (v2)
+Updated: 2026-07-25 (v2.3)
 Status: Product direction / long-term roadmap — authoritative parent plan
 Scope: Parent plan for codetrap mature product evolution
 Clients served: **Codex and Claude Code, symmetrically** (Cursor and others: future)
@@ -29,8 +29,65 @@ What changed in v2:
   agent-assisted; the CLI verifies references deterministically.
 - Consolidated the trust red lines into one section (§3.2) instead of repeating
   them in every chapter.
-- MVP destination subset defined: `pitfall_trap` + `skip` end-to-end first; all
-  other destinations remain proposal-only stubs until Phase 2 (§11).
+- MVP subset defined: `pitfall_trap` end-to-end plus a user-visible `skip`
+  action recorded as a suppression decision, not a candidate type (§8, §11).
+
+What changed in v2.1 after execution review:
+
+- Clarified authority vs execution: the user authorizes durable writes; an
+  agent may execute the approved write on the user's behalf. codetrap is an
+  auditable local workflow, not an adversarial security boundary.
+- Split candidate kind, review decision, and delivery state; removed `skip`
+  from the candidate-type ontology and resolved the existing `accepted`
+  migration collision.
+- Reconciled dedup: exact duplicate revisions may consolidate mechanically;
+  semantic similarity only groups candidates for human judgment.
+- Strengthened Phase 0 with conclusive-run rules, separate decision metrics,
+  privacy/yield measurements, repeat sampling, and downstream-use evidence.
+- Split Phase 1 into five sequential vertical slices and delayed speculative
+  destination schemas until real evidence supports them.
+- Moved the public benchmark after longitudinal flywheel validation.
+
+What changed in v2.2 after a retrieve-vs-curate review:
+
+- Added **user-curated context packs** as a first-class runtime delivery mode
+  (§12), alongside agent-initiated pre-flight recall. Retrieval catches
+  unknown-unknowns (the pitfall the user already forgot); curation serves
+  known-knowns (context the user deliberately loads while writing a PRD or
+  requirement). Neither replaces the other.
+- Reframed "outdated recall" as a **currency/staleness** problem fixed in the
+  lifecycle layer (§12.3), not a reason to remove retrieval.
+- Added a Phase 0 measurement (§16) comparing curated feeding against pre-flight
+  recall, so the retrieve-vs-curate question is settled by evidence per the §17
+  falsifier discipline rather than by assumption.
+
+What changed in v2.3 after a two-consumers review:
+
+- Added §1.7 **Two consumers, two read-paths**: the compiled store serves the
+  next agent run AND the user's own expertise. Same substrate; opposite
+  attention economics — triage stays fast (§4.2), study is deliberate (§10).
+  Product name and positioning unchanged; repositioning is an evidence decision
+  after Phase 0–2 usage, not an assumption.
+- Added `rationale` (the causal why) to the candidate envelope (§8.2) before
+  Phase 1B freezes it: agents need the action; the user's expertise loop needs
+  the model.
+- Added the `insight` kind and **insight shelf** (§8.1, §10, §11): lessons with
+  real understanding but no agent-actionable trigger/action route to a study
+  shelf (Phase 2) instead of suppression. Never runtime-eligible; evidence
+  still required. Until Phase 2 they ride as `unclassified` with an insight
+  `destination_hint`.
+- Made the destination-matching ladder explicit (§11): guidance files are the
+  carrier of last resort for the genuinely unconditional; situational lessons
+  are traps, workflows are skills, mechanizable lessons graduate to
+  deterministic checks (§12.3).
+- Scheduled v2.2's unscheduled promises: curated context-pack export lands in
+  Phase 1E; §12.3 currency mechanics (`last_validated`, stale down-ranking,
+  graduation) land in Phase 2.
+- Corrected v2.2's overstatement that Phase 0 "settles" retrieve-vs-curate:
+  Phase 0 yields an early signal; the decision rule runs on Phase 1–2 usage
+  data (§16 Phase 2).
+- Deferred spaced-repetition/digest machinery until the study surface exists
+  and sees real use; the inbox is never slowed to force learning (§15).
 
 ---
 
@@ -71,7 +128,7 @@ A stored lesson changes a future agent action only if all four hold:
 2. Action    — it prescribes what to do differently, not just what happened.
 3. Injection — a runtime path actually delivers it to the agent (search hit,
                guidance file, skill, automation).
-4. Trust     — it is true, current, evidenced, and human-approved, so both the
+4. Trust     — it is true, current, evidenced, and human-authorized, so both the
                user and the agent can rely on it.
 ```
 
@@ -92,9 +149,13 @@ Raw history is free; these two are not. Therefore:
 
 - Signal-to-noise of the candidate stream is THE core product metric.
 - A high-precision small trap database beats a large polluted one.
-- `skip` is a first-class product outcome, not a failure: it is how the system
-  buys back user attention on every future review.
+- User-visible `skip` is a first-class product outcome, not a failure. In the
+  domain model it is a `suppressed` review decision with a reason and
+  fingerprint; this is how the system buys back attention on future reviews.
 - An overflowing review inbox is a product failure equal to a missed lesson.
+- Triage attention is a cost to minimize; study attention (§1.7) is an
+  investment the user chooses to make. The budgets govern the former and never
+  force the latter.
 
 ### 1.4 Division of labor (compiler, not brain)
 
@@ -107,13 +168,15 @@ compiler work, and it belongs to the codetrap CLI.
 Agent / Skill:   understands real work history, drafts candidates.
 codetrap CLI:    evidence, schema, validation, dedup, staging, write gates.
 Web Inbox:       human review and approval.
-Destinations:    make confirmed experience influence the next agent action.
+Destinations:    make committed experience influence the next agent action.
 ```
 
 Trust requires the deterministic layer to gate the probabilistic one, never the
 reverse. The CLI must not hardcode learning judgment (no keyword rules like
-"session contains 'test failed' → auto-create trap"); the agent must not be able
-to bypass schema validation or the durable write gate.
+"session contains 'test failed' → auto-create trap"). Every supported durable
+write path must pass schema validation and carry explicit user authorization.
+The executor may be the user, Web UI, CLI, or an agent acting on the user's
+instruction; execution authority is not learning authority.
 
 ### 1.5 The riskiest assumption — evidence before architecture
 
@@ -133,7 +196,8 @@ coverage checks, and quality scoring — not to build more architecture.
 ### 1.6 One-line positioning
 
 ```text
-codetrap compiles real coding-agent work history into human-approved guardrails.
+codetrap compiles real coding-agent work history into human-authorized,
+agent-executable guardrails.
 ```
 
 Fuller form:
@@ -141,10 +205,38 @@ Fuller form:
 ```text
 codetrap mines real coding-agent work history, lets agents draft reusable
 lessons, validates those lessons with evidence and coverage checks, lets humans
-approve what becomes durable, and injects approved lessons back into future
+authorize what becomes durable, and injects committed lessons back into future
 agent work as traps, project guidance, skills, custom agents, automations,
-evals, docs updates, or reviewed skips.
+evals, docs updates, or reviewed suppressions.
 ```
+
+### 1.7 Two consumers, two read-paths
+
+The compiled store serves two consumers with opposite attention economics:
+
+```text
+1. The next agent run   — delivery must be precise, conditional, and cheap in
+                          context (§1.3). Review is triage; the §4.2 budgets
+                          keep it fast.
+2. The user's expertise — in the AI era the durable human skills are judgment,
+                          system knowledge, and problem framing. Each committed
+                          lesson is a compressed unit of judgment about where
+                          this system bites; studying the store is how the user
+                          builds depth instead of supervising everything and
+                          internalizing nothing.
+```
+
+Same substrate, two read-paths, two speeds. The inbox is never slowed down to
+force learning; the study surface (§10) is never optimized down to one-click
+emptiness. Review asks "is this true and worth keeping?"; study asks "do I
+understand why?". The review moment stays substantive — the user as arbiter of
+what is true is itself the judgment practice that builds expertise — but the
+tool only supplies the material and the moment; the practice belongs to the
+user.
+
+Positioning follows the evidence discipline (§1.5): the product remains the
+Agent Experience Compiler. Whether the human-growth loop deserves the marquee
+is decided by real Phase 0–2 usage, not by renaming first.
 
 ---
 
@@ -152,7 +244,7 @@ evals, docs updates, or reviewed skips.
 
 codetrap should not stop at being a "failure log repository," nor bloat into a
 general-purpose agent memory platform. Its mature form is a local-first,
-agent-assisted, human-approved **Agent Experience Compiler**.
+agent-assisted, human-authorized **Agent Experience Compiler**.
 
 The mature flywheel:
 
@@ -162,7 +254,8 @@ real work history
   -> LessonCandidate drafting
   -> codetrap compiler validation, dedup, staging
   -> Web Learning Inbox review
-  -> user confirmation into the right destination
+  -> user authorization for the right destination
+  -> user or agent executes the authorized write
   -> runtime guardrails
   -> next agent is smarter
 ```
@@ -176,7 +269,8 @@ Key boundaries:
 - `.codetrap/sessions` is a candidate and review workspace, not the sole source
   of experience discovery.
 - Automation covers discovery, clustering, drafting, triage, validation, and
-  staging; final durability is always confirmed by the user.
+  staging; final durability is always authorized by the user and may be
+  executed by the user or an instructed agent.
 
 ---
 
@@ -189,8 +283,8 @@ feature, doc, or example that assumes Codex-only is a defect. Concretely:
 
 | Concern | Codex | Claude Code |
 |---|---|---|
-| Setup command | `codetrap setup codex` | `codetrap setup claude` (to build) |
-| Skills / entry points | `~/.codex/skills` bundle | Claude Code plugin skills / slash commands (to build) |
+| Setup command | `codetrap setup codex` | `codetrap setup claude` (shipped 2026-07-10) |
+| Skills / entry points | `~/.codex/skills` bundle | `~/.claude/skills` bundle (shipped 2026-07-10; `/codetrap-learning-review` command comes with Phase 1) |
 | Project guidance | `AGENTS.md` (template append) | `CLAUDE.md` (same template) |
 | History source (pull mode) | Codex local sessions, task/rollout summaries | `~/.claude/projects/<slug>/` JSONL transcripts |
 | Agent-native sources | Codex Memories | Claude Code session summaries / memory dir |
@@ -210,7 +304,13 @@ Symmetry rules:
   initialize instructions (§13.2), so a client that only speaks MCP still
   learns the workflow without per-client prompt configuration.
 
-### 3.2 Trust red lines (consolidated — apply to every phase)
+> **Status (2026-07-10):** the setup/skills symmetry rows above are shipped —
+> one setup core (`src/lib/client-setup.ts`), one skill bundle, one guidance
+> template; §13.2 and §13.3 are also shipped. Evidence:
+> `docs/tasks/2026-07-10-setup-claude-and-skill-parity/`. The learning-review
+> entry points and history-source rows remain Phase 0/1 work.
+
+### 3.2 Trust and authorization red lines (apply to every phase)
 
 Explicit trigger only:
 
@@ -220,21 +320,45 @@ Explicit trigger only:
   scanning by the CLI. No silent reads on Web open. No implicit MCP escalation
   from ordinary search into learning review.
 
-Dry-run by default; no durable write before user confirmation:
+Dry-run by default; no durable write before user authorization:
 
 - Generating candidates and reports: allowed.
 - Writing confirmed traps, editing AGENTS/CLAUDE guidance, installing skills,
-  creating custom agents, enabling automations, merging eval fixtures: only
-  after explicit per-item user confirmation, each with a visible diff and a
-  rollback path.
-- `accepted` does not equal runtime injection. Only lessons merged into a
+  creating custom agents, enabling automations, merging eval fixtures: allowed
+  only after explicit user authorization for one candidate or an explicitly
+  enumerated batch. The executor may be an agent acting on that instruction.
+- Authorization binds to a candidate revision and destination proposal. If the
+  material content or destination changes, authorization is invalidated and
+  must be renewed.
+- Every durable action shows the proposed result or diff, records an audit
+  receipt (`authorized_scope`, candidate revision/hash, destination, executor,
+  timestamp), and has a rollback path.
+- `approved` does not equal runtime injection. Only lessons committed into a
   durable destination in a runtime-eligible state may influence agent behavior.
+
+Security boundary statement:
+
+- codetrap is a local workflow, validation, and audit boundary. It does not
+  claim to distinguish a human from an agent that has the same OS account and
+  unrestricted CLI/database access.
+- The product prevents accidental and unsupported writes in its recommended
+  CLI/Web/MCP flows; it does not claim to contain a malicious same-user agent.
+- Direct maintenance escape hatches, if retained, must be documented as such
+  and leave an explicit audit record rather than being described as impossible.
 
 Privacy and evidence:
 
 - Do not copy full session transcripts into codetrap. Store source manifest,
   evidence pointers, short excerpts, hashes, dates, and necessary metadata.
-- Sensitive or external sources require redaction and explicit confirmation.
+- Sensitive or external sources require redaction and explicit authorization.
+- Source readers default to explicit allowed roots, do not follow symlinks out
+  of those roots, ignore binary/generated/ignored files, and report every root
+  and file count in the source manifest.
+- Secret detection and redaction are best-effort safeguards, never a proof that
+  content is safe. Evidence previews remain visible before staging.
+- Review artifacts have an explicit retention/delete workflow; deleting a
+  review removes stored excerpts while preserving only non-sensitive audit
+  metadata required for durable destinations.
 
 ### 3.3 Documentation accuracy invariant
 
@@ -275,11 +399,11 @@ flywheel stops regardless of how good the mining is.
 
 ```text
 Time-to-first-value:      < 10 minutes from install to first useful pre-flight
-                          search hit or first accepted lesson.
+                          search hit or first approved lesson.
 Review batch:             10 candidates reviewable in < 5 minutes by a user
                           familiar with the project.
-Triage actions:           accept / edit / skip / reject reachable in one
-                          keystroke or one click from the card.
+Triage actions:           approve / edit / skip (records `suppressed`) / reject
+                          reachable in one keystroke or one click from the card.
 Inbox cap:                soft cap ~30 pending candidates; beyond it, new
                           reviews warn and suggest triage first.
 Staleness:                pending candidates untouched for 60 days are
@@ -287,20 +411,33 @@ Staleness:                pending candidates untouched for 60 days are
                           silently deleted.
 Learning review runtime:  a 30-day pull-mode review completes in minutes, not
                           hours; long steps stream progress.
+Evidence card budget:     <= 3 excerpts by default, each <= 500 characters;
+                          additional evidence is progressive disclosure.
+Evidence pack budget:     target <= 80 KB UTF-8 per 10-candidate batch
+                          (roughly 20k tokens); overflow is chunked and reported.
 ```
 
 These budgets are acceptance criteria for the Web inbox and skill UX phases,
-not aspirations.
+not aspirations. Every run reports source files/bytes, packed bytes, candidate
+yield, elapsed time, and any external model/API cost initiated by codetrap.
+They govern triage surfaces only; the study surface (§10) is exempt by design —
+deliberate attention there is the point, not a cost (§1.7).
 
 ### 4.3 Trust receipts
 
-After every learning review and every review session, show a receipt:
+After every learning review and every review session, show a receipt. A dry-run
+example:
 
 ```text
-staged: N candidates    skipped: M (reasons archived)
+staged: N candidates    suppressed: M (user-facing action: skip)
 durable writes: 0 (nothing was written to traps.db, guidance, skills,
 agents, automations, or evals)
 ```
+
+An authorized write receipt additionally records the candidate revision/hash,
+authorized item or batch, destination, executor (`user` or `agent`), and
+rollback command/path. The receipt asserts recorded workflow facts, not the
+identity of a same-OS-account actor.
 
 The §16 Phase 0 red-line verification generalizes into this permanent UI
 element. Users should never have to wonder whether something was silently
@@ -308,14 +445,16 @@ written; the product tells them, every time.
 
 ### 4.4 Inbox hygiene is a feature
 
-- `skip` archives carry a reason and suppress re-proposal of the same lesson.
-- Duplicate candidates are merged or superseded at staging time, not surfaced
-  twice for the user to notice.
+- User-visible `skip` records a `suppressed` decision with a reason and stable
+  fingerprint, suppressing re-proposal of the same lesson.
+- Exact duplicate revisions may consolidate mechanically while preserving all
+  provenance. Semantically similar candidates are grouped at staging time and
+  shown as one review cluster; only the user decides merge or supersede.
 - The inbox is empty-able: a user who processes all cards reaches a genuine
   "inbox zero" state, with stale items parked out of view.
 - Silence beats noise: when mining finds nothing above the quality bar, the
-  correct output is "nothing worth your review" plus skips — never filler
-  candidates to look productive.
+  correct output is "nothing worth your review" plus suppression counts —
+  never filler candidates to look productive.
 
 ### 4.5 Setup and doctor UX
 
@@ -434,7 +573,7 @@ output: .codetrap/learning/reviews/<review-id>/
 Scope handling UX:
 
 - If the user already specified scope ("scan the last 30 days and generate 10
-  candidates"), do not re-ask; state the red-line confirmation and proceed:
+  candidates"), do not re-ask; state the red-line authorization rules and proceed:
 
 ```text
 I will read the last 30 days of <client> sessions and generate at most 10
@@ -464,11 +603,16 @@ Use available evidence in this order:
   instead of duplicating it.
 
 Look for lessons that are repeated, costly, error-prone, context-heavy, or
-likely to improve future agent behavior.
+likely to improve future agent behavior. Also surface lessons whose value is
+the user's understanding — rationale, tradeoffs, mental models — even when no
+agent action exists; mark these with an insight destination hint.
 
-Choose the smallest appropriate LessonCandidate type (see types table).
-First produce a compact shortlist with: title, type, trigger, lesson,
-recommended action, supporting evidence and dates, frequency/confidence,
+Choose the smallest appropriate destination hypothesis (see §8). During Phase
+0, do not force uncertain lessons into a future schema; mark them unclassified.
+First produce a compact shortlist with: title, candidate kind or unclassified,
+trigger, lesson,
+recommended action, rationale (why), supporting evidence and dates,
+frequency/confidence,
 existing coverage, risk, recommended destination, and why it is or is not
 worth staging.
 
@@ -476,8 +620,9 @@ Stage only high-confidence missing proposals. Do not write traps.db, edit
 guidance, install skills, create agents, enable automations, or merge eval
 fixtures. Do not create speculative, overlapping, or overly broad assets.
 
-Finish with: what was staged, what was deliberately skipped, what needs more
-evidence, and confirmation that no durable destination was modified.
+Finish with: what was staged, what was deliberately suppressed (user-facing
+action: skipped), what needs more evidence, and confirmation that no durable
+destination was modified.
 ```
 
 ---
@@ -487,35 +632,47 @@ evidence, and confirmation that no durable destination was modified.
 `LessonCandidate` is the concept one layer above the trap. A trap is one kind
 of lesson, not the whole of it.
 
-### 8.1 Candidate types
+### 8.1 Candidate kinds and destination hypotheses
 
-| Type | Applicable scenario | Recommended destination | Red line |
+These are the mature destination hypotheses, not a Phase 1 schema commitment:
+
+| Candidate kind | Applicable scenario | Recommended destination | Red line |
 |---|---|---|---|
-| `pitfall_trap` | repeated failure or misuse pattern | confirmed trap + evidence + lifecycle | no auto-write to `traps.db` |
+| `pitfall_trap` | repeated failure or misuse pattern | confirmed trap + evidence + lifecycle | no unauthorized write to `traps.db` |
 | `project_convention` | stable project/team preference or boundary | AGENTS/CLAUDE guidance patch proposal | no silent guidance edits |
 | `skill_candidate` | repeated workflow, SOP, reusable playbook | staged skill draft | no auto-install, no auto-trigger |
 | `custom_agent_candidate` | bounded specialist role suitable for delegation | custom subagent proposal | no auto-create or enable |
 | `automation_idea` | periodic check, report, reminder, monitor | automation proposal | no auto-enable, no external side effects |
 | `search_eval_case` | query/recall behavior worth protecting | eval fixture proposal | no fixture pollution |
 | `docs_guidance` | README/roadmap/docs/agent guidance update | docs patch proposal | no writing temporary ideas as long-term facts |
-| `skip` | one-off, ambiguous, sensitive, broad, or under-evidenced | skip archive with reason | low-quality candidates must not keep reappearing |
+| `insight` | durable understanding (rationale, tradeoff, mental model) with no agent-actionable trigger | insight shelf on the study surface (§10) | never runtime-eligible; evidence still required |
+| `unclassified` | useful lesson whose durable form is not yet proven | no destination until reviewed | do not force-fit speculative ontology |
 
-MVP note: Phase 1 implements `pitfall_trap` and `skip` end-to-end (the trap
-lane already exists in the product today). All other types are accepted by the
-schema and staged as proposal stubs, but their destination workflows come in
-Phase 2 (§16).
+`skip` is a user-facing review action, not a candidate kind. It records
+`review_decision: suppressed` with a reason and fingerprint.
+
+Phase 1 stabilizes only `pitfall_trap` and `unclassified`. Future kinds may be
+captured as a non-binding `destination_hint`, but they do not enter the stable
+enum or create dead-end proposal stubs until their destination phase begins.
+`insight` stabilizes with its shelf in Phase 2; until then such lessons ride as
+`unclassified` with an insight `destination_hint`.
 
 ### 8.2 Minimum fields
 
 ```text
 id
 schema_version
+revision
+content_hash
 title
-type
-status
+candidate_kind
+destination_hint
+review_decision
+delivery_state
 trigger
 lesson
 recommended_action
+rationale
 evidence
 source_manifest_refs
 source_agent            # NEW in v2: codex | claude-code | <other>
@@ -523,51 +680,80 @@ frequency
 confidence
 coverage
 risk
-recommended_destination
+destination_proposal
 runtime_eligibility
+authorization           # optional; bound to revision/hash + destination
 created_at
 updated_at
 ```
 
 `source_agent` records which client's history produced the candidate. It is
-required for provenance, for cross-client duplicate detection ("both agents
-learned the same lesson" must merge, not duplicate), and for per-client noise
-analysis. All other field semantics as v1: `trigger` = when it should be
+required for provenance, for cross-client duplicate grouping, and for
+per-client noise analysis. `trigger` = when it should be
 recalled; `lesson` = what was learned; `recommended_action` = what the agent
-should do differently; `evidence` = sources, dates, snippets, refs, hashes;
+should do differently; `rationale` = why that action is right and what breaks
+otherwise — the causal model, captured for the second consumer (§1.7) when
+known and never padded with filler; `evidence` = sources, dates, snippets,
+refs, hashes;
 `coverage` = overlap with existing traps/candidates/guidance/skills/agents/
-automations/docs/evals/skips; `risk` = misuse, over-breadth, staleness,
+automations/docs/evals/suppressions; `risk` = misuse, over-breadth, staleness,
 privacy, sensitivity, external side effects; `runtime_eligibility` = whether
-and when it may enter runtime recall.
+and when it may enter runtime recall. `authorization` records workflow facts;
+it is not cryptographic proof of a human actor. `destination_hint` is free-form
+and non-binding for `unclassified`; `destination_proposal` is the validated,
+revision-bound target and proposed result/diff that the user authorizes.
+`runtime_eligibility` is compiler-derived from the committed destination policy;
+an agent may recommend it but cannot grant itself runtime eligibility.
 
-### 8.3 State machine
+### 8.3 Three orthogonal state axes
 
 ```text
-proposed -> edited -> staged -> accepted -> merged
-bypass:  rejected | skipped | superseded
+candidate_kind:   pitfall_trap | unclassified | future destination kinds
+review_decision:  pending | approved | rejected | suppressed
+delivery_state:   draft | staged | committed | rolled_back | superseded
 ```
 
-- `proposed`: generated, not yet reviewed.
-- `edited`: content modified by user or agent.
-- `staged`: entered a destination proposal/draft; no durable write.
-- `accepted`: user accepts candidate + destination; not necessarily written.
-- `merged`: written into a long-term carrier with a rollback path.
-- `rejected`: not adopted.
-- `skipped`: explicitly archived with a reason; suppresses repeat noise.
-- `superseded`: covered by an existing or better candidate.
+- Editing creates a new `revision` and `content_hash`; it is an event, not a
+  lifecycle state. Material edits invalidate prior authorization.
+- `approved` means the user authorized the current revision and destination;
+  an agent may then execute it on the user's behalf.
+- `committed` means the authorized revision was written into a long-term
+  carrier with a rollback path.
+- `rejected` means the proposal was judged wrong or unsuitable.
+- `suppressed` means the lesson is one-off, ambiguous, sensitive, broad, or
+  under-evidenced and should not be proposed again without new evidence.
+- `superseded` means a committed or staged candidate was replaced by a better
+  durable lesson or proposal.
 
-Key principle: `accepted` ≠ runtime injection. Only
-merged/installed/enabled/fixture-accepted lessons may become runtime guardrails.
+Key principle: `approved` ≠ runtime injection. Only committed/installed/enabled
+lessons may become runtime guardrails.
+
+Existing `CandidateTrap` migration is explicit and regression-tested:
+
+```text
+old proposed                         -> pending  + draft
+old rejected                         -> rejected + draft
+old accepted with accepted_trap_id   -> approved + committed
+old accepted with missing trap/link  -> approved + staged + migration_warning
+```
+
+Existing session files, CLI commands, and Web review remain readable during
+the migration window. No record changes meaning merely because it was loaded
+by the new version.
 
 ### 8.4 Quality bar
 
 - No trigger condition → cannot become a guardrail.
 - No recommended action → cannot enter runtime.
-- Insufficient evidence → skip or watch, never forced durability.
+- The trigger/action bar gates runtime guardrails only. A lesson that fails it
+  but carries real understanding routes to the insight shelf (§8.1), not to
+  suppression; suppression is for noise, not for depth.
+- Insufficient evidence → suppress or watch, never forced durability.
 - Recurrence is not required: high-cost lessons that will clearly recur qualify.
-- Duplicates of existing content merge, supersede, or skip — never re-enter.
+- Exact duplicates consolidate provenance; semantic duplicates group for human
+  merge, supersede, or suppression decisions — never silently disappear.
 - Misuse risk exceeding benefit → must not enter runtime.
-- Sensitive-source candidates require redaction and explicit confirmation.
+- Sensitive-source candidates require redaction and explicit authorization.
 
 ---
 
@@ -577,12 +763,13 @@ merged/installed/enabled/fixture-accepted lessons may become runtime guardrails.
 
 - Source discovery for locally readable files (both clients' session dirs).
 - Source manifest generation; evidence pack generation; excerpt length limits.
-- Redaction / privacy checks.
+- Best-effort redaction / privacy checks plus allowed-root and retention policy
+  enforcement; the CLI never labels evidence "guaranteed safe".
 - LessonCandidate schema validation.
 - Coverage verification (§9.3) and duplicate detection, including
-  cross-client dedup keyed on content similarity, not just IDs.
-- Risk flagging; skip archive; staging review directory.
-- Durable write gates.
+  exact-revision consolidation and cross-client semantic grouping.
+- Risk flagging; suppression archive; staging review directory.
+- User-authorization validation and durable write audit receipts.
 - JSON / Web / MCP contract.
 
 ### 9.2 What the CLI must not hardcode
@@ -605,14 +792,16 @@ Agent (drafting): proposes coverage claims — "covered_by: trap #42",
 CLI (staging):    deterministically verifies every claimed ref exists (trap
                   IDs, file paths, section anchors, candidate IDs); runs FTS/
                   hybrid similarity against existing traps and candidates and
-                  attaches a ranked "possible duplicates" report; flags
+                  attaches ranked similarity groups; consolidates only exact
+                  duplicate revisions while preserving all provenance; flags
                   candidates whose claims failed verification.
 Web (review):     shows the coverage report; the human makes the final
-                  merge / supersede / convert / reject call.
+                  merge / supersede / convert / reject / suppress call.
 ```
 
-The CLI never silently drops a candidate on semantic-similarity grounds alone;
-it stages with a duplicate warning. Deterministic verification gates; semantic
+The CLI never silently drops or semantically merges a candidate on similarity
+grounds alone. Similar candidates appear as one review cluster with each
+revision and provenance visible. Deterministic verification gates; semantic
 judgment advises.
 
 ### 9.4 Three review modes
@@ -650,8 +839,14 @@ codetrap learn sources --source <codex-sessions|claude-code-sessions|...> --sinc
 codetrap learn evidence-pack --source <...> --since 30d --out .codetrap/learning/reviews/<id>
 codetrap learn review --source <...> [--since 30d | --from D --to D | --last-sessions N] --limit 10 --dry-run
 codetrap learn stage --review-dir <dir> --validate --coverage-check --dry-run
+codetrap learn decide <candidate-id> --decision <approve|reject|suppress> [--reason ...]
+codetrap learn commit <candidate-id> --revision <n> --destination <...>
 codetrap web
 ```
+
+`decide --decision approve` records the user's authorization scope; it does not
+write the destination. `commit` may be executed by the user or by an agent on
+the user's instruction and fails if the approved revision/destination changed.
 
 ---
 
@@ -663,8 +858,9 @@ UX budgets in §4.2.
 List view — enough to triage without opening the card:
 
 ```text
-[type] [title] [confidence] [frequency] [evidence dates] [recommended
-destination] [coverage] [risk] [status] [source_agent]
+[candidate_kind] [title] [confidence] [frequency] [evidence dates]
+[recommended destination] [coverage] [risk] [review_decision]
+[delivery_state] [source_agent]
 ```
 
 Detail card — progressive disclosure order:
@@ -673,34 +869,45 @@ Detail card — progressive disclosure order:
 2. Recommended destination and rationale; coverage report; risk notes.
 3. Evidence drill-down (excerpts, dates, source manifest) on demand.
 
-User actions: accept / edit / merge / supersede / convert type / reject /
-skip-as-one-off / stage proposal. Confirmation strength scales with destination
-side effects:
+User actions: approve / edit / commit / supersede / convert kind / reject /
+skip-as-one-off (`suppressed`) / stage proposal. Authorization strength scales
+with destination side effects:
 
 ```text
-pitfall_trap:           accept -> confirmed trap proposal -> confirm -> traps.db
-project_convention:     accept -> guidance patch proposal -> review diff -> merge
-skill_candidate:        accept -> staged skill draft -> explicit install
-custom_agent_candidate: accept -> agent proposal -> explicit create/enable
-automation_idea:        accept -> automation proposal -> explicit enable
-search_eval_case:       accept -> eval fixture proposal -> explicit merge
-docs_guidance:          accept -> docs patch proposal -> review diff -> merge
-skip:                   accept skip -> archive reason -> suppress noise
+pitfall_trap:           approve -> authorized trap proposal -> commit -> traps.db
+project_convention:     approve -> guidance patch -> review diff -> commit
+skill_candidate:        approve -> staged skill draft -> explicit install
+custom_agent_candidate: approve -> agent proposal -> explicit create/enable
+automation_idea:        approve -> automation proposal -> explicit enable
+search_eval_case:       approve -> eval fixture proposal -> explicit commit
+docs_guidance:          approve -> docs patch -> review diff -> commit
+user-visible skip:      suppress -> archive reason/fingerprint -> suppress noise
 ```
 
 UX principles: one unified entry, different destinations; review in one place,
 never ingest into one place; the bigger the side effect, the more explicit the
-confirmation; every durable write has a diff, a confirmation, and a rollback
-path; end every session with the trust receipt (§4.3).
+authorization; every durable write has a proposed result/diff, an authorization
+receipt, and a rollback path; end every session with the trust receipt (§4.3).
+
+Browse, study, curate: the same workbench is also the study surface for
+committed lessons and shelved insights — the second consumer's surface (§1.7).
+The §4.2 triage budgets do not apply here; deliberate attention is the point.
+From it the user can select a few lessons and export a curated context pack
+(§12) to hand the agent at PRD/planning time. This is a human-facing
+convenience over already-committed data — it never auto-injects and never
+substitutes for agent-initiated pre-flight recall, which is the only path that
+catches the pitfall the user has already forgotten. Spaced-repetition and
+digest machinery are deliberately deferred until the study surface exists and
+sees real use.
 
 ---
 
 ## 11. Durable Destinations
 
-| Candidate | Durable destination | User confirmation | Rollback path | Phase |
+| Candidate | Durable destination | User authorization | Rollback path | Phase |
 |---|---|---|---|---|
 | `pitfall_trap` | `traps.db` confirmed trap + evidence + lifecycle | required | delete / supersede / lifecycle status | **1 (MVP)** |
-| `skip` | skip archive with reason | accept skip | unskip / reopen | **1 (MVP)** |
+| `insight` | insight shelf on the study surface (§10) | approve to shelf | unshelve / supersede | 2 |
 | `project_convention` | AGENTS/CLAUDE guidance patch | review diff | revert patch | 2 |
 | `docs_guidance` | docs patch proposal | review diff | revert patch | 2 |
 | `search_eval_case` | eval fixture proposal | merge fixture | remove fixture / mark obsolete | 2 |
@@ -708,15 +915,45 @@ path; end every session with the trust receipt (§4.3).
 | `custom_agent_candidate` | custom subagent config draft | explicit create/enable | disable / remove agent | 3 |
 | `automation_idea` | automation proposal | explicit enable | disable automation | 3 |
 
-Until a destination's workflow ships, its candidates stage as proposal stubs
-that the inbox can display, edit, and skip — they never dead-end or silently
-drop.
+Suppression is a review outcome, not a durable destination. A suppression
+record contains candidate fingerprint, reason, evidence boundary, and reopen
+path; it never enters runtime recall but prevents repeated review noise.
+
+Destination-matching discipline: guidance files are unconditional context —
+always loaded, always spending tokens — and therefore the carrier of last
+resort, reserved for the small set of lessons that are always true
+project-wide. Situational lessons belong in traps (trigger-matched conditional
+recall); workflow-shaped lessons in skills; mechanizable lessons graduate to
+deterministic checks (§12.3). This ladder is the product's answer to "rigid
+guidance files vs. feeding the agent everything."
+
+Until a destination workflow begins, the lesson remains `unclassified` with a
+non-binding `destination_hint`. Phase 1 does not freeze speculative kinds or
+create typed proposal stubs that cannot complete.
 
 ---
 
 ## 12. Runtime Guardrail Injection
 
 Confirmed experience must influence the next agent job; otherwise it is notes.
+Delivery happens in two complementary modes, and the product needs both:
+
+```text
+Agent-initiated recall  — the agent runs a pre-flight search at the right
+                          moment and applies matching lessons. This is the only
+                          path that catches unknown-unknowns: the pitfall the
+                          user has already forgotten. If recall required the
+                          user to remember the lesson first, the trap would be
+                          pointless.
+User-curated context    — the user browses committed lessons and hands a small,
+                          deliberately chosen set to the agent (e.g. while
+                          writing a PRD or requirement). This serves
+                          known-knowns: context the user knows they want.
+```
+
+Curation does not replace recall; it covers a different moment and a different
+kind of need. Removing recall to raise precision would trade away the
+pitfall-catching core; precision and staleness are addressed in §12.3 instead.
 
 ### 12.1 Injection paths (per client where they differ)
 
@@ -730,7 +967,12 @@ Confirmed experience must influence the next agent job; otherwise it is notes.
 - Confirmed `custom_agent_candidate` → client's native subagent format.
 - Confirmed `automation_idea` → runs only after user approval.
 - Confirmed `search_eval_case` → protects retrieval quality in evals.
-- `skip` records → suppress repeated noise.
+- Suppression records → suppress repeated review noise.
+- Confirmed `pitfall_trap` (and other committed lessons) → **user-curated
+  context pack**: the user selects a few relevant committed lessons from the
+  browse surface (§10) and feeds them to the agent at planning/PRD time. Same
+  store and `codetrap search` data, user-chosen instead of agent-chosen; always
+  user-invoked, never auto-injected.
 
 Note: hook-based injection (e.g., auto-prepending trap search results on prompt
 submit) is deliberately NOT on the roadmap. The competitor's experience shows
@@ -741,19 +983,54 @@ with far less fragility. Revisit only with strong user demand, as opt-in.
 ### 12.2 Runtime eligibility
 
 ```text
-runtime_eligibility: never | after_acceptance | after_durable_merge | manual_only
+runtime_eligibility: never | after_commit | manual_only
 ```
 
 Defaults:
 
 ```text
-pitfall_trap: after_durable_merge         project_convention: after_durable_merge
+pitfall_trap: after_commit                project_convention: after_commit
 skill_candidate: manual_only until installed
 custom_agent_candidate: manual_only until enabled
 automation_idea: manual_only until enabled
 search_eval_case: never (runtime) / yes (eval protection)
-docs_guidance: after_durable_merge        skip: never (runtime) / yes (suppression)
+docs_guidance: after_commit               suppression: never (runtime)
+insight: never (runtime) / yes (study surface; may be user-curated into packs)
 ```
+
+User-curated context packs are always user-invoked and so are not gated by
+`runtime_eligibility`; only committed lessons are eligible to appear in the
+browse surface a user curates from.
+
+### 12.3 Currency and staleness
+
+Outdated recall is a currency problem, not a reason to stop retrieving. A stored
+lesson can be true when committed and wrong later; the fix is to make age and
+validity visible and let stale lessons fall out of recall, never to disable
+recall wholesale.
+
+- Every committed lesson carries a last-validated date and lifecycle status
+  (existing trap lifecycle); recall and the browse surface show both so the user
+  and agent can weigh freshness.
+- Superseded and retired lessons are excluded from agent-initiated recall by
+  default and are visibly marked in the browse surface.
+- Stale-but-not-retired lessons are down-ranked in recall, not hidden, so a
+  still-relevant old lesson is not silently lost.
+- When a recalled lesson conflicts with the current source of truth (user
+  request, code, tests, project docs), the agent follows the source of truth and
+  surfaces the conflict — already the skill/MCP contract, and the first line of
+  defense against stale guidance.
+- A recalled or curated lesson the user marks wrong or obsolete routes into the
+  supersede/retire lifecycle, closing the loop instead of leaving noise.
+- A committed lesson that gets mechanized into a deterministic check (lint
+  rule, CI gate, type, test) graduates: the check becomes the durable form and
+  the lesson is superseded out of recall with a pointer to its successor. The
+  strongest carrier wins; the trap database is the residue that cannot be
+  automated.
+
+This keeps the two scarce resources (§1.3) honest: stale, low-precision recall
+spends agent context for no behavior change, so currency is a precision feature,
+not a nicety.
 
 ---
 
@@ -782,12 +1059,17 @@ scenario, not an edge case.
 ### 13.2 Self-describing MCP protocol
 
 Embed the codetrap usage contract in the MCP server's initialize instructions:
-when to run pre-flight search, how to capture candidates, that accept/reject
-stays with the human, and that learning review is explicit-trigger-only. Any
+when to run pre-flight search, how to capture candidates, that authorization
+stays with the human while an agent may execute an authorized write, and that
+learning review is explicit-trigger-only. Any
 MCP client then learns the workflow with zero per-client prompt configuration.
 This is the single cheapest mechanism for keeping two (later N) clients
 behaviorally consistent, and it complements — never replaces — the guidance
 templates.
+
+> **Status (2026-07-10): shipped.** `src/mcp/instructions.ts`, wired into the
+> initialize handshake and asserted end-to-end in `src/tests/mcp-tools.test.ts`.
+> Evidence: `docs/tasks/2026-07-10-setup-claude-and-skill-parity/`.
 
 ### 13.3 Per-client doctor
 
@@ -796,12 +1078,19 @@ presence and version, guidance file presence and template currency, MCP
 registration, and CLI-binary vs running-MCP-server version match with a
 "restart your client" hint on mismatch.
 
+> **Status (2026-07-10): shipped.** `src/lib/client-health.ts` (doctor
+> `clients` section + refresh next-actions), `restart_hint` on the MCP doctor
+> tool. Guidance currency is the template-marker check; a versioned template
+> marker is a noted follow-up. Evidence:
+> `docs/tasks/2026-07-10-setup-claude-and-skill-parity/`.
+
 ### 13.4 Provenance and cross-client dedup
 
-`source_agent` on every candidate (§8.2); staging-time similarity check merges
-"same lesson, two clients" into one candidate with combined evidence rather
-than two inbox entries (§9.3). Accepted-trap evidence records which client's
-history produced it.
+`source_agent` on every candidate (§8.2). Staging consolidates only identical
+revision hashes and preserves combined evidence. Semantic similarity creates a
+single review cluster without destroying either candidate; the user decides
+merge, supersede, or separate (§9.3). Committed-trap evidence records every
+client history that contributed provenance.
 
 ---
 
@@ -812,14 +1101,15 @@ protects retrieval quality. What is missing is a **publicly legible benchmark**
 — the competitor's published LongMemEval numbers are its most credible asset,
 and codetrap currently has no equivalent artifact.
 
-Roadmap item (Phase 2, after the flywheel is proven):
+Roadmap item (Phase 4, after longitudinal flywheel evidence exists):
 
 - Publish a reproducible retrieval benchmark: methodology, dataset (public or
   released), scripts, and honest numbers including weak configurations.
-- Additionally publish flywheel metrics from real usage once available:
-  candidates proposed vs accepted vs skipped, and precision of the trap
-  database over time. Acceptance rate is this product's true north metric —
-  more honest than retrieval scores alone.
+- Additionally publish flywheel metrics from real usage: candidate yield,
+  direct approval, edited approval, rejection, suppression, review time,
+  useful downstream recall, and precision of the trap database over time.
+  Useful approval and later behavior change are more honest product metrics
+  than retrieval scores alone.
 
 ---
 
@@ -836,16 +1126,20 @@ Explicitly not doing, with rationale:
   asynchronous collaboration within a contract codetrap fully controls.
 - No general chat memory store; no whole-codebase RAG.
 - No bulk-importing session text into the codetrap database.
-- No background scanning; no auto-writes of any durable destination (§3.2).
+- No background scanning; no unauthorized writes of any durable destination.
+  An agent may execute a write after explicit user authorization (§3.2).
 - No hook-based runtime injection (rationale in §12.1).
 - No saving generic knowledge, motivational summaries, or marketing copy as
   guardrails; no low-confidence candidates in runtime recall.
+- No forcing the growth loop into triage: the inbox stays inside its §4.2
+  budgets; study is a separate opt-in surface (§1.7). No spaced-repetition or
+  digest machinery before the study surface exists and sees real use.
 - No client-specific capability hardcoded as the sole entry of the core.
 - No process artifacts that do not change what gets built (§3.4).
 
 ---
 
-## 16. Evolution Path (v2 — re-sequenced: evidence before architecture)
+## 16. Evolution Path (v2.1 — evidence before architecture, vertical slices)
 
 Each phase has acceptance criteria; a phase is done when they are recorded in
 its dossier, not when its code merges.
@@ -853,71 +1147,167 @@ its dossier, not when its code merges.
 ### Phase 0 — Proof point (FIRST; before any schema stabilization)
 
 Run the riskiest-assumption test (§1.5) with minimal machinery: a hand-rolled
-discovery prompt per client, candidates as plain JSON files, review as a
-markdown checklist or the existing web console. No new schemas, no new CLI
-subcommands, no inbox UI.
+discovery prompt per client, candidates as plain JSON/Markdown, review as a
+checklist or the existing Web console. No general LessonCandidate schema, new
+`learn` subcommands, or new Inbox UI.
 
 ```text
-Run once per client (this is also the first dual-client symmetry test):
-  Codex:       last 30 days of Codex sessions -> up to 10 LessonCandidates
-  Claude Code: last 30 days of Claude Code sessions -> up to 10 LessonCandidates
+Minimum sampling:
+  - one conclusive Codex run
+  - one conclusive Claude Code run
+  - one repeat run from a different project or non-overlapping time window
+
+Conclusive run:
+  - source corpus contains >= 10 substantive sessions
+  - shortlist target is 10; if < 5 candidates surface, acceptance is marked
+    inconclusive and candidate yield is still recorded
 
 Measure:
-  - acceptance: user willing to accept/edit/stage >= 3 of 10 per client
-  - actionability: each accepted candidate names the behavior change it causes
+  - source sessions/files/bytes and candidate yield before the shortlist
+  - direct approval, edited approval, rejection, and suppression separately
+  - actionability: every approved candidate names the behavior change it causes
+  - evidence traceability and edit burden for approved candidates
   - cross-client overlap rate (how many lessons appear from both histories —
     calibrates the dedup requirement)
-  - review time per 10 candidates (calibrates the §4.2 budget)
+  - review time per 10 candidates and packed evidence size (§4.2)
+  - retrieve-vs-curate signal: when a committed lesson is later needed, whether
+    agent-initiated pre-flight recall surfaced it or the user had to curate it
+    by hand — early evidence on whether auto-recall earns its context budget
+  - sensitive excerpts caught before staging; any leak is a trust failure
 
 Red-line verification (trust receipt):
-  0 writes to traps.db before confirmation; 0 guidance edits; 0 skill installs;
-  0 agent creations; 0 automation enables; 0 fixture changes.
+  0 writes to traps.db before user authorization; 0 unauthorized guidance
+  edits, skill installs, agent creations, automation enables, or fixture changes.
+
+Go gate before stabilizing the Phase 1B schema:
+  - >= 20 candidates reviewed across conclusive runs
+  - direct + edited approval >= 30% overall; report direct approval separately
+  - neither client with a conclusive corpus falls below 20% useful approval
+  - median review time meets the 5-minutes-per-10 budget
+  - 100% of approved candidates have trigger, action, and traceable evidence
+  - 0 unredacted sensitive excerpts and 0 unauthorized durable writes
+  - after authorization, >= 1 lesson is committed through the existing path,
+    later surfaces in the other client, and the user marks the recall useful
 ```
 
-If acceptance fails → §17 falsifier response: strengthen evidence packs,
-coverage, quality scoring; do NOT proceed to Phases 1-3 architecture.
+If the gate fails → §17 falsifier response: strengthen discovery prompts,
+evidence packs, coverage, and quality scoring; repeat the smallest failed test.
+Do not proceed to Phase 1B schema stabilization merely because infrastructure
+would be easier to build than candidate quality.
 
-### Phase 1 — MVP compiler loop (pitfall_trap + skip, both clients)
+### Phase 1 — MVP compiler loop (five sequential vertical slices)
 
-- Product language: `LessonCandidate` concept documented; existing
-  CandidateTrap is the `pitfall_trap` subset; old trap review keeps working.
-- Schema (informed by Phase 0 data, including `source_agent`), validation,
-  evidence refs, source manifest, staging dirs.
-- `codetrap learn sources | evidence-pack | review | stage` for BOTH
-  `codex-sessions` and `claude-code-sessions` pull modes + agent-submitted
-  mode.
-- `codetrap setup claude` + Claude Code skill/command; Codex skill updated to
-  the shared contract; MCP initialize instructions carry the contract (§13.2).
-- Session/learning file locking + concurrent-write tests (§13.1) — lands
-  before both clients are told to use the loop routinely.
-- Coverage: agent-claimed, CLI-verified, similarity-advised (§9.3).
-- Inbox v1: list + card + accept/edit/skip/reject for pitfall_trap and skip;
-  trust receipt; UX budgets measured.
+Work 1A through 1E in order. Each subphase is a milestone with its own dossier
+and acceptance evidence; Phase 1 is complete only when all five exit gates pass.
+
+#### Phase 1A — Existing-surface vertical proof
+
+- Use agent-submitted `pitfall_trap` candidates through the existing session
+  candidate and Web review surfaces; no pull adapters or general ontology.
+- User-facing skip records suppression reason/fingerprint instead of becoming a
+  candidate type.
+- The user authorizes; the user or agent executes; the receipt records both
+  authorization scope and executor.
+
+Acceptance: one real candidate is approved, committed by an agent on explicit
+user instruction, searchable afterward, and reversible; one suppressed lesson
+does not reappear from the same evidence.
+
+#### Phase 1B — Stable envelope and compatibility
+
+- Stabilize only `pitfall_trap` and `unclassified`, informed by Phase 0 data.
+- Add revision/hash, three-axis state, `rationale`, evidence refs, source
+  manifest, authorization receipt, staging dirs, and trust receipt.
+- Migrate existing `CandidateTrap` records using §8.3; old CLI/Web/session data
+  remains readable, with regression fixtures for every old state.
+- Future destination kinds remain non-binding hints, not schema enums.
+
+Acceptance: migration is lossless and reversible; old accepted records still
+point to their durable traps; material edits invalidate authorization.
+
+#### Phase 1C — Dual-source adapters
+
+- Add `codetrap learn sources | evidence-pack | review | stage` pull mode for
+  Codex sessions, then Claude Code sessions, reusing one adapter contract.
+- Internal delivery may be sequential; Phase 1C exit requires behavioral and
+  artifact parity for both clients. Symmetry is a release gate, not a rule that
+  every intermediate commit must implement both simultaneously.
+- Add the shared Codex and Claude Code learning-review entry points.
+
+Acceptance: equivalent fixture histories produce the same normalized envelope
+and source manifest shape from both adapters; per-client doctor passes.
+
+#### Phase 1D — Compiler hardening
+
+- Add `.codetrap/learning/` locks and concurrent-write regression tests (§13.1).
+- Add agent-claimed, CLI-verified coverage and exact-vs-semantic duplicate rules
+  from §9.3 and §13.4.
+- Enforce allowed source roots, evidence budgets, retention/delete, and
+  best-effort secret/redaction warnings.
+
+Acceptance: concurrent stages lose no candidates; exact duplicates consolidate
+provenance; semantic matches remain distinct inside one review cluster.
+
+#### Phase 1E — Learning Inbox and runtime proof
+
+- Inbox list/card supports approve, edit, reject, user-visible skip/suppress,
+  authorization, commit, rollback, trust receipts, and measured UX budgets.
+- Minimal browse surface with curated context-pack export (§10, §12.1): select
+  committed lessons, export a pack for planning-time feeding.
+- Only `pitfall_trap` commits end-to-end; `unclassified` can be reviewed and
+  suppressed but not forced into a speculative destination.
 
 Acceptance: a user on a real project runs learning review from either client,
-reviews in the inbox within budget, accepts >= 1 trap that later surfaces in a
-pre-flight search from the other client. Doctor passes per-client checks.
+reviews within budget, authorizes an agent-executed commit, and the trap later
+surfaces in a pre-flight search from the other client and is marked useful. At
+least one curated context pack is exported and handed to an agent at planning
+time.
 
-### Phase 2 — Low-risk destinations + external validation
+### Phase 2 — Low-risk destinations + longitudinal validation
 
 - `project_convention` and `docs_guidance` patch-proposal workflows (diff,
-  confirm, revert); `search_eval_case` fixture proposals.
+  authorize, agent-or-user commit, revert); `search_eval_case` fixture proposals.
+- Insight shelf and study surface (§10, §11): stabilize the `insight` kind,
+  commit shelved insights, and migrate insight-hinted `unclassified` records.
+- Currency mechanics from §12.3: `last_validated` on committed lessons, stale
+  down-ranking in recall, superseded/retired exclusion, and graduation of
+  mechanizable lessons to deterministic checks.
 - Cross-client dedup hardened with Phase 1 real data.
-- Public benchmark + flywheel metrics published (§14).
+- Measure repeated proposal suppression, downstream useful recall, authorization
+  edit invalidation, and Inbox growth over real repeated use.
+- Retrieve-vs-curate decision rule on Phase 1–2 usage data: if pre-flight
+  recall contributes no useful applications that curation did not also catch,
+  its default prominence (never its existence — §12) is reduced; if it catches
+  forgotten pitfalls, its context budget is defended.
 
-Acceptance: a convention accepted in the inbox lands as an identical approved
-patch in AGENTS.md and CLAUDE.md; benchmark repo/scripts public.
+Acceptance: a convention authorized in the Inbox lands through equivalent
+approved patches in AGENTS.md and CLAUDE.md; over repeated reviews, suppression
+prevents known noise from returning and at least two committed lessons are
+marked useful in later work. At least one insight is shelved and later
+consulted on the study surface, and at least one stale or graduated lesson
+visibly leaves default recall.
 
 ### Phase 3 — High-side-effect destinations + runtime loop closure
 
 - `skill_candidate`, `custom_agent_candidate`, `automation_idea` workflows
-  with explicit install/enable and rollback.
-- Runtime feedback evidence: accepted lessons observed changing subsequent
+  only where Phase 0-2 evidence shows real demand, with explicit authorization,
+  install/enable, audit receipt, and rollback.
+- Runtime feedback evidence: committed lessons observed changing subsequent
   agent behavior in both clients; "the more I use it, the better it
   understands me" is demonstrable, not aspirational.
 
-Acceptance: at least one lesson per destination type merged and later
-referenced or triggered in real subsequent work.
+Acceptance: at least one evidence-backed high-side-effect workflow completes
+end-to-end and later changes real work. Do not manufacture one candidate per
+type merely to satisfy the roadmap; unsupported types remain unshipped.
+
+### Phase 4 — External validation and legibility
+
+- Publish the reproducible retrieval benchmark and honest weak configurations.
+- Publish aggregated flywheel methodology and metrics only when privacy-safe
+  longitudinal data exists (§14).
+
+Acceptance: benchmark data/scripts reproduce published numbers; product claims
+distinguish retrieval quality from candidate quality and behavior change.
 
 ---
 
@@ -928,8 +1318,8 @@ actions, insufficient evidence, generic summaries, duplicates, unwanted by the
 user, unable to change next-agent behavior, riskier than beneficial, sensitive
 without redaction, or unauditable — then automatic experience mining is not yet
 mature. Response: strengthen semi-automatic capture, evidence packs, coverage
-checks, quality scoring, skip archive, and inbox UX. Do not push automatic
-mining or automatic durable writes. Do not build more architecture to
+checks, quality scoring, suppression archive, and Inbox UX. Do not push broader
+automatic mining or unauthorized durable writes. Do not build more architecture to
 compensate for weak candidate quality.
 
 ---
@@ -941,10 +1331,14 @@ compensate for weak candidate quality.
   future agent behavior.
 - The trap database stays high-precision; the Learning Inbox is the user's
   main entry for managing agent experience and respects the §4.2 budgets.
-- Confirmed experience flows back into the next agent job in both clients from
-  a single approval.
-- High-side-effect destinations all have explicit confirmation and rollback.
-- The skip archive measurably reduces repeated noise.
+- Human-authorized experience can be committed by the user or an instructed
+  agent, then flows into the next job in both clients from one approval.
+- High-side-effect destinations have revision-bound authorization, audit
+  receipt, and rollback.
+- The suppression archive measurably reduces repeated review noise.
+- The user can point to expertise the store gave them — insights studied,
+  judgment gained, pitfalls they no longer trip — without triage ever being
+  slowed to force it (§1.7).
 - The user feels "the more I use it, the better it understands me" while
   trusting — via ever-present receipts — that nothing is silently read,
   written, installed, or enabled.
@@ -971,17 +1365,19 @@ Suggested task slugs:
 
 ```text
 phase0-dual-client-proof-point
-lesson-candidate-model
-learning-review-cli-dual-source
+phase1a-existing-surface-vertical-proof
+phase1b-candidate-envelope-and-migration
+phase1c-learning-review-cli-dual-source
+phase1d-locking-coverage-and-dedup
+phase1e-learning-inbox-runtime-proof
 setup-claude-and-skill-parity
-session-store-concurrency-locks
 mcp-self-describing-contract
-learning-inbox-web-mvp
-coverage-agent-claimed-cli-verified
 convention-and-docs-destinations
-public-retrieval-benchmark
+insight-shelf-and-study-surface
+currency-staleness-and-graduation
 skill-agent-automation-destinations
 runtime-feedback-evidence
+public-retrieval-benchmark
 ```
 
 ---
@@ -993,8 +1389,9 @@ One sentence:
 ```text
 codetrap does not remember everything itself, nor judge for the agent; it
 compiles the experience agents propose from real work history into reviewable,
-traceable, dedupable, durable, and reinjectable guardrails — for Codex and
-Claude Code symmetrically.
+traceable, groupable, human-authorized, agent-executable, durable, and
+reinjectable guardrails — for Codex and Claude Code symmetrically. The store
+has two consumers: the next agent run, and the user's own expertise (§1.7).
 ```
 
 Minimal architecture:
@@ -1006,16 +1403,19 @@ $codetrap-learning-review (Codex) / /codetrap-learning-review (Claude Code)
   -> LessonCandidate shortlist (source_agent tagged)
   -> codetrap learn stage --validate --coverage-check --dry-run
   -> Web Learning Inbox (trust receipt)
-  -> user-approved durable destination (diff + rollback)
+  -> user approves a candidate revision + destination
+  -> user or instructed agent commits it (receipt + rollback)
   -> runtime guardrail in both clients
 ```
 
 Minimal proof point (Phase 0):
 
 ```text
-last 30 days of Codex sessions AND last 30 days of Claude Code sessions
-  -> up to 10 LessonCandidates each
-  -> >= 3 per client the user accepts/edits/stages
-  -> 0 unconfirmed durable writes (receipt shown)
-  -> >= 1 accepted lesson later referenced in the other client's work
+conclusive Codex run + conclusive Claude Code run + one independent repeat
+  -> >= 20 candidates reviewed across conclusive runs
+  -> direct approval and edited approval measured separately
+  -> useful approval >= 30% overall; no conclusive client below 20%
+  -> 0 unauthorized durable writes and 0 unredacted sensitive excerpts
+  -> >= 1 authorized lesson committed by user or agent, later surfaced in the
+     other client, and marked useful by the user
 ```
