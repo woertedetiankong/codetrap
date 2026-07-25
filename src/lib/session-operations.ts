@@ -314,6 +314,16 @@ export class SessionOperations {
     });
   }
 
+  /**
+   * Opens a session for a batch of captures, or returns null when one is
+   * already active. Callers staging several candidates at once use this so the
+   * whole batch lands in one reviewable place.
+   */
+  startBatchSession(goal: string): ReturnType<SessionStore["getSession"]> | null {
+    const started = this.sessions.getOrStartSession({ goal });
+    return started.created ? started.session : null;
+  }
+
   captureCandidate(request: SessionCaptureRequest): SessionCaptureResult {
     const trap = capturedTrapInput(request.trap);
     // Validate the note kind before creating any session so an invalid

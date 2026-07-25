@@ -1445,6 +1445,22 @@ distinguish retrieval quality from candidate quality and behavior change.
 
 ---
 
+> **First genuine candidate-quality measurement, 2026-07-25: 1 of 5 approved
+> (20%).** Phase 0's 100% was by construction; Phase 1A's was n=1. This run
+> mined the 30-day window with the wide lens and put every candidate through an
+> individual decision. The survivor was a *harness* lesson (global scope); the
+> four rejects were three single-occurrence lessons and one true lesson whose
+> right carrier is guidance or a bug fix, not a trap.
+> Two readings follow. Recurrence is doing more work in human judgement than
+> `quality_score` models — all four rejects scored 0.7. And Phase 1 generates
+> candidates it cannot place, which will depress the approval rate until Phase 2
+> ships `project_convention` and `docs_guidance`.
+> Bearing on risk 3: removing the blind spot did **not** yield an approved
+> codebase lesson. At n=5 that is weak evidence, not a refutation of §1.6 — but
+> it is the second signal pointing the same way, and it should be tested against
+> a differently-shaped corpus rather than waited on.
+> Evidence: `docs/tasks/2026-07-25-wide-lens-mining-run/`.
+
 ## 17. Falsifier
 
 If most candidates mined from real history are: vague triggers, unclear

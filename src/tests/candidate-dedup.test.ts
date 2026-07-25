@@ -5,6 +5,7 @@ import { runCli, tempHome, tempProjectDir, type CliResult } from "./helpers";
 import { verifyCoverage } from "../lib/coverage-verify";
 import { TrapOperations } from "../lib/trap-operations";
 import { TrapStore } from "../lib/store";
+import { TURN_NORMALIZER_VERSION } from "../domain/learning-source";
 
 function learnCli(args: string[], cwd: string, home: string, clientHome: string): CliResult {
   const result = Bun.spawnSync({
@@ -359,7 +360,7 @@ describe("Phase 1D — retention and normalizer drift", () => {
     );
 
     const pack = JSON.parse(readFileSync(review.evidence_pack_path, "utf-8"));
-    expect(pack.normalizer_version).toBe(1);
+    expect(pack.normalizer_version).toBe(TURN_NORMALIZER_VERSION);
     pack.normalizer_version = 99;
     writeFileSync(review.evidence_pack_path, JSON.stringify(pack, null, 2));
     writeFileSync(join(review.review_dir, "lesson-candidates.json"), JSON.stringify([{
