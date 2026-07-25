@@ -339,6 +339,23 @@ codetrap learn stage --review-dir <dir> --apply      # stage into the candidate 
 adapter contract and produce the same normalized envelope and source manifest,
 so nothing above the adapter knows which client a lesson came from.
 
+By default a review reads message text only. `--include reasoning,tools` (or
+`--include all`) also reads assistant reasoning, tool calls and tool results —
+which is where compiler errors, test failures and edit diffs live:
+
+```bash
+codetrap learn review --source claude-code-sessions --include all
+```
+
+It is off by default deliberately. On the same corpus the wider lens read ~5x
+the volume and triggered **10x the redactions**, so it is a real widening of the
+privacy surface. Redaction and the 500-character excerpt cap apply to it
+unchanged, and the lens used is recorded in the review's scope.
+
+Measured on this repo's own history, the narrow lens saw 1 distinct failure
+shape and the wide lens saw 38 — so if you are mining for lessons about your own
+code rather than your toolchain, you want `--include all`.
+
 `learn review` writes three artifacts into
 `.codetrap/learning/reviews/<review-id>/`:
 

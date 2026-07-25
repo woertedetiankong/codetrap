@@ -12,10 +12,12 @@ import {
   readJsonlHead,
   readJsonlLines,
   textFromContent,
+  TEXT_ONLY_LENS,
   toTurnRole,
   type DiscoverOptions,
   type ReadSessionResult,
   type SessionSourceAdapter,
+  type TurnLens,
   type SourceSessionRef,
 } from "../learning-source-adapter";
 
@@ -43,12 +45,16 @@ export const codexSessionsAdapter: SessionSourceAdapter = {
     return applyDiscoverFilters(refs, options, (ref) => cwdOfRef(ref.path));
   },
 
-  read(ref: SourceSessionRef, roots: string[]): ReadSessionResult {
-    return readCodexSession(ref, roots);
+  read(ref: SourceSessionRef, roots: string[], lens: TurnLens = TEXT_ONLY_LENS): ReadSessionResult {
+    return readCodexSession(ref, roots, lens);
   },
 };
 
-export function readCodexSession(ref: SourceSessionRef, roots: string[]): ReadSessionResult {
+export function readCodexSession(
+  ref: SourceSessionRef,
+  roots: string[],
+  lens: TurnLens = TEXT_ONLY_LENS
+): ReadSessionResult {
   assertInsideRoot(ref.path, roots);
   const { lines, lineCount, raw } = readJsonlLines(ref.path);
 
@@ -71,12 +77,27 @@ export function readCodexSession(ref: SourceSessionRef, roots: string[]): ReadSe
     }
 
     if (line.type !== "response_item" || !payload) continue;
+
+    // The wider lens also admits the item kinds the message-only filter drops:
+    // Codex records reasoning and tool calls as sibling response_items rather
+    // than as content blocks inside a message.
+    const wide = codexWideItem(payload, lens);
+    if (wide !== null) {
+      const widened = normalizeTurn(turns.length, "tool", timestamp, wide);
+      if (widened) {
+        turns.push(widened.turn);
+        redactions += widened.redactions;
+        if (timestamp) timestamps.push(timestamp);
+      }
+      continue;
+    }
+
     if (payload.type !== "message") continue;
 
     const role = toTurnRole(payload.role);
     if (!role) continue;
 
-    const text = textFromContent(payload.content);
+    const text = textFromContent(payload.content, lens);
     if (!text) continue;
 
     const normalized = normalizeTurn(turns.length, role, timestamp, text);
@@ -102,6 +123,30 @@ export function readCodexSession(ref: SourceSessionRef, roots: string[]): ReadSe
   };
 
   return { session, manifest: manifestEntry(session, ref.path, raw, lineCount), redactions };
+}
+
+/**
+ * Codex puts reasoning and tool traffic in sibling `response_item`s rather than
+ * inside a message, so the wider lens has to admit those item types explicitly.
+ * Returns null when the item is not one of them.
+ */
+function codexWideItem(payload: Record<string, unknown>, lens: TurnLens): string | null {
+  const type = String(payload.type ?? "");
+  if (lens.reasoning && type === "reasoning") {
+    const text = textFromContent(payload.summary ?? payload.content, lens);
+    return text ? `[reasoning]\n${text}` : null;
+  }
+  if (lens.tools && (type === "function_call" || type === "local_shell_call" || type === "custom_tool_call")) {
+    const name = String(payload.name ?? type);
+    const argsText = typeof payload.arguments === "string" ? payload.arguments : "";
+    return `[${name}]\n${argsText}`.trim();
+  }
+  if (lens.tools && (type === "function_call_output" || type === "local_shell_call_output")) {
+    const out = payload.output;
+    const text = typeof out === "string" ? out : textFromContent(out, lens);
+    return text ? `[tool_result] ${text}` : null;
+  }
+  return null;
 }
 
 function sessionIdFromPath(path: string): string {

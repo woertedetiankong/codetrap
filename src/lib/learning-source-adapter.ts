@@ -17,6 +17,25 @@ export type SourceSessionRef = {
   modified_at: string;
 };
 
+/**
+ * What a read includes beyond plain message text.
+ *
+ * Off by default, and deliberately so: tool calls and results are roughly 5x
+ * the volume of message text and are where shell commands, file contents and
+ * environment values live — so the §3.2 privacy surface widens sharply. The
+ * flags exist because Phase 0 risk 4 asks whether codebase lessons live in the
+ * 85% the extractor never read, and that question cannot be answered without
+ * being able to read it.
+ */
+export type TurnLens = {
+  /** Assistant reasoning blocks. */
+  reasoning?: boolean;
+  /** Tool calls and their results — where edits and command output live. */
+  tools?: boolean;
+};
+
+export const TEXT_ONLY_LENS: TurnLens = {};
+
 export type DiscoverOptions = {
   /**
    * Inclusive lower bound on the session file's modification time — not on the
@@ -44,7 +63,7 @@ export interface SessionSourceAdapter {
    * call path will skip. Every read goes through `assertInsideRoot` before a
    * byte is opened.
    */
-  read(ref: SourceSessionRef, roots: string[]): ReadSessionResult;
+  read(ref: SourceSessionRef, roots: string[], lens?: TurnLens): ReadSessionResult;
 }
 
 export type ReadSessionResult = {
@@ -232,20 +251,52 @@ export function manifestEntry(
   };
 }
 
-export function textFromContent(value: unknown): string {
+export function textFromContent(value: unknown, lens: TurnLens = TEXT_ONLY_LENS): string {
   if (typeof value === "string") return value;
   if (!Array.isArray(value)) return "";
   return value
-    .map((part) => {
-      if (typeof part === "string") return part;
-      if (part && typeof part === "object") {
-        const record = part as Record<string, unknown>;
-        if (typeof record.text === "string") return record.text;
-      }
-      return "";
-    })
+    .map((part) => blockText(part, lens))
     .filter(Boolean)
     .join("\n");
+}
+
+function blockText(part: unknown, lens: TurnLens): string {
+  if (typeof part === "string") return part;
+  if (!part || typeof part !== "object") return "";
+  const record = part as Record<string, unknown>;
+
+  switch (record.type) {
+    case "thinking":
+      return lens.reasoning ? String(record.thinking ?? "") : "";
+    case "tool_use":
+      return lens.tools ? formatToolUse(record) : "";
+    case "tool_result":
+      return lens.tools ? `[tool_result] ${textFromContent(record.content, lens)}` : "";
+    default:
+      return typeof record.text === "string" ? record.text : "";
+  }
+}
+
+/**
+ * Renders a tool call compactly. Edits carry the before/after strings, which is
+ * the closest thing a transcript has to a diff — and the specific content Phase
+ * 0 risk 4 suspects codebase lessons are hiding in.
+ */
+function formatToolUse(record: Record<string, unknown>): string {
+  const name = String(record.name ?? "tool");
+  const input = asRecord(record.input);
+  if (!input) return `[${name}]`;
+
+  const parts: string[] = [`[${name}]`];
+  for (const key of ["file_path", "command", "description", "pattern", "path"]) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) parts.push(`${key}: ${value}`);
+  }
+  for (const key of ["old_string", "new_string", "content"]) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) parts.push(`${key}:\n${value}`);
+  }
+  return parts.join("\n");
 }
 
 export function asString(value: unknown): string | null {
