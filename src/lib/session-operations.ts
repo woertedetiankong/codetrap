@@ -12,6 +12,7 @@ import {
   CANDIDATE_SCHEMA_VERSION,
   LEGACY_CANDIDATE_SCHEMA_VERSION,
   type CandidateAuthorization,
+  type CandidateKind,
 } from "../domain/candidate";
 import {
   authorizationIsCurrent,
@@ -131,6 +132,12 @@ export type SessionCaptureRequest = {
   relatedFiles?: string[];
   sourceRef?: string;
   evidenceNote?: string;
+  /** §8.2 provenance, supplied by the Phase 1C learning adapters. */
+  candidateKind?: CandidateKind;
+  sourceAgent?: string;
+  destinationHint?: string;
+  rationale?: string;
+  sourceManifestRefs?: string[];
 };
 
 export type SessionConflictResult = {
@@ -286,6 +293,11 @@ export class SessionOperations {
           relatedFiles: request.relatedFiles,
           sourceRef: request.sourceRef,
           evidenceNote: request.evidenceNote,
+          candidateKind: request.candidateKind,
+          sourceAgent: request.sourceAgent,
+          destinationHint: request.destinationHint,
+          rationale: request.rationale,
+          sourceManifestRefs: request.sourceManifestRefs,
         }),
       });
       const closed = createdSession ? this.sessions.closeSession(session.id, false) : null;

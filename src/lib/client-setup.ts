@@ -16,6 +16,7 @@ import codetrapAddSkill from "../../plugins/codetrap-agent/skills/codetrap-add/S
 import codetrapCaptureSkill from "../../plugins/codetrap-agent/skills/codetrap-capture/SKILL.md" with { type: "text" };
 import codetrapCaptureExternalSkill from "../../plugins/codetrap-agent/skills/codetrap-capture-external/SKILL.md" with { type: "text" };
 import codetrapCheckSkill from "../../plugins/codetrap-agent/skills/codetrap-check/SKILL.md" with { type: "text" };
+import codetrapLearningReviewSkill from "../../plugins/codetrap-agent/skills/codetrap-learning-review/SKILL.md" with { type: "text" };
 import codetrapSearchSkill from "../../plugins/codetrap-agent/skills/codetrap-search/SKILL.md" with { type: "text" };
 
 // Dual-client symmetry (roadmap §3.1): Codex and Claude Code are co-equal
@@ -120,6 +121,10 @@ export const BUNDLED_SKILLS = [
   { name: "codetrap-capture", skill: codetrapCaptureSkill },
   { name: "codetrap-capture-external", skill: codetrapCaptureExternalSkill },
   { name: "codetrap-check", skill: codetrapCheckSkill },
+  // §3.1/§7.2: the learning-review entry point exists in BOTH clients and both
+  // delegate to the identical CLI commands. It ships in the shared bundle so
+  // there is no way to install it for one client and not the other.
+  { name: "codetrap-learning-review", skill: codetrapLearningReviewSkill },
   { name: "codetrap-search", skill: codetrapSearchSkill },
 ];
 

@@ -17,6 +17,7 @@ import {
   cmdSupersedeTrap,
 } from "./trap-commands";
 import { cmdSession } from "./session-commands";
+import { cmdLearn } from "./learn-commands";
 import {
   cmdDoctor,
   cmdEmbed,
@@ -82,12 +83,14 @@ async function dispatchCommand(sub: string, args: string[], store: TrapStore): P
       return cmdEmbed(args, store);
     case "embeddings":
       return cmdEmbeddings(args, store);
+    case "learn":
+      return cmdLearn(args, store, operations);
     case "session":
       return cmdSession(args, store, operations);
     default:
       return errorResult([
         `Unknown command: ${sub}`,
-        "Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, setup, repair-scope, migrate-project, embed, embeddings, session",
+        "Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, setup, repair-scope, migrate-project, embed, embeddings, session, learn",
       ].join("\n"));
   }
 }

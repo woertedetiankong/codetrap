@@ -204,6 +204,7 @@ codetrap/
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
 | `embeddings` | Manage embedding profiles (`status`, `list`, `use ollama|jina`, `reindex`) |
+| `learn` | Review your own Codex or Claude Code history for reusable lessons (`sources`, `review`, `evidence-pack`, `reviews`, `stage`); read-only against history, writes only a review directory |
 | `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, approve/accept/reject/roll back candidates, migrate candidate records between schema versions, inspect authorization receipts and suppressed lessons, and clean up session files |
 | `web` | Start the local review, trap library, insights, and Embeddings console |
 | `serve` | Start MCP server |
@@ -318,6 +319,43 @@ codetrap session delete <session-id>
 codetrap session prune --older-than 90d --apply
 ```
 
+### Learning Review
+
+`codetrap learn` reads your own agent history and turns it into reviewable
+candidates. It runs only when you ask for it, reads only that client's own
+session directory, never follows symlinks out of it, redacts secrets, and caps
+every excerpt at 500 characters. It never writes a trap.
+
+```bash
+codetrap learn sources --json                        # what history exists, per client
+codetrap learn review --source claude-code-sessions   --since 30d --project-only --limit 10              # build a review directory
+codetrap learn stage --review-dir <dir>              # validate; writes nothing
+codetrap learn stage --review-dir <dir> --apply      # stage into the candidate inbox
+```
+
+`--source` is `codex-sessions` or `claude-code-sessions`; both go through one
+adapter contract and produce the same normalized envelope and source manifest,
+so nothing above the adapter knows which client a lesson came from.
+
+`learn review` writes three artifacts into
+`.codetrap/learning/reviews/<review-id>/`:
+
+- `source-manifest.json` — every file read, with bytes, SHA-256, line count and date range
+- `evidence-pack.json` — redacted, capped excerpts with stable `<session-id>#<turn>` refs
+- `discovery-prompt.md` — the task for the agent, including the red lines for the run
+
+The agent reads the pack and writes `lesson-candidates.json` beside it. `learn
+stage` then verifies deterministically: every `evidence[].ref` must resolve
+against the pack, every candidate needs a trigger and a recommended action, and
+anything that fails is reported with its reasons rather than dropped. An
+invented pointer is not evidence.
+
+Staging is not committing. Staged candidates land in the normal review inbox and
+still need `session approve` and `session accept`.
+
+The `codetrap-learning-review` skill drives this flow and installs for both
+clients.
+
 ## Agent Integration
 
 For AI coding agents, use the CLI as the default integration path:
@@ -395,19 +433,20 @@ The template covers CLI-first pre-edit search, top-card relevance checks, applic
 
 codetrap maintainers working on this repository can also append `plugins/codetrap-agent/templates/AGENTS.codetrap-maintainer.md` to add the dogfood eval protocol. Ordinary user projects should use only `AGENTS.codetrap.md`.
 
-### Codex Plugin Skills
+### Plugin Skills
 
-Codex skills are distributed through the bundled plugin at `plugins/codetrap-agent/skills/`:
+The same skill bundle installs for **both** Codex and Claude Code from `plugins/codetrap-agent/skills/`:
 
 - `codetrap-check` — pre-flight check before code changes.
 - `codetrap-search` — search existing lessons.
 - `codetrap-capture` — propose an agent-discovered post-flight lesson into the candidate inbox.
 - `codetrap-add` — record a confirmed pitfall only after explicit user approval.
-- `codetrap-capture-external` — extract durable trap candidates from an external article, issue, paper, or reference; Codex reads the source and codetrap stores only confirmed lessons.
+- `codetrap-capture-external` — extract durable trap candidates from an external article, issue, paper, or reference; the agent reads the source and codetrap stores only confirmed lessons.
+- `codetrap-learning-review` — look back over recent sessions and stage reusable lessons; runs only on explicit invocation.
 
-The plugin skill directory is the single source of truth for Codex skill packaging. The repo does not keep a duplicate root `skills/` tree.
+The plugin skill directory is the single source of truth for skill packaging in both clients. The repo does not keep a duplicate root `skills/` tree.
 
-Skills are a convenience layer for Codex users. They do not replace MCP or `AGENTS.md`; they make manual triggers like "run codetrap-check" easier.
+Skills are a convenience layer. They do not replace MCP or `AGENTS.md` / `CLAUDE.md`; they make manual triggers like "run codetrap-check" easier.
 
 External lessons should keep codetrap local-first: let the agent read the URL or pasted source, ask which candidate traps to save, then attach the source as evidence instead of making the CLI crawl the web:
 

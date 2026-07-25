@@ -17,6 +17,7 @@ const pluginSkillNames = [
   "codetrap-capture",
   "codetrap-capture-external",
   "codetrap-check",
+  "codetrap-learning-review",
   "codetrap-search",
 ];
 

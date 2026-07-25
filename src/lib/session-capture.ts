@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { CANDIDATE_SCHEMA_VERSION, type SourceAgent } from "../domain/candidate";
+import { CANDIDATE_SCHEMA_VERSION, type CandidateKind, type SourceAgent } from "../domain/candidate";
 import type { CandidateTrap, SessionMetadata, SessionNote } from "../domain/session";
 import { parseSessionNoteKind } from "../domain/session";
 import { buildTrapInput } from "../domain/trap";
@@ -15,14 +15,26 @@ import { trimOuterBlankLines } from "./text-lines";
 import { scoreCandidateTrap } from "./trap-quality";
 import { isRecord } from "./value-types";
 
-export type CandidateDraft = Pick<CandidateTrap, "trap" | "evidence">;
+export type CandidateDraft = Pick<CandidateTrap, "trap" | "evidence"> & {
+  /** §8.2 provenance, populated by the Phase 1C adapters. */
+  candidate_kind?: CandidateKind;
+  source_agent?: SourceAgent;
+  destination_hint?: string;
+  rationale?: string;
+  source_manifest_refs?: string[];
+};
 
 export type CapturedCandidateDraftArgs = {
   trap: CandidateTrap["trap"];
   kind?: string;
+  candidateKind?: CandidateKind;
   relatedFiles?: string[];
   sourceRef?: string | null;
   evidenceNote?: string | null;
+  sourceAgent?: SourceAgent;
+  destinationHint?: string;
+  rationale?: string;
+  sourceManifestRefs?: string[];
 };
 
 export type ParsedTrapMarkdownInput = {
@@ -65,27 +77,25 @@ export function proposeCandidateTraps(session: SessionMetadata, notes: SessionNo
   return candidates;
 }
 
-export function createCandidateTrap(
-  draft: CandidateDraft,
-  id: string,
-  options: { sourceAgent?: SourceAgent; destinationHint?: string; rationale?: string } = {}
-): CandidateTrap {
+export function createCandidateTrap(draft: CandidateDraft, id: string): CandidateTrap {
   const scored = scoreCandidateTrap(draft);
   return {
     id,
     status: "proposed",
     quality_score: scored.score,
     quality: scored.quality,
-    ...draft,
+    trap: draft.trap,
+    evidence: draft.evidence,
     schema_version: CANDIDATE_SCHEMA_VERSION,
     revision: 1,
     content_hash: trapFingerprint(draft.trap),
-    candidate_kind: "pitfall_trap",
+    candidate_kind: draft.candidate_kind ?? "pitfall_trap",
     review_decision: "pending",
     delivery_state: "draft",
-    source_agent: options.sourceAgent ?? "unknown",
-    ...(options.destinationHint ? { destination_hint: options.destinationHint } : {}),
-    ...(options.rationale ? { rationale: options.rationale } : {}),
+    source_agent: draft.source_agent ?? "unknown",
+    ...(draft.destination_hint ? { destination_hint: draft.destination_hint } : {}),
+    ...(draft.rationale ? { rationale: draft.rationale } : {}),
+    ...(draft.source_manifest_refs?.length ? { source_manifest_refs: draft.source_manifest_refs } : {}),
   };
 }
 
@@ -169,6 +179,11 @@ export function capturedCandidateDraft(
       related_files: uniqueStrings(args.relatedFiles ?? []),
       note: optionalText(args.evidenceNote) ?? `Captured through session capture (${kind}).`,
     }],
+    ...(args.candidateKind ? { candidate_kind: args.candidateKind } : {}),
+    ...(args.sourceAgent ? { source_agent: args.sourceAgent } : {}),
+    ...(args.destinationHint ? { destination_hint: args.destinationHint } : {}),
+    ...(args.rationale ? { rationale: args.rationale } : {}),
+    ...(args.sourceManifestRefs?.length ? { source_manifest_refs: args.sourceManifestRefs } : {}),
   };
 }
 
