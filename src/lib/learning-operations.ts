@@ -57,6 +57,7 @@ export type LearnReviewRequest = {
   projectOnly?: boolean;
   sessionLimit?: number;
   lens?: TurnLens;
+  focus?: "failures" | "spread";
 };
 
 /**
@@ -78,6 +79,7 @@ export type LearnReviewResult = WrittenReview & {
   };
   session_count: number;
   evidence_count: number;
+  budget: EvidencePack["budget"];
   manifest_totals: SourceManifest["totals"];
   durable_writes: 0;
   next_action: { command: string };
@@ -188,6 +190,7 @@ export class LearningOperations {
       source: request.source,
       sessions: collected.sessions,
       now,
+      focus: request.focus,
     });
 
     const written = writeReviewDir({
@@ -220,6 +223,7 @@ export class LearningOperations {
       },
       session_count: collected.sessions.length,
       evidence_count: pack.evidence_count,
+      budget: pack.budget,
       manifest_totals: collected.manifest.totals,
       durable_writes: 0,
       next_action: { command: `codetrap learn stage --review-dir ${written.review_dir} --json` },
@@ -356,6 +360,14 @@ export class LearningOperations {
     // The corpus is read once under the lock and kept current in-memory, so a
     // duplicate inside one batch is caught too.
     const existing = [...corpus];
+
+    // One session for the whole batch. `captureCandidate` creates and closes an
+    // auto-session per call when none is active, so a five-candidate stage
+    // produced five single-candidate sessions and a reviewer had to walk all of
+    // them. Holding one open makes the batch reviewable in one place.
+    const batchSession = this.sessions.startBatchSession(
+      `learning review ${validation.review_id}`
+    );
 
     for (const draft of validation.accepted) {
       const trapInput = draftToTrapInput(draft);
@@ -500,6 +512,8 @@ export class LearningOperations {
         ...(coverage ? { coverage_verified: coverage.verified_all } : {}),
       });
     }
+
+    if (batchSession) this.sessions.closeSession(batchSession.id, false);
 
     return {
       success: true,

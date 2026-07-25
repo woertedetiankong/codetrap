@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { codexSessionsAdapter, readCodexSession } from "../lib/adapters/codex-sessions";
 import { claudeCodeSessionsAdapter, readClaudeCodeSession } from "../lib/adapters/claude-code-sessions";
 import { collectSessions, inventorySource, parseSinceDays, parseTurnLens } from "../lib/learning-sources";
+import { buildEvidencePack, sampleTurns } from "../lib/learning-review-dir";
 import { assertInsideRoot, type SessionSourceAdapter } from "../lib/learning-source-adapter";
 import { excerpt, isHarnessNoise, redact } from "../lib/learning-redaction";
-import { sampleTurns } from "../lib/learning-review-dir";
+
 import type { NormalizedSession } from "../domain/learning-source";
 
 /**
@@ -119,6 +120,32 @@ describe("Phase 1C — dual-source adapter parity", () => {
     // A purely lexical prefix check would accept this path.
     expect(() => assertInsideRoot(join(root, "archive", "leak.jsonl"), [root]))
       .toThrow(/outside the allowed source roots/);
+  });
+
+  test("subagent transcripts sharing a session id still get unique refs", () => {
+    const home = fixtureHome();
+    // Claude Code writes subagent transcripts as separate files carrying the
+    // parent's sessionId; 15 files shared one id in this repo's own history.
+    writeClaudeSession(home, "parent", "/mnt/d/project");
+    writeClaudeSession(home, "agent-child", "/mnt/d/project", { sessionIdInFile: "parent" });
+
+    const collected = collectSessions(claudeCodeSessionsAdapter, home, undefined, new Date("2026-07-02T00:00:00.000Z"));
+    expect(collected.sessions).toHaveLength(2);
+
+    const transcripts = collected.sessions.map((session) => session.transcript_id).sort();
+    expect(transcripts).toEqual(["agent-child", "parent"]);
+    // Same client session, different transcripts — provenance preserved.
+    expect(new Set(collected.sessions.map((s) => s.session_id)).size).toBe(1);
+
+    const pack = buildEvidencePack({
+      reviewId: "r",
+      source: "claude-code-sessions",
+      sessions: collected.sessions,
+      now: new Date("2026-07-02T00:00:00.000Z"),
+    });
+    const refs = pack.items.map((item) => item.ref);
+    // A colliding ref would resolve to more than one excerpt, defeating §9.3.
+    expect(new Set(refs).size).toBe(refs.length);
   });
 
   test("Codex records no git branch and says so with null, rather than omitting it", () => {
@@ -343,7 +370,7 @@ function readOnly(adapter: SessionSourceAdapter, home: string): NormalizedSessio
 
 /** Fields that are legitimately client-specific and excluded from the parity check. */
 function clientAgnostic(session: NormalizedSession) {
-  const { source, path, client_version, session_id, branch, ...rest } = session;
+  const { source, path, client_version, session_id, transcript_id, branch, ...rest } = session;
   return rest;
 }
 
@@ -386,14 +413,19 @@ function writeClaudeSession(
   home: string,
   sessionId: string,
   cwd: string,
-  options: { branch?: string } = {}
+  options: { branch?: string; sessionIdInFile?: string } = {}
 ): string {
   const dir = join(home, ".claude", "projects", cwd.replace(/[\\/]/g, "-"));
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${sessionId}.jsonl`);
-  const base = { sessionId, cwd, version: "2.1.204", gitBranch: options.branch ?? "main" };
+  const base = {
+    sessionId: options.sessionIdInFile ?? sessionId,
+    cwd,
+    version: "2.1.204",
+    gitBranch: options.branch ?? "main",
+  };
   const lines = [
-    JSON.stringify({ type: "mode", mode: "normal", sessionId }),
+    JSON.stringify({ type: "mode", mode: "normal", sessionId: base.sessionId }),
     JSON.stringify({
       ...base,
       type: "system",

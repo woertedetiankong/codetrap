@@ -95,6 +95,37 @@ const NOISE_CONTAINS = [
   "This is the git status at the start of the conversation",
 ];
 
+/**
+ * Signals that a turn is likely to carry a lesson.
+ *
+ * Phase 0's extractor selected for these rather than sampling uniformly, and
+ * that instinct was right: lessons live in failures and corrections, which are
+ * rare events that any uniform sample mostly misses. Combining this selection
+ * with the wider lens is what makes a budgeted pack dense instead of thin.
+ */
+const LESSON_SIGNALS: { pattern: RegExp; weight: number }[] = [
+  { pattern: /tool_use_error/i, weight: 5 },
+  { pattern: /error TS\d{4}/, weight: 5 },
+  { pattern: /\(fail\)/, weight: 5 },
+  { pattern: /expect\(received\)/, weight: 4 },
+  { pattern: /Traceback \(most recent call last\)/, weight: 4 },
+  { pattern: /ERR_MODULE_NOT_FOUND|command not found|No such file|Permission denied/i, weight: 4 },
+  { pattern: /String to replace not found|old_string/i, weight: 3 },
+  { pattern: /\bBlocked:/, weight: 3 },
+  // A correction from the user is the highest-value signal in any transcript.
+  { pattern: /\b(actually|instead|no,|don't|do not|wrong|revert|undo)\b/i, weight: 2 },
+  { pattern: /\[Edit\]|\[Write\]/, weight: 2 },
+  { pattern: /\bwhy\b|\bbecause\b/i, weight: 1 },
+];
+
+export function lessonSignalScore(text: string): number {
+  let score = 0;
+  for (const signal of LESSON_SIGNALS) {
+    if (signal.pattern.test(text)) score += signal.weight;
+  }
+  return score;
+}
+
 export function isHarnessNoise(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed) return true;

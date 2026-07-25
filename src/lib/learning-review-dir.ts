@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { TURN_NORMALIZER_VERSION, type LearningSourceId, type NormalizedSession, type SourceManifest } from "../domain/learning-source";
 import { CODETRAP_DIR } from "./constants";
 import { writeFileAtomic } from "./fs-json";
-import { excerpt, MAX_EXCERPT_CHARS } from "./learning-redaction";
+import { excerpt, lessonSignalScore, MAX_EXCERPT_CHARS } from "./learning-redaction";
 
 export const LEARNING_DIR = "learning";
 export const REVIEWS_DIR = "reviews";
@@ -64,6 +64,7 @@ export function listReviewIds(projectRoot: string): string[] {
 export type EvidenceItem = {
   ref: string;
   source: LearningSourceId;
+  transcript_id: string;
   session_id: string;
   turn_index: number;
   role: string;
@@ -81,8 +82,21 @@ export type EvidencePack = {
   session_count: number;
   evidence_count: number;
   excerpt_char_cap: number;
+  /** §4.2 evidence-pack budget, and what had to be dropped to meet it. */
+  budget: {
+    max_bytes: number;
+    bytes: number;
+    dropped_items: number;
+    per_session_cap: number;
+  };
   items: EvidenceItem[];
 };
+
+/** §4.2: target <= 80 KB UTF-8 per 10-candidate batch (roughly 20k tokens). */
+export const EVIDENCE_PACK_MAX_BYTES = 80 * 1024;
+
+/** Items every session is guaranteed, so recurrence stays visible. */
+const SESSION_FLOOR = 2;
 
 export function buildEvidencePack(args: {
   reviewId: string;
@@ -90,23 +104,83 @@ export function buildEvidencePack(args: {
   sessions: NormalizedSession[];
   now: Date;
   perSessionCap?: number;
+  maxBytes?: number;
+  /** `failures` ranks lesson-bearing turns first; `spread` samples evenly. */
+  focus?: "failures" | "spread";
 }): EvidencePack {
-  const perSessionCap = args.perSessionCap ?? 40;
-  const items: EvidenceItem[] = [];
+  const maxBytes = args.maxBytes ?? EVIDENCE_PACK_MAX_BYTES;
 
+  // The per-session cap bounds what each session *proposes*, not what survives.
+  // Deriving it from the budget starved sessions that had a lot to offer: a
+  // session with twenty failures could only put forward eight while a session
+  // with none put forward eight too. Propose generously; the global budget fill
+  // below decides by value.
+  const perSessionCap = args.perSessionCap ?? 40;
+
+  // Every session proposes its share, then the budget is filled globally by
+  // signal. Filling in iteration order instead would let the last sessions lose
+  // their evidence regardless of how much it carried — the budget would decide
+  // by position rather than by value.
+  const proposed: { item: EvidenceItem; score: number; order: number }[] = [];
+  let order = 0;
   for (const session of args.sessions) {
-    for (const turn of sampleTurns(session.turns, perSessionCap)) {
-      items.push({
-        ref: evidenceRef(session.session_id, turn.index),
-        source: session.source,
-        session_id: session.session_id,
-        turn_index: turn.index,
-        role: turn.role,
-        timestamp: turn.timestamp,
-        excerpt: excerpt(turn.text),
+    for (const turn of selectTurns(session.turns, perSessionCap, args.focus)) {
+      proposed.push({
+        item: {
+          // Keyed on the transcript, not the session: subagent files share the
+          // parent's session id, so a session-keyed ref resolved to several
+          // different excerpts.
+          ref: evidenceRef(session.transcript_id, turn.index),
+          source: session.source,
+          transcript_id: session.transcript_id,
+          session_id: session.session_id,
+          turn_index: turn.index,
+          role: turn.role,
+          timestamp: turn.timestamp,
+          excerpt: excerpt(turn.text),
+        },
+        score: args.focus === "spread" ? 0 : lessonSignalScore(turn.text),
+        order: order++,
       });
     }
   }
+
+  const kept = new Set<number>();
+  let bytes = 0;
+  let dropped = 0;
+  const take = (entry: { item: EvidenceItem; order: number }): boolean => {
+    if (kept.has(entry.order)) return true;
+    const size = Buffer.byteLength(JSON.stringify(entry.item), "utf-8");
+    if (bytes + size > maxBytes) return false;
+    kept.add(entry.order);
+    bytes += size;
+    return true;
+  };
+
+  // Two passes. A floor per session first, because a lesson seen in four
+  // sessions is stronger evidence than one seen once — and pure value-sorting
+  // concentrated the whole pack into the handful of sessions that happened to
+  // fail most, discarding the recurrence signal entirely.
+  const bySession = new Map<string, typeof proposed>();
+  for (const entry of proposed) {
+    // Grouped per transcript: grouping by session id collapsed a main session
+    // and its 15 subagent transcripts into one, so they shared a single floor.
+    const list = bySession.get(entry.item.transcript_id) ?? [];
+    list.push(entry);
+    bySession.set(entry.item.transcript_id, list);
+  }
+  for (const list of bySession.values()) {
+    const best = [...list].sort((a, b) => b.score - a.score || a.order - b.order);
+    for (const entry of best.slice(0, SESSION_FLOOR)) take(entry);
+  }
+
+  // Then the remaining budget goes to whatever carries the most signal.
+  for (const entry of [...proposed].sort((a, b) => b.score - a.score || a.order - b.order)) {
+    if (!take(entry)) dropped += 1;
+  }
+
+  // Chronological again, so the reader still gets a narrative.
+  const items = proposed.filter((entry) => kept.has(entry.order)).map((entry) => entry.item);
 
   return {
     version: 1,
@@ -117,8 +191,45 @@ export function buildEvidencePack(args: {
     session_count: args.sessions.length,
     evidence_count: items.length,
     excerpt_char_cap: MAX_EXCERPT_CHARS,
+    budget: { max_bytes: maxBytes, bytes, dropped_items: dropped, per_session_cap: perSessionCap },
     items,
   };
+}
+
+/**
+ * Chooses which turns of a session enter the pack.
+ *
+ * `spread` samples evenly — representative, but on a 1000-turn session a
+ * budgeted cap of 8 sees ~1% and mostly misses the rare failures that carry
+ * lessons. `failures` ranks by `lessonSignalScore` and keeps the top slice,
+ * then restores chronological order so the reader still sees a narrative.
+ */
+export function selectTurns<T extends { text: string; index: number }>(
+  turns: T[],
+  cap: number,
+  focus: "failures" | "spread" = "failures"
+): T[] {
+  if (cap <= 0 || turns.length <= cap) return turns;
+  if (focus === "spread") return sampleTurns(turns, cap);
+
+  const scored = turns
+    .map((turn) => ({ turn, score: lessonSignalScore(turn.text) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, cap)
+    .map((entry) => entry.turn);
+
+  // A session with no failure signal at all still deserves representation.
+  if (scored.length < cap) {
+    const chosen = new Set(scored.map((turn) => turn.index));
+    for (const turn of sampleTurns(turns, cap)) {
+      if (scored.length >= cap) break;
+      if (chosen.has(turn.index)) continue;
+      chosen.add(turn.index);
+      scored.push(turn);
+    }
+  }
+  return scored.sort((a, b) => a.index - b.index);
 }
 
 /**
@@ -141,8 +252,8 @@ export function sampleTurns<T>(turns: T[], cap: number): T[] {
 }
 
 /** The stable pointer form `learn stage` verifies claimed evidence against. */
-export function evidenceRef(sessionId: string, turnIndex: number): string {
-  return `${sessionId}#${turnIndex}`;
+export function evidenceRef(transcriptId: string, turnIndex: number): string {
+  return `${transcriptId}#${turnIndex}`;
 }
 
 export type WrittenReview = {

@@ -89,6 +89,9 @@ export function readClaudeCodeSession(
   timestamps.sort();
   const session: NormalizedSession = {
     source: "claude-code-sessions",
+    // Derived from the filename, so it is unique even when several transcripts
+    // share one client session id.
+    transcript_id: ref.session_id,
     session_id: sessionId ?? ref.session_id,
     path: ref.path,
     cwd,

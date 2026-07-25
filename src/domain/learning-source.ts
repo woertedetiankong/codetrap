@@ -8,7 +8,7 @@ export const SOURCE_MANIFEST_VERSION = 1;
  * ref minted under an older normalizer would silently resolve to a *different*
  * excerpt. Recording the version lets staging refuse rather than mis-attribute.
  */
-export const TURN_NORMALIZER_VERSION = 1;
+export const TURN_NORMALIZER_VERSION = 2;
 
 /**
  * The history sources codetrap can read itself (§6.1, pull mode). Agent-native
@@ -51,6 +51,14 @@ export interface NormalizedTurn {
  */
 export interface NormalizedSession {
   source: LearningSourceId;
+  /**
+   * Unique per transcript file. Claude Code writes subagent transcripts as
+   * separate `agent-*.jsonl` files that carry the *parent* session's id, so
+   * `session_id` alone is not unique — 15 files shared one id in this repo's
+   * own history, which made evidence refs collide across them.
+   */
+  transcript_id: string;
+  /** The client's own session id. Real provenance, but not unique per file. */
   session_id: string;
   path: string;
   cwd: string | null;
@@ -64,6 +72,7 @@ export interface NormalizedSession {
 
 export interface SourceManifestEntry {
   source: LearningSourceId;
+  transcript_id: string;
   session_id: string;
   path: string;
   bytes: number;

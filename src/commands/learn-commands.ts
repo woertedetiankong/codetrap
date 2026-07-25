@@ -84,6 +84,7 @@ function cmdLearnReview(args: string[], learning: LearningOperations): CommandRe
     projectOnly: opts["project-only"] !== undefined,
     sessionLimit: intOpt(opts["last-sessions"]),
     lens: parseTurnLens(stringOpt(opts.include)),
+    focus: stringOpt(opts.focus) === "spread" ? "spread" : "failures",
   });
 
   if (opts.json !== undefined) return jsonResult(result);
@@ -97,7 +98,9 @@ function cmdLearnReview(args: string[], learning: LearningOperations): CommandRe
     `  read ${result.manifest_totals.files_read} file(s)` +
       `${result.manifest_totals.skipped_empty > 0 ? ` (${result.manifest_totals.skipped_empty} had no usable turns)` : ""}` +
       `, ${result.manifest_totals.redactions} redaction(s) applied.`,
-    `  ${result.evidence_count} evidence item(s).`,
+    `  ${result.evidence_count} evidence item(s), ${Math.round(result.budget.bytes / 1024)} KB of ${Math.round(result.budget.max_bytes / 1024)} KB budget` +
+      `${result.budget.dropped_items > 0 ? `, ${result.budget.dropped_items} item(s) dropped to fit` : ""}` +
+      ` (${result.budget.per_session_cap} turn(s) sampled per session).`,
     `  ${result.review_dir}`,
     "",
     // §4.3: the trust receipt is shown every time, not only on request.

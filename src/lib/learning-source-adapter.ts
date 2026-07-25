@@ -239,6 +239,7 @@ export function manifestEntry(
 ): SourceManifestEntry {
   return {
     source: session.source,
+    transcript_id: session.transcript_id,
     session_id: session.session_id,
     path,
     bytes: Buffer.byteLength(raw, "utf-8"),
