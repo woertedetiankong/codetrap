@@ -327,3 +327,44 @@ describe("MCP tool payloads", () => {
     expect(Array.isArray(report.next_actions)).toBe(true);
   });
 });
+
+// §13.2: the behavioral contract travels in the MCP initialize handshake, so
+// an MCP-only client learns the workflow without per-client prompt config.
+describe("MCP self-describing contract", () => {
+  test("initialize handshake delivers the codetrap usage instructions", async () => {
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+    const { createServer } = await import("../mcp/server");
+    const { MCP_SERVER_INSTRUCTIONS } = await import("../mcp/instructions");
+
+    const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-instructions-"));
+    mkdirSync(join(cwd, ".codetrap"));
+    const server = createServer(new TrapStore(cwd, undefined));
+    const client = new Client({ name: "codetrap-test-client", version: "0.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    const instructions = client.getInstructions();
+    expect(instructions).toBe(MCP_SERVER_INSTRUCTIONS);
+    // The four contract pillars (roadmap §13.2): pre-flight search, candidate
+    // capture, the human review gate, and explicit-trigger-only learning review.
+    expect(instructions).toContain("search_traps");
+    expect(instructions).toContain("capture_candidate");
+    expect(instructions).toContain("reserved for the human");
+    expect(instructions).toContain("only when the user explicitly asks");
+
+    await client.close();
+    await server.close();
+  });
+
+  test("doctor report carries the server version for restart-hint comparison", async () => {
+    const { CODETRAP_VERSION } = await import("../lib/version");
+    const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-doctor-version-"));
+    mkdirSync(join(cwd, ".codetrap"));
+    const store = new TrapStore(cwd, undefined);
+
+    const report = JSON.parse((await handleToolCall(store, "doctor", { cwd })).content[0].text);
+    expect(report.version).toBe(CODETRAP_VERSION);
+    expect(Array.isArray(report.clients)).toBe(true);
+  });
+});

@@ -99,7 +99,8 @@ function showHelp(): void {
   console.log("  import <file.json>    Import traps from JSON");
   console.log("  stats                 Show statistics");
   console.log("  doctor                Diagnose scope, database, and embedding health");
-  console.log("  setup codex           Install Codex skills and project guidance (MCP opt-in)");
+  console.log("  setup codex           Install Codex skills and AGENTS.md guidance (MCP opt-in)");
+  console.log("  setup claude          Install Claude Code skills and CLAUDE.md guidance (MCP opt-in)");
   console.log("  repair-scope          Move mis-scoped project traps into the current project");
   console.log("  migrate-project       Move project traps between initialized projects");
   console.log("  serve                 Start MCP server (for Claude Code)");
@@ -127,10 +128,11 @@ function showHelp(): void {
   console.log("  --from-project-path <path>  Source project path for scope repair/migration");
   console.log("  --to-project-path <path>    Destination project path for scope repair/migration");
   console.log("  --dry-run|--apply       Preview setup/scope migration, or apply scope migration");
-  console.log("  --mcp                  With setup codex, also run: codex mcp add codetrap -- codetrap serve");
+  console.log("  --mcp                  With setup, also run: <codex|claude> mcp add codetrap -- codetrap serve");
   console.log("  --codex-home <path>    With setup codex, override CODEX_HOME/default ~/.codex");
-  console.log("  --agents-file <path>   With setup codex, choose AGENTS.md target");
-  console.log("  --no-agents            With setup codex, install skills without editing AGENTS.md");
+  console.log("  --claude-home <path>   With setup claude, override CLAUDE_CONFIG_DIR/default ~/.claude");
+  console.log("  --agents-file <path>   With setup, choose the guidance file target (AGENTS.md / CLAUDE.md)");
+  console.log("  --no-agents            With setup, install skills without editing the guidance file");
 }
 
 function showServeHelp(): void {

@@ -64,16 +64,16 @@ npm install -g codetrap
 
 # Initialize pitfall memory in the target project
 cd /path/to/project
-codetrap setup codex
+codetrap setup codex    # or: codetrap setup claude
 codetrap doctor
 ```
 
-`codetrap setup codex` installs the bundled Codex skills into `~/.codex/skills`, initializes `.codetrap/` when needed, and writes `AGENTS.md`. It does not configure MCP by default.
+`codetrap setup codex` installs the bundled Codex skills into `~/.codex/skills`, initializes `.codetrap/` when needed, and writes `AGENTS.md`. `codetrap setup claude` is the symmetric Claude Code path: same skill bundle into `~/.claude/skills`, same guidance template appended to `CLAUDE.md`. Neither configures MCP by default.
 
-To also configure Codex MCP, opt in explicitly:
+To also configure MCP, opt in explicitly:
 
 ```bash
-codetrap setup codex --mcp
+codetrap setup codex --mcp    # or: codetrap setup claude --mcp
 ```
 
 The packaged template is the source of truth for exact agent behavior. It tells agents to run CLI JSON checks before non-trivial edits, inspect only relevant action cards, keep post-flight lessons in the session candidate inbox, and require explicit human approval before accepting a candidate into `traps.db`.
@@ -91,7 +91,7 @@ For a quick manual check, agents can run `codetrap search "<task keywords>" --mo
 - **MCP server** — optional tools + resources for AI agent integration
 - **Embedding cache** with multi-profile freshness tracking — Jina/Ollama vectors can coexist and stale ones auto-invalidate
 - **Stable project identity** — `codetrap init` mints a durable id in `.codetrap/project.json`, so a project's identity survives renames (the path is display-only metadata); `doctor` surfaces it
-- **Doctor diagnostics** — scope, database, and embedding health in text or JSON
+- **Doctor diagnostics** — scope, database, embedding, and per-client (Codex / Claude Code) integration health in text or JSON
 - **Schema migrations** — in-code migration system from v0 through current v7
 - **Single-binary builds** — `bun build --compile` produces standalone binaries in `dist/`
 
@@ -198,7 +198,8 @@ codetrap/
 | `import` | Import traps from JSON (--json) |
 | `stats` | Show database statistics (--json includes embedding health) |
 | `doctor` | Diagnose cwd, scope, database paths, trap counts, and embedding health (--json) |
-| `setup codex` | Install Codex skills and project guidance; MCP is opt-in with `--mcp` |
+| `setup codex` | Install Codex skills into `~/.codex/skills` and AGENTS.md guidance; MCP is opt-in with `--mcp` |
+| `setup claude` | Install Claude Code skills into `~/.claude/skills` and CLAUDE.md guidance; MCP is opt-in with `--mcp` |
 | `repair-scope` | Move legacy mis-scoped project traps into the current project (dry-run by default, `--apply` to mutate, `--json`) |
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
@@ -275,6 +276,24 @@ You can also add MCP manually:
 ```bash
 codex mcp add codetrap -- codetrap serve
 ```
+
+### Claude Code Setup
+
+Claude Code is a co-equal first-class client with the same setup shape: the same bundled skills install into `~/.claude/skills` (override with `--claude-home` or `CLAUDE_CONFIG_DIR`), and the same guidance template is appended to `CLAUDE.md`:
+
+```bash
+codetrap setup claude
+```
+
+MCP stays opt-in:
+
+```bash
+codetrap setup claude --mcp
+# or manually:
+claude mcp add codetrap -- codetrap serve
+```
+
+`codetrap doctor` reports per-client integration health for both clients — bundled skills installed and current, guidance file carrying the codetrap section, and MCP registration — and suggests a `codetrap setup <client>` refresh when an install is partial or stale. The MCP server also embeds its usage contract in the initialize handshake, so any MCP client learns the pre-flight/capture/review workflow without per-client prompt configuration.
 
 ### MCP Setup
 

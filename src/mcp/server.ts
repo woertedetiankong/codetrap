@@ -27,6 +27,7 @@ import { SessionStore } from "../lib/session-store";
 import { CANDIDATES_FILE, sessionRelativeFile } from "../lib/session-codec";
 import { buildDoctorReport } from "../lib/doctor";
 import { CODETRAP_VERSION } from "../lib/version";
+import { MCP_SERVER_INSTRUCTIONS } from "./instructions";
 import {
   listRequestFromArgs,
   searchRequestFromArgs,
@@ -146,7 +147,11 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
           ? new SessionOperations(new SessionStore(projectRoot), operations).candidateReviewSummary()
           : null;
         const report = await buildDoctorReport(scopedStore, operations, effectiveCwd(args), candidateReview);
-        return toMcpTextJson(report);
+        // §13.3: clients spawn MCP servers at startup, so after a binary
+        // upgrade a stale server can keep running invisibly. Compare this
+        // server's built-in version against the installed CLI's.
+        const restartHint = serverVersionRestartHint();
+        return toMcpTextJson({ ...report, ...(restartHint ? { restart_hint: restartHint } : {}) });
       }
 
       default:
@@ -168,6 +173,28 @@ function projectScopeWarning(scopedStore: TrapStore, scope?: unknown): string | 
 
 function effectiveCwd(args: ToolArgs): string {
   return typeof args.cwd === "string" && args.cwd.trim() !== "" ? args.cwd : process.cwd();
+}
+
+// Best-effort: ask the installed codetrap CLI for its version and compare with
+// the version compiled into this server process. Any failure (CLI not on PATH,
+// slow shim, sandboxed spawn) means "no hint" — never an error.
+function serverVersionRestartHint(): string | undefined {
+  try {
+    const result = Bun.spawnSync({
+      cmd: ["codetrap", "--version"],
+      stdout: "pipe",
+      stderr: "ignore",
+      timeout: 3_000,
+    });
+    if (!result.success) return undefined;
+    const cliVersion = new TextDecoder().decode(result.stdout).trim();
+    if (cliVersion && cliVersion !== CODETRAP_VERSION) {
+      return `The installed codetrap CLI is ${cliVersion} but this running MCP server is ${CODETRAP_VERSION}. Restart your client so it spawns the upgraded server.`;
+    }
+  } catch {
+    // fall through
+  }
+  return undefined;
 }
 
 export function handleResourceRead(store: TrapStore, uri: string) {
@@ -210,12 +237,12 @@ function parseResourceUri(uri: string): { baseUri: string; cwd?: string } {
   }
 }
 
-export async function start(): Promise<void> {
-  const store = new TrapStore(process.cwd());
-
+export function createServer(store: TrapStore): Server {
+  // §13.2: the behavioral contract ships in the initialize handshake, so an
+  // MCP-only client learns the workflow without per-client prompt config.
   const server = new Server(
     { name: "codetrap", version: CODETRAP_VERSION },
-    { capabilities: { tools: {}, resources: {} } }
+    { capabilities: { tools: {}, resources: {} }, instructions: MCP_SERVER_INSTRUCTIONS }
   );
 
   // List tools
@@ -240,6 +267,11 @@ export async function start(): Promise<void> {
     return handleResourceRead(store, request.params.uri);
   });
 
+  return server;
+}
+
+export async function start(): Promise<void> {
+  const server = createServer(new TrapStore(process.cwd()));
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
