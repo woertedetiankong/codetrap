@@ -1,5 +1,6 @@
 import type { Trap } from "../domain/trap";
 import { PASSAGE_VERSION } from "./trap-search-document";
+import { allowLoopbackDirect, hostnameOf, isLoopbackHost } from "./loopback-proxy";
 
 export type EmbeddingTask = "retrieval.query" | "retrieval.passage";
 
@@ -165,6 +166,10 @@ export class OllamaEmbedder implements EmbeddingProvider {
 
   constructor(options: OllamaEmbedderOptions = {}) {
     this.endpoint = normalizeOllamaEndpoint(options.endpoint ?? DEFAULT_OLLAMA_ENDPOINT);
+    // A model server on this machine must not be reached through the user's
+    // HTTP proxy. See loopback-proxy.ts — the failure is otherwise a bare 403
+    // with no indication a proxy was involved.
+    allowLoopbackDirect(this.endpoint);
     this.model = options.model ?? DEFAULT_OLLAMA_MODEL;
     this.dimensions = options.dimensions ?? DEFAULT_OLLAMA_DIMENSIONS;
     this.fetchImpl = options.fetch ?? fetch;
@@ -236,7 +241,7 @@ export class OllamaEmbedder implements EmbeddingProvider {
       if (!response.ok) {
         return {
           ok: false,
-          message: `Ollama is not reachable at ${this.endpoint} (${response.status}).`,
+          message: `Ollama is not reachable at ${this.endpoint} (${response.status}).${proxyHint(this.endpoint, response.status)}`,
           command: "ollama list",
         };
       }
@@ -268,6 +273,21 @@ export class OllamaEmbedder implements EmbeddingProvider {
 
 function normalizeOllamaEndpoint(endpoint: string): string {
   return endpoint.replace(/\/+$/, "");
+}
+
+/**
+ * A proxy refusing loopback traffic reports a bare 403/407 with no body and no
+ * mention of itself, which reads like the model server rejecting the request.
+ * Naming the proxy turns a dead end into something fixable.
+ */
+function proxyHint(endpoint: string, status: number): string {
+  if (status !== 403 && status !== 407) return "";
+  const proxy = process.env.http_proxy ?? process.env.HTTP_PROXY;
+  if (!proxy) return "";
+  const hostname = hostnameOf(endpoint);
+  if (!hostname || !isLoopbackHost(hostname)) return "";
+  return ` This looks like the HTTP proxy at ${proxy} refusing a local request:` +
+    ` add ${hostname} to no_proxy (an exact host, not a 127.* glob).`;
 }
 
 export function embeddingConfig(provider: EmbeddingProvider): EmbeddingConfig {

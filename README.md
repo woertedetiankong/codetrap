@@ -433,6 +433,19 @@ Only committed lessons are eligible. Packs are never auto-injected and never
 replace pre-flight search — they are a convenience over data you already
 approved.
 
+### Local model servers behind an HTTP proxy
+
+codetrap's default Ollama endpoint is `http://127.0.0.1:11434`. If you export
+`http_proxy` — common on corporate machines, and for anyone running a local
+proxy — requests to your own machine can be routed through it and refused with
+a bare `403`, which reads like Ollama rejecting them.
+
+The usual `no_proxy=127.*,localhost` does not always help, because not every
+client understands the `127.*` glob. codetrap therefore adds the exact loopback
+host of any endpoint it calls to `no_proxy` for its own process. It never
+removes entries and never excludes a non-loopback host, so a remote Ollama still
+goes through your proxy as intended.
+
 ### Concurrency
 
 Codex and Claude Code can both be active against one store, so every
