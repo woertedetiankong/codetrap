@@ -1195,6 +1195,29 @@ evidence packs, coverage, and quality scoring; repeat the smallest failed test.
 Do not proceed to Phase 1B schema stabilization merely because infrastructure
 would be easier to build than candidate quality.
 
+> **Status (2026-07-25): CLOSED by user decision; candidate-quality gate WAIVED,
+> not met.** Single-client run: Claude Code, 30-day window, 79 substantive
+> sessions / 228.6 MB → 34 candidates in 16 review clusters, all approved by a
+> blanket user decision rather than per-item adjudication. The resulting 100%
+> approval rate is 100% by construction and **must not be cited as evidence
+> that mined candidates survive human scrutiny**; the §17 falsifier was
+> bypassed rather than fired or cleared.
+> Measurements that do hold independently of that decision: 100/100 evidence
+> pointers verified against source; 11 of 16 clusters found by ≥2 blind mining
+> runs; miners self-rejected 39 of 73 leads; the independent repeat run did not
+> collapse in yield; 0 unauthorized durable writes; 0 unredacted sensitive
+> excerpts; evidence budgets within §4.2.
+> **Dual-client sampling FAILED** — the authorized window held 2 Codex sessions
+> against a bar of 10, so cross-client overlap is uncomputed and §3.1 symmetry
+> remains unproven in use.
+> Open questions carried into Phase 1 as risk, not resolved: only 1 of 34
+> candidates is a lesson about the user's own source code; the extractor
+> discarded assistant reasoning and diffs, where codebase lessons plausibly
+> live; `evidence[].excerpt` verbatim-ness is requested but unenforced; and
+> review artifacts need a publication-surface guard when a review runs inside a
+> public repo.
+> Evidence: `docs/tasks/2026-07-25-phase0-claude-code-proof-point/`.
+
 ### Phase 1 — MVP compiler loop (five sequential vertical slices)
 
 Work 1A through 1E in order. Each subphase is a milestone with its own dossier

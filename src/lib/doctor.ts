@@ -7,6 +7,8 @@ import { defaultScopePathResolver } from "./scope-path";
 import { hybridFallbackReason } from "./embedding-health";
 import type { ProjectCandidateReviewSummary } from "./session-review";
 import type { ProjectIdentity } from "./project-identity";
+import { allClientHealth, clientNextActions, formatClientHealthText, type ClientHealth } from "./client-health";
+import { CODETRAP_VERSION } from "./version";
 
 export type DoctorNextAction = {
   command: string;
@@ -14,6 +16,7 @@ export type DoctorNextAction = {
 };
 
 export type DoctorReport = {
+  version: string;
   cwd: string;
   project_root: string | null;
   project_db: string | null;
@@ -39,6 +42,10 @@ export type DoctorReport = {
     };
   };
   candidate_review: ProjectCandidateReviewSummary | null;
+  // §13.3: per-client (codex/claude) integration health — skills, guidance,
+  // MCP registration — so a broken or stale client install is visible here
+  // instead of failing silently at the next agent session.
+  clients: ClientHealth[];
   next_actions: DoctorNextAction[];
   mcp_hint: string;
 };
@@ -56,8 +63,10 @@ export async function buildDoctorReport(
   const semanticAvailable = embeddingRuntime.available;
   const diagnostics = store.diagnostics();
   const identity = safeProjectIdentity(store);
+  const clients = allClientHealth(scope.project_root);
 
   return {
+    version: CODETRAP_VERSION,
     ...scope,
     project_id: identity?.id ?? null,
     project_moved: projectMoved(identity, scope.project_root),
@@ -74,7 +83,11 @@ export async function buildDoctorReport(
       mis_scoped_traps: diagnostics.mis_scoped_traps,
     },
     candidate_review: candidateReview,
-    next_actions: buildDoctorNextActions(embeddingRuntime, embeddings, diagnostics, candidateReview),
+    clients,
+    next_actions: [
+      ...buildDoctorNextActions(embeddingRuntime, embeddings, diagnostics, candidateReview),
+      ...clientNextActions(clients),
+    ],
     mcp_hint: "Pass cwd in MCP tool calls, or restart codetrap serve after changing projects.",
   };
 }
@@ -96,6 +109,7 @@ function projectMoved(identity: ProjectIdentity | null, projectRoot: string | nu
 
 export function formatDoctorText(report: DoctorReport): string {
   return [
+    `codetrap: ${report.version}`,
     `cwd: ${report.cwd}`,
     `project_root: ${report.project_root ?? "(none)"}`,
     `project_db: ${report.project_db ?? "(none)"}`,
@@ -113,6 +127,8 @@ export function formatDoctorText(report: DoctorReport): string {
     `  global_db_project_traps: ${report.diagnostics.mis_scoped_traps.global_db_project_traps.length}`,
     "Candidate review:",
     formatCandidateReview(report.candidate_review),
+    "Clients:",
+    ...formatClientHealthText(report.clients),
     "Next actions:",
     ...formatNextActions(report.next_actions),
     `mcp_hint: ${report.mcp_hint}`,

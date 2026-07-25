@@ -171,6 +171,88 @@ describe("agent first-run onboarding assets", () => {
     expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
     expect(existsSync(join(codexHome, "skills", "codetrap-check", "SKILL.md"))).toBe(false);
   });
+
+  // Roadmap §3.1: Codex and Claude Code are co-equal first-class clients —
+  // same skill bundle, same guidance template, symmetric setup command.
+  test("setup claude installs skills and CLAUDE guidance without MCP by default", () => {
+    const cwd = tempDir("codetrap-setup-claude-");
+    const home = tempHome();
+    const claudeHome = join(home, "claude-home");
+
+    const setup = runCli(["setup", "claude", "--claude-home", claudeHome, "--json"], cwd, home);
+    expect(setup.exitCode).toBe(0);
+    const payload = JSON.parse(setup.stdout);
+
+    expect(payload).toMatchObject({
+      success: true,
+      client: "claude",
+      project: { status: "created" },
+      agents: { status: "created" },
+      mcp: { requested: false, status: "skipped" },
+    });
+    expect(existsSync(join(cwd, ".codetrap"))).toBe(true);
+    expect(read(join(cwd, "CLAUDE.md"))).toContain("codetrap search \"<keywords>\" --mode hybrid --json");
+    expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
+    for (const skillName of pluginSkillNames) {
+      expect(existsSync(join(claudeHome, "skills", skillName, "SKILL.md"))).toBe(true);
+    }
+
+    const repeat = runCli(["setup", "claude", "--claude-home", claudeHome, "--json"], cwd, home);
+    expect(repeat.exitCode).toBe(0);
+    const repeated = JSON.parse(repeat.stdout);
+    expect(repeated.project.status).toBe("already_present");
+    expect(repeated.agents.status).toBe("already_present");
+    expect(repeated.skills.every((skill: { status: string }) => skill.status === "unchanged")).toBe(true);
+    expect(read(join(cwd, "CLAUDE.md")).match(/## Codetrap/g)).toHaveLength(1);
+  });
+
+  test("setup claude only configures MCP when explicitly requested", () => {
+    const cwd = tempDir("codetrap-setup-claude-mcp-");
+    const home = tempHome();
+    const claudeHome = join(home, "claude-home");
+
+    const setup = runCli([
+      "setup",
+      "claude",
+      "--claude-home",
+      claudeHome,
+      "--mcp",
+      "--dry-run",
+      "--json",
+    ], cwd, home);
+    expect(setup.exitCode).toBe(0);
+    const payload = JSON.parse(setup.stdout);
+
+    expect(payload.project.status).toBe("would_create");
+    expect(payload.agents.status).toBe("would_create");
+    expect(payload.mcp).toMatchObject({
+      requested: true,
+      status: "would_run",
+      command: "claude mcp add codetrap -- codetrap serve",
+    });
+    expect(existsSync(join(cwd, ".codetrap"))).toBe(false);
+    expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
+    expect(existsSync(join(claudeHome, "skills", "codetrap-check", "SKILL.md"))).toBe(false);
+  });
+
+  test("both clients install byte-identical skills from the single plugin bundle", () => {
+    const cwd = tempDir("codetrap-setup-parity-");
+    const home = tempHome();
+    const codexHome = join(home, "codex-home");
+    const claudeHome = join(home, "claude-home");
+
+    expect(runCli(["setup", "codex", "--codex-home", codexHome, "--json"], cwd, home).exitCode).toBe(0);
+    expect(runCli(["setup", "claude", "--claude-home", claudeHome, "--json"], cwd, home).exitCode).toBe(0);
+
+    for (const skillName of pluginSkillNames) {
+      expect(read(join(claudeHome, "skills", skillName, "SKILL.md"))).toBe(
+        read(join(codexHome, "skills", skillName, "SKILL.md"))
+      );
+    }
+    // One shared template: AGENTS.md (codex) and CLAUDE.md (claude) carry the
+    // same guidance section.
+    expect(read(join(cwd, "CLAUDE.md"))).toBe(read(join(cwd, "AGENTS.md")));
+  });
 });
 
 function read(path: string): string {

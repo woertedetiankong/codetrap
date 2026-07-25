@@ -1,0 +1,13 @@
+# This repository is PUBLIC (github.com/woertedetiankong/codetrap).
+#
+# Phase 0 mined real session history from unrelated private projects. The
+# artifacts below carry verbatim excerpts, private file paths, session IDs and
+# project internals from that work. Publishing them would be exactly the trust
+# failure §3.2 forbids.
+#
+# They stay on disk for the local review, and are never committed.
+# task-brief.md, metrics.md, implementation-log.md, accepted-candidates.md and
+# handoff.md carry only sanitized aggregates and method, and ARE committed.
+evidence/
+review-shortlist.md
+review-shortlist.completed.md

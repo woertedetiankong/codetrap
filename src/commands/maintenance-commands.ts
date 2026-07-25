@@ -10,7 +10,7 @@ import {
   formatEmbeddingsUseText,
   type EmbeddingsUseResult,
 } from "../lib/embedding-management";
-import { formatCodexSetupText, runCodexSetup } from "../lib/codex-setup";
+import { CLIENT_SPECS, formatClientSetupText, isSetupClient, runClientSetup } from "../lib/client-setup";
 import {
   formatScopeMigrationText,
   runScopeMigration,
@@ -42,14 +42,16 @@ export async function cmdDoctor(args: string[], store: TrapStore, operations: Tr
 export function cmdSetup(args: string[]): CommandResult {
   const sub = args[0];
   const rest = args.slice(1);
-  if (sub !== "codex") {
-    return errorResult("Usage: codetrap setup codex [--mcp] [--no-agents] [--agents-file AGENTS.md] [--codex-home <path>] [--dry-run] [--json]");
+  if (!isSetupClient(sub)) {
+    return errorResult(
+      "Usage: codetrap setup <codex|claude> [--mcp] [--no-agents] [--agents-file <path>] [--codex-home <path> | --claude-home <path>] [--dry-run] [--json]"
+    );
   }
   const { opts } = parseArgs(rest);
   try {
-    const result = runCodexSetup({
+    const result = runClientSetup(sub, {
       cwd: process.cwd(),
-      codexHome: opts["codex-home"],
+      clientHome: opts[CLIENT_SPECS[sub].homeFlag],
       agentsFile: opts["agents-file"],
       installMcp: opts.mcp !== undefined,
       skipAgents: opts["no-agents"] !== undefined,
@@ -57,8 +59,8 @@ export function cmdSetup(args: string[]): CommandResult {
     });
     if (opts.json !== undefined) return jsonResult(result, result.success ? 0 : 1);
     return result.success
-      ? textResult(formatCodexSetupText(result))
-      : errorResult(formatCodexSetupText(result));
+      ? textResult(formatClientSetupText(result))
+      : errorResult(formatClientSetupText(result));
   } catch (error) {
     return errorFrom(error, args);
   }
