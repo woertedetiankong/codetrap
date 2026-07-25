@@ -131,8 +131,42 @@ export interface CandidateTrap {
   source_agent?: SourceAgent;
   source_manifest_refs?: string[];
   authorization?: CandidateAuthorization;
+  /**
+   * Every client history that contributed this lesson (§13.4). Present only
+   * after an exact-duplicate consolidation merged two provenances; a
+   * single-source candidate carries `source_agent` alone.
+   */
+  contributing_sources?: string[];
+  /** Advisory similarity group. Members stay distinct; the user decides (§9.3). */
+  review_cluster?: string;
+  /** Similar candidates the CLI found, for the reviewer to compare against. */
+  similar_to?: {
+    session_id: string;
+    candidate_id: string;
+    title: string;
+    content_hash: string;
+    score: number;
+    reason: string;
+  }[];
+  /** Agent coverage claims and their deterministic verification (§9.3). */
+  coverage?: CandidateCoverage;
   /** Set by migration when a legacy record could not be mapped cleanly. */
   migration_warning?: string;
+}
+
+/**
+ * The agent claims coverage; the CLI verifies each claimed ref exists (§9.3).
+ * A claim that fails verification flags the candidate — it never drops it.
+ */
+export interface CandidateCoverage {
+  claim: string | null;
+  refs: {
+    ref: string;
+    kind: "trap" | "file" | "candidate" | "unknown";
+    verified: boolean;
+    detail: string;
+  }[];
+  verified_all: boolean;
 }
 
 export interface CandidateTrapDocument {

@@ -8,10 +8,12 @@ import {
   type SuppressionRecord,
 } from "../domain/learning";
 import { CODETRAP_DIR } from "./constants";
+import { withAdvisoryLock } from "./advisory-lock";
 import { readJsonFile, writeFileAtomic } from "./fs-json";
 
 export const SUPPRESSIONS_FILE = "suppressions.json";
 export const RECEIPTS_FILE = "receipts.jsonl";
+const LEARNING_LOCK_DIR = ".learning.lock";
 
 export type RecordSuppressionArgs = {
   fingerprint: string;
@@ -46,6 +48,9 @@ export type AppendReceiptArgs = {
  * mining run, which is exactly what Phase 1A must prevent.
  */
 export class LearningStore {
+  /** Milliseconds the most recent locked mutation spent waiting to acquire. */
+  lastLockWaitMs = 0;
+
   constructor(private readonly projectRoot: string) {}
 
   isSuppressed(fingerprint: string): SuppressionRecord | null {
@@ -69,20 +74,34 @@ export class LearningStore {
       session_id: args.sessionId ?? null,
       candidate_id: args.candidateId ?? null,
     };
-    const existing = this.readSuppressions().suppressions.filter(
-      (entry) => entry.fingerprint !== record.fingerprint
-    );
-    this.writeSuppressions([...existing, record]);
-    return record;
+    // Locked: two concurrent rejects would otherwise both read the same array,
+    // each write only its own record, and silently drop one suppression while
+    // both receipts claimed success (§13.1; carried from Phase 1A risk 5).
+    return this.withLock(() => {
+      const existing = this.readSuppressions().suppressions.filter(
+        (entry) => entry.fingerprint !== record.fingerprint
+      );
+      this.writeSuppressions([...existing, record]);
+      return record;
+    });
   }
 
   /** Returns the removed record, or null when the fingerprint was not suppressed. */
   removeSuppression(fingerprint: string): SuppressionRecord | null {
-    const suppressions = this.readSuppressions().suppressions;
-    const removed = suppressions.find((entry) => entry.fingerprint === fingerprint) ?? null;
-    if (!removed) return null;
-    this.writeSuppressions(suppressions.filter((entry) => entry.fingerprint !== fingerprint));
-    return removed;
+    return this.withLock(() => {
+      const suppressions = this.readSuppressions().suppressions;
+      const removed = suppressions.find((entry) => entry.fingerprint === fingerprint) ?? null;
+      if (!removed) return null;
+      this.writeSuppressions(suppressions.filter((entry) => entry.fingerprint !== fingerprint));
+      return removed;
+    });
+  }
+
+  private withLock<T>(fn: () => T): T {
+    this.ensureDir();
+    const outcome = withAdvisoryLock(join(this.projectRoot, CODETRAP_DIR, LEARNING_LOCK_DIR), fn);
+    this.lastLockWaitMs = outcome.lock_wait_ms;
+    return outcome.value;
   }
 
   appendReceipt(args: AppendReceiptArgs, now = new Date()): LearningReceipt {

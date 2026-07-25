@@ -204,7 +204,7 @@ codetrap/
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
 | `embeddings` | Manage embedding profiles (`status`, `list`, `use ollama|jina`, `reindex`) |
-| `learn` | Review your own Codex or Claude Code history for reusable lessons (`sources`, `review`, `evidence-pack`, `reviews`, `stage`); read-only against history, writes only a review directory |
+| `learn` | Review your own Codex or Claude Code history for reusable lessons (`sources`, `review`, `evidence-pack`, `reviews`, `stage`, `delete`); read-only against history, writes only a review directory |
 | `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, approve/accept/reject/roll back candidates, migrate candidate records between schema versions, inspect authorization receipts and suppressed lessons, and clean up session files |
 | `web` | Start the local review, trap library, insights, and Embeddings console |
 | `serve` | Start MCP server |
@@ -353,8 +353,43 @@ invented pointer is not evidence.
 Staging is not committing. Staged candidates land in the normal review inbox and
 still need `session approve` and `session accept`.
 
+A candidate may also carry coverage claims, which staging verifies:
+
+```json
+"coverage": { "claim": "extends", "covered_by": ["trap:42"], "overlaps": ["docs/guide.md#testing"] }
+```
+
+Trap ids must resolve, file paths must exist, and section anchors must really be
+in the file. A claim that fails **flags** the candidate rather than dropping it —
+the CLI settles what a machine can settle and leaves the judgement to you.
+
+Two candidates with the identical lesson are consolidated into one, keeping both
+provenances, so the same lesson mined from Codex and again from Claude Code
+becomes a single candidate with two sources. Candidates that are merely *similar*
+are grouped into a review cluster and both survive: codetrap never decides two
+lessons are the same.
+
+Review directories hold excerpts, so they have an explicit retention path:
+
+```bash
+codetrap learn reviews                 # what exists, and what has been deleted
+codetrap learn delete <review-id>      # remove excerpts, keep audit metadata
+```
+
+Deleting leaves a tombstone with only non-sensitive metadata — counts, roots,
+file hashes, dates — because a trap committed from that review still needs its
+provenance to resolve.
+
 The `codetrap-learning-review` skill drives this flow and installs for both
 clients.
+
+### Concurrency
+
+Codex and Claude Code can both be active against one store, so every
+read-modify-write on `.codetrap/sessions/` and `.codetrap/learning/` runs under a
+per-resource advisory lock with retry jitter. Dry-run paths take no lock, because
+they take no write. Locked JSON payloads report `lock_wait_ms` so contention is
+visible rather than guessed at.
 
 ## Agent Integration
 
