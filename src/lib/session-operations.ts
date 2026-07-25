@@ -4,9 +4,24 @@ import {
   DEFAULT_EXECUTOR,
   defaultAuthorizedScope,
   type AuthorizationInput,
+  type Executor,
   type LearningReceipt,
   type SuppressionRecord,
 } from "../domain/learning";
+import {
+  CANDIDATE_SCHEMA_VERSION,
+  LEGACY_CANDIDATE_SCHEMA_VERSION,
+  type CandidateAuthorization,
+} from "../domain/candidate";
+import {
+  authorizationIsCurrent,
+  candidateContentHash,
+  downgradeCandidates,
+  downgradeLosses,
+  isLegacyCandidate,
+  migrateCandidates,
+  type MigrateCandidateOptions,
+} from "./candidate-envelope";
 import type { TrapOperations } from "./trap-operations";
 import { LearningStore } from "./learning-store";
 import {
@@ -63,8 +78,44 @@ export type SessionRollbackRequest = AuthorizationInput & {
   sessionId?: string;
 };
 
+export type SessionApproveRequest = AuthorizationInput & {
+  candidateId: string;
+  sessionId?: string;
+};
+
+export type SessionApproveResult = {
+  success: true;
+  session: ReturnType<SessionStore["getSession"]>;
+  candidate: CandidateTrap;
+  authorization: CandidateAuthorization;
+  receipt: LearningReceipt;
+};
+
 export type SessionUnsuppressRequest = AuthorizationInput & {
   fingerprint: string;
+};
+
+export type SessionMigrateRequest = {
+  sessionId?: string;
+  direction?: "up" | "down";
+  apply?: boolean;
+};
+
+export type SessionMigrationEntry = {
+  session_id: string;
+  from_version: number;
+  to_version: number;
+  candidate_count: number;
+  warnings: string[];
+};
+
+export type SessionMigrateResult = {
+  success: true;
+  direction: "up" | "down";
+  applied: boolean;
+  target_version: number;
+  sessions: SessionMigrationEntry[];
+  next_action?: { command: string };
 };
 
 export type SessionPruneRequest = {
@@ -149,6 +200,10 @@ export class SessionOperations {
     learning?: LearningStore
   ) {
     this.learning = learning ?? new LearningStore(sessions.getProjectRoot());
+    // Without this the §8.3 "accepted but the trap is gone" mapping never
+    // fires, and the first mutation would durably persist `committed` for a
+    // record whose trap no longer exists.
+    this.sessions.useMigrateOptions(this.migrateOptions());
   }
 
   startSession(args: StartSessionArgs) {
@@ -286,9 +341,35 @@ export class SessionOperations {
     return this.learning.listSuppressions();
   }
 
+  /**
+   * Records the user's authorization against the candidate's current revision
+   * and content hash. Commit later checks it, so an edit between approval and
+   * commit is caught rather than silently carried.
+   */
+  approveCandidate(request: SessionApproveRequest): SessionApproveResult {
+    const approved = this.sessions.approveCandidate(request.candidateId, {
+      sessionId: request.sessionId,
+      authorizedScope: authorizedScope(request, defaultAuthorizedScope(request.candidateId)),
+      executor: request.executor ?? DEFAULT_EXECUTOR,
+    });
+    const authorization = approved.candidate.authorization;
+    if (!authorization) throw new Error(`Candidate ${approved.candidate.id} was not authorized.`);
+    const receipt = this.learning.appendReceipt({
+      action: "approve",
+      executor: authorization.executor,
+      authorizedScope: authorization.authorized_scope,
+      fingerprint: authorization.content_hash,
+      title: approved.candidate.trap.title,
+      sessionId: approved.session.id,
+      candidateId: approved.candidate.id,
+    });
+    return { success: true, ...approved, authorization, receipt };
+  }
+
   async acceptCandidate(request: SessionAcceptRequest): Promise<SessionAcceptResult> {
     const { session, candidate } = this.sessions.getCandidate(request.candidateId, request.sessionId);
     const editedCandidate = candidateWithTrapEdits(candidate, request.edit);
+    assertAuthorizedToCommit(candidate, editedCandidate, request.executor ?? DEFAULT_EXECUTOR, request.supersedesId);
     const supersedesId = request.supersedesId;
     const conflicts = await findCandidateConflicts(editedCandidate, this.traps);
     if (conflicts.length > 0 && supersedesId === undefined && request.acceptAnyway !== true) {
@@ -473,6 +554,79 @@ export class SessionOperations {
     return { success: true, suppression: removed, receipt };
   }
 
+  /**
+   * Migrates candidate documents between schema versions.
+   *
+   * Dry-run by default (the `scope-migration` precedent): the report names
+   * every session and record that would change before anything is written.
+   * `--down` inverts the transform rather than restoring a copy, which is what
+   * the §16 1B "reversible" gate actually asks for.
+   */
+  migrateCandidateDocuments(request: SessionMigrateRequest): SessionMigrateResult {
+    const direction = request.direction ?? "up";
+    const target = direction === "up" ? CANDIDATE_SCHEMA_VERSION : LEGACY_CANDIDATE_SCHEMA_VERSION;
+    const sessions = request.sessionId
+      ? [request.sessionId]
+      : this.sessions.listSessionIdsOnDisk();
+
+    const changed: SessionMigrationEntry[] = [];
+    for (const sessionId of sessions) {
+      const document = this.sessions.rawCandidateDocument(sessionId);
+      if (document.candidates.length === 0 && document.version === target) continue;
+
+      const candidates = direction === "up"
+        ? migrateCandidates(document.candidates, this.migrateOptions())
+        : downgradeCandidates(document.candidates);
+      const from = document.version;
+      if (from === target && JSON.stringify(candidates) === JSON.stringify(document.candidates)) continue;
+
+      changed.push({
+        session_id: sessionId,
+        from_version: from,
+        to_version: target,
+        candidate_count: candidates.length,
+        warnings: direction === "up"
+          ? candidates
+            .map((candidate) => candidate.migration_warning)
+            .filter((warning): warning is string => Boolean(warning))
+          : downgradeLosses(document.candidates),
+      });
+      if (request.apply) {
+        this.sessions.writeMigratedCandidateDocument(sessionId, candidates, target);
+      }
+    }
+
+    return {
+      success: true,
+      direction,
+      applied: request.apply === true,
+      target_version: target,
+      sessions: changed,
+      ...(request.apply ? {} : { next_action: { command: migrateApplyCommand(request) } }),
+    };
+  }
+
+  /** Reports which sessions hold records older than the current envelope. */
+  candidateMigrationStatus(): { pending_sessions: string[]; pending_records: number } {
+    const pendingSessions: string[] = [];
+    let pendingRecords = 0;
+    for (const sessionId of this.sessions.listSessionIdsOnDisk()) {
+      const document = this.sessions.rawCandidateDocument(sessionId);
+      const legacy = document.candidates.filter(isLegacyCandidate).length;
+      if (legacy > 0) {
+        pendingSessions.push(sessionId);
+        pendingRecords += legacy;
+      }
+    }
+    return { pending_sessions: pendingSessions, pending_records: pendingRecords };
+  }
+
+  private migrateOptions(): MigrateCandidateOptions {
+    return {
+      trapExists: (trapId, scope) => this.traps.getTrapDetails(trapId, scope) !== null,
+    };
+  }
+
   deleteSession(sessionId: string): DeleteSessionResult {
     return this.sessions.deleteSession(sessionId);
   }
@@ -495,6 +649,69 @@ export class SessionOperations {
       .map((candidate) => candidate.id);
     return this.sessions.removeCandidates(sessionId, missingCandidateIds);
   }
+}
+
+/**
+ * §3.2: a durable write is allowed only after explicit user authorization, and
+ * the executor may be an agent acting on that instruction.
+ *
+ * A human running `session accept` at the CLI *is* the authorization, so
+ * `--executor user` needs no prior approve. An agent cannot authorize itself,
+ * so `--executor agent` requires an authorization the user recorded against
+ * this exact revision — and an edit since then invalidates it.
+ */
+function assertAuthorizedToCommit(
+  stored: CandidateTrap,
+  edited: CandidateTrap,
+  executor: Executor,
+  supersedesId: number | undefined
+): void {
+  // A human running the command is themselves the authorization, including for
+  // an edit made in the same breath. Only an agent is bound by a prior one.
+  if (executor !== "agent") return;
+
+  const authorization = stored.authorization;
+  if (!authorization) {
+    throw new Error(
+      `Candidate ${stored.id} has no recorded authorization, so an agent may not commit it. ` +
+      `Have the user run: codetrap session approve ${stored.id}`
+    );
+  }
+  if (!authorizationIsCurrent(stored)) {
+    throw new Error(
+      `Authorization for ${stored.id} is stale (approved revision ${authorization.revision}, current revision ${stored.revision ?? 1}). ` +
+      `Re-approve it: codetrap session approve ${stored.id}`
+    );
+  }
+
+  // An edit supplied at commit time changes the content being committed, so it
+  // is checked separately — otherwise an agent could carry a valid approval and
+  // commit something else.
+  const committedHash = candidateContentHash(edited);
+  if (committedHash !== authorization.content_hash) {
+    throw new Error(
+      `Authorization for ${stored.id} covered content hash ${authorization.content_hash}, but the candidate now hashes to ${committedHash}. ` +
+      `The lesson changed materially since it was approved. Re-approve it: codetrap session approve ${stored.id}`
+    );
+  }
+
+  // Superseding retires a different, possibly unrelated trap, and Phase 1B's
+  // authorization does not describe that trap. Rollback also refuses to undo a
+  // supersede, so an agent doing this on a bare candidate approval would be an
+  // unauthorized and unrecoverable write.
+  if (supersedesId !== undefined) {
+    throw new Error(
+      `Approval for ${stored.id} authorizes committing that lesson, not retiring trap #${supersedesId}. ` +
+      `A supersede must be run by the user: codetrap session accept ${stored.id} --supersedes ${supersedesId} --executor user`
+    );
+  }
+}
+
+function migrateApplyCommand(request: SessionMigrateRequest): string {
+  const parts = ["codetrap", "session", "migrate", "--apply"];
+  if (request.direction === "down") parts.push("--down");
+  if (request.sessionId) parts.push("--session", request.sessionId);
+  return parts.join(" ");
 }
 
 function authorizedScope(request: AuthorizationInput, fallback: string): string {

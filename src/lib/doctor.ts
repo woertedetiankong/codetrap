@@ -42,6 +42,8 @@ export type DoctorReport = {
     };
   };
   candidate_review: ProjectCandidateReviewSummary | null;
+  /** Candidate records still on an older on-disk schema (§16 1B). */
+  candidate_migration: CandidateMigrationStatus | null;
   // §13.3: per-client (codex/claude) integration health — skills, guidance,
   // MCP registration — so a broken or stale client install is visible here
   // instead of failing silently at the next agent session.
@@ -50,11 +52,17 @@ export type DoctorReport = {
   mcp_hint: string;
 };
 
+export type CandidateMigrationStatus = {
+  pending_sessions: string[];
+  pending_records: number;
+};
+
 export async function buildDoctorReport(
   store: TrapStore,
   operations: TrapOperations,
   cwd = process.cwd(),
-  candidateReview: ProjectCandidateReviewSummary | null = null
+  candidateReview: ProjectCandidateReviewSummary | null = null,
+  candidateMigration: CandidateMigrationStatus | null = null
 ): Promise<DoctorReport> {
   const scope = createScopeContext(cwd);
   const stats = operations.getStats();
@@ -83,9 +91,10 @@ export async function buildDoctorReport(
       mis_scoped_traps: diagnostics.mis_scoped_traps,
     },
     candidate_review: candidateReview,
+    candidate_migration: candidateMigration,
     clients,
     next_actions: [
-      ...buildDoctorNextActions(embeddingRuntime, embeddings, diagnostics, candidateReview),
+      ...buildDoctorNextActions(embeddingRuntime, embeddings, diagnostics, candidateReview, candidateMigration),
       ...clientNextActions(clients),
     ],
     mcp_hint: "Pass cwd in MCP tool calls, or restart codetrap serve after changing projects.",
@@ -127,6 +136,9 @@ export function formatDoctorText(report: DoctorReport): string {
     `  global_db_project_traps: ${report.diagnostics.mis_scoped_traps.global_db_project_traps.length}`,
     "Candidate review:",
     formatCandidateReview(report.candidate_review),
+    ...(report.candidate_migration && report.candidate_migration.pending_records > 0
+      ? [`Candidate schema:\n  ${report.candidate_migration.pending_records} record(s) need migrating in: ${report.candidate_migration.pending_sessions.join(", ")}`]
+      : []),
     "Clients:",
     ...formatClientHealthText(report.clients),
     "Next actions:",
@@ -139,7 +151,8 @@ function buildDoctorNextActions(
   embeddingRuntime: EmbeddingRuntimeStatus,
   embeddings: EmbeddingStatsResult,
   diagnostics: ReturnType<TrapStore["diagnostics"]>,
-  candidateReview: ProjectCandidateReviewSummary | null
+  candidateReview: ProjectCandidateReviewSummary | null,
+  candidateMigration: CandidateMigrationStatus | null = null
 ): DoctorNextAction[] {
   const actions: DoctorNextAction[] = [];
   if (!embeddingRuntime.available) {
@@ -168,6 +181,12 @@ function buildDoctorNextActions(
     actions.push({
       command: "codetrap web",
       reason: "Open the candidate review console.",
+    });
+  }
+  if (candidateMigration && candidateMigration.pending_records > 0) {
+    actions.push({
+      command: "codetrap session migrate --json",
+      reason: `${candidateMigration.pending_records} candidate record(s) in ${candidateMigration.pending_sessions.length} session(s) use an older schema.`,
     });
   }
   return actions;

@@ -156,10 +156,16 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
 
       case "doctor": {
         const projectRoot = scopedStore.getProjectRoot();
-        const candidateReview = projectRoot
-          ? new SessionOperations(new SessionStore(projectRoot), operations).candidateReviewSummary()
+        const sessions = projectRoot
+          ? new SessionOperations(new SessionStore(projectRoot), operations)
           : null;
-        const report = await buildDoctorReport(scopedStore, operations, effectiveCwd(args), candidateReview);
+        const report = await buildDoctorReport(
+          scopedStore,
+          operations,
+          effectiveCwd(args),
+          sessions?.candidateReviewSummary() ?? null,
+          sessions?.candidateMigrationStatus() ?? null
+        );
         // §13.3: clients spawn MCP servers at startup, so after a binary
         // upgrade a stale server can keep running invisibly. Compare this
         // server's built-in version against the installed CLI's.

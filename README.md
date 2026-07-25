@@ -204,7 +204,7 @@ codetrap/
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
 | `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
 | `embeddings` | Manage embedding profiles (`status`, `list`, `use ollama|jina`, `reindex`) |
-| `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, accept/reject/roll back candidates, inspect authorization receipts and suppressed lessons, and clean up session files |
+| `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, approve/accept/reject/roll back candidates, migrate candidate records between schema versions, inspect authorization receipts and suppressed lessons, and clean up session files |
 | `web` | Start the local review, trap library, insights, and Embeddings console |
 | `serve` | Start MCP server |
 
@@ -227,8 +227,10 @@ codetrap session close --propose-traps
 codetrap session candidates
 codetrap session candidate cand-001
 
-# Only after explicit human approval:
-codetrap session accept cand-001 --executor agent --authorized-scope "cand-001 only"
+# Only after explicit human approval. The user approves; an agent may then
+# execute the commit against that approval:
+codetrap session approve cand-001 --authorized-scope "cand-001 only"
+codetrap session accept  cand-001 --executor agent
 ```
 
 `session capture` is the low-friction post-flight path: an agent drafts a structured Markdown or JSON candidate, codetrap scores it and puts it in the session inbox, and nothing is written to `traps.db` until the candidate is accepted. If no session is active, capture creates a post-flight session, writes the candidate and recap, then closes it.
@@ -248,7 +250,8 @@ codetrap verifies — it defaults to `user`, and an agent committing on your
 instruction should pass `--executor agent`.
 
 ```bash
-codetrap session accept cand-001 --executor agent --authorized-scope "cand-001 only"
+codetrap session approve cand-001 --authorized-scope "cand-001 only"
+codetrap session accept  cand-001 --executor agent
 codetrap session receipts                  # the audit trail, newest first
 codetrap session rollback cand-001         # delete the trap, return the candidate to review
 ```
@@ -257,6 +260,44 @@ codetrap session rollback cand-001         # delete the trap, return the candida
 puts the candidate back in the queue, so the store returns to its pre-accept
 state while the receipt log keeps the history. It also repairs a candidate left
 stranded by a bare `codetrap delete`.
+
+#### Approval binds to the lesson you actually read
+
+An agent cannot authorize itself. `--executor user` means a human is running the
+command, which is the authorization; `--executor agent` requires an approval the
+user recorded first, against that exact revision of the lesson.
+
+```bash
+codetrap session approve cand-001 --authorized-scope "cand-001 only"
+codetrap session accept  cand-001 --executor agent
+```
+
+Approval is bound to a content hash covering the trigger, mistake, fix and
+scope. Editing any of them bumps the candidate's revision and drops the
+approval, so a lesson that changed after you read it cannot be committed on the
+strength of your earlier decision:
+
+```text
+Authorization for cand-001 covered content hash 6cc735d2…, but the candidate
+now hashes to 0ea4cd6b…. The lesson changed materially since it was approved.
+```
+
+Cosmetic changes — tags, path globs, severity — are not material and keep the
+approval.
+
+#### Candidate schema migration
+
+Candidate records carry a schema version. `codetrap doctor` reports any that
+predate the current envelope, and migration is dry-run by default:
+
+```bash
+codetrap session migrate                 # report what would change; writes nothing
+codetrap session migrate --apply         # migrate to the current schema
+codetrap session migrate --apply --down  # reverse it
+```
+
+The downgrade inverts the transform rather than restoring a copy, so a migrated
+project can be handed back to an older codetrap unchanged.
 
 Rejecting a candidate suppresses that lesson project-wide, so the same lesson
 mined again from the same evidence does not come back to the inbox — including

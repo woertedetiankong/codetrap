@@ -1548,6 +1548,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         return review.trap_id === undefined ? t("review.acceptedLinkMissing") : t("review.acceptedDeleted", { id: review.trap_id });
       }
       if (review.status === "rejected") return t("review.rejected");
+      if (review.status === "approved") return t("review.approved");
       return valueLabel(candidate.status);
     }
 

@@ -86,6 +86,8 @@ export type SessionRejectRequest = SessionCandidateRequest & AuthorizationInput 
 
 export type SessionRollbackRequest = SessionCandidateRequest & AuthorizationInput;
 
+export type SessionApproveRequest = SessionCandidateRequest & AuthorizationInput;
+
 export type SessionUnsuppressRequest = AuthorizationInput & {
   fingerprint: string;
 };
@@ -292,6 +294,13 @@ export function sessionRejectRequestFromArgs(positionals: string[], args: RawArg
     ...sessionCandidateRequestFromArgs(positionals, args),
     ...authorizationFromArgs(args),
     reason: stringOption(args, "reason"),
+  };
+}
+
+export function sessionApproveRequestFromArgs(positionals: string[], args: RawArgs): SessionApproveRequest {
+  return {
+    ...sessionCandidateRequestFromArgs(positionals, args),
+    ...authorizationFromArgs(args),
   };
 }
 

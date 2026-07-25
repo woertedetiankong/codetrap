@@ -1,5 +1,6 @@
 import type { CandidateTrap, SessionIndexEntry, SessionMetadata } from "../domain/session";
 import type { LearningReceipt, SuppressionRecord } from "../domain/learning";
+import { authorizationIsCurrent } from "./candidate-envelope";
 import type { Scope } from "./constants";
 import { candidateAcceptedScope } from "./session-candidate-scope";
 import {
@@ -82,6 +83,13 @@ export type SessionCleanupPayload = {
 
 export type SessionCandidateReview =
   | { status: "pending"; label: string }
+  | {
+      status: "approved";
+      label: string;
+      authorized_scope: string;
+      authorized_at: string;
+      revision: number;
+    }
   | {
       status: "accepted";
       label: string;
@@ -356,6 +364,19 @@ export function sessionCandidateReview(
   traps: TrapOperations
 ): SessionCandidateReview {
   if (candidate.status === "proposed") {
+    // An approved-but-uncommitted candidate is still `proposed`, so without
+    // this the console would show a lesson the user has already authorized as
+    // if it were untouched — and a Save would silently discard that approval.
+    const authorization = candidate.authorization;
+    if (authorization && authorizationIsCurrent(candidate)) {
+      return {
+        status: "approved",
+        label: `approved (revision ${authorization.revision}) — editing invalidates this`,
+        authorized_scope: authorization.authorized_scope,
+        authorized_at: authorization.authorized_at,
+        revision: authorization.revision,
+      };
+    }
     return { status: "pending", label: "pending review" };
   }
 

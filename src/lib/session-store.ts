@@ -11,10 +11,14 @@ import { join } from "node:path";
 import type { CandidateTrap, CandidateTrapDocument, SessionIndexDocument, SessionIndexEntry, SessionMetadata, SessionNote } from "../domain/session";
 import { parseSessionNoteKind, SESSION_VERSION } from "../domain/session";
 import { CODETRAP_DIR } from "./constants";
+import { CANDIDATE_SCHEMA_VERSION } from "../domain/candidate";
+import type { Executor } from "../domain/learning";
+import { migrateCandidates, type MigrateCandidateOptions } from "./candidate-envelope";
 import { readJsonFile as readJsonFileRaw, writeFileAtomic } from "./fs-json";
 import {
   acceptCandidateInDocument,
   addCandidateToDocument,
+  approveCandidateInDocument,
   recordCandidateConflictCheckInDocument,
   rejectCandidateInDocument,
   removeCandidatesFromDocument,
@@ -110,6 +114,20 @@ export interface AddSessionCandidateArgs {
   draft: CandidateDraft;
 }
 
+/**
+ * Refuse a document written by a newer codetrap rather than silently dropping
+ * the fields this build does not know about — the same guard src/db/schema.ts
+ * applies to the trap database.
+ */
+export function assertReadableCandidateVersion(version: number | undefined, path: string): void {
+  const found = typeof version === "number" ? version : CANDIDATE_SCHEMA_VERSION;
+  if (found > CANDIDATE_SCHEMA_VERSION) {
+    throw new Error(
+      `Candidate file ${path} is schema version ${found}, newer than this codetrap build (supports up to ${CANDIDATE_SCHEMA_VERSION}). Upgrade codetrap.`
+    );
+  }
+}
+
 const SAFE_SESSION_ID = /^[A-Za-z0-9._-]+$/;
 
 export function assertSafeSessionId(id: string): void {
@@ -124,7 +142,18 @@ const LOCK_STALE_MS = 10_000;
 const LOCK_RETRY_MS = 25;
 
 export class SessionStore {
+  private migrateOptions: MigrateCandidateOptions = {};
+
   constructor(private readonly projectRoot: string) {}
+
+  /**
+   * Supplies the trap-existence probe the §8.3 mapping needs. Set by
+   * SessionOperations, which owns the trap store; the SessionStore alone cannot
+   * answer "does trap #N still exist".
+   */
+  useMigrateOptions(options: MigrateCandidateOptions): void {
+    this.migrateOptions = options;
+  }
 
   getProjectRoot(): string {
     return this.projectRoot;
@@ -421,6 +450,24 @@ export class SessionStore {
     });
   }
 
+  approveCandidate(
+    candidateId: string,
+    args: { sessionId?: string; authorizedScope: string; executor: Executor },
+    now = new Date()
+  ): { session: SessionMetadata; candidate: CandidateTrap } {
+    return this.withLock(() => {
+      const sessionId = this.resolveSessionId(args.sessionId);
+      const session = this.requireSession(sessionId);
+      const document = this.readCandidateDocument(sessionId);
+      return this.saveCandidateDocumentMutation(session, approveCandidateInDocument(
+        document.candidates,
+        candidateId,
+        { sessionId, authorizedScope: args.authorizedScope, executor: args.executor },
+        now
+      ));
+    });
+  }
+
   rejectCandidate(
     candidateId: string,
     args: { sessionId?: string; reason?: string | null },
@@ -648,20 +695,77 @@ export class SessionStore {
     return readJsonFileRaw<T>(path, "session file");
   }
 
+  /**
+   * Reads and normalizes to the current envelope. Migration is in-memory only:
+   * a read never rewrites the file, so inspecting a project with an older
+   * codetrap-written session cannot corrupt it. The first mutation persists v2.
+   */
   private readCandidateDocument(id: string): CandidateTrapDocument {
     const path = this.candidatesPath(id);
     if (!existsSync(path)) {
-      return { version: SESSION_VERSION, session_id: id, candidates: [] };
+      return { version: CANDIDATE_SCHEMA_VERSION, session_id: id, candidates: [] };
     }
-    return this.readJson<CandidateTrapDocument>(path);
+    const document = this.readJson<CandidateTrapDocument>(path);
+    assertReadableCandidateVersion(document.version, path);
+    return {
+      ...document,
+      version: CANDIDATE_SCHEMA_VERSION,
+      candidates: migrateCandidates(document.candidates ?? [], this.migrateOptions),
+    };
   }
 
-  private writeCandidateDocument(id: string, candidates: CandidateTrap[]): void {
+  /**
+   * Session ids discovered by scanning directories rather than reading
+   * index.json. Migration is a data-integrity operation, so it must not be able
+   * to miss a session merely because the index is stale or was hand-edited.
+   */
+  listSessionIdsOnDisk(): string[] {
+    const dir = this.sessionsDir();
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((dirent) => dirent.isDirectory() && dirent.name !== LOCK_DIR)
+      .map((dirent) => dirent.name)
+      .filter((name) => existsSync(this.candidatesPath(name)))
+      .sort();
+  }
+
+  /** The raw on-disk document, unmigrated — for the migration command itself. */
+  rawCandidateDocument(id?: string): CandidateTrapDocument {
+    const sessionId = this.resolveSessionId(id);
+    const path = this.candidatesPath(sessionId);
+    if (!existsSync(path)) {
+      return { version: CANDIDATE_SCHEMA_VERSION, session_id: sessionId, candidates: [] };
+    }
+    const document = this.readJson<CandidateTrapDocument>(path);
+    // The migration command reads through here and would otherwise happily
+    // relabel a document written by a newer build as v2 while leaving its
+    // unknown fields intact.
+    assertReadableCandidateVersion(document.version, path);
+    return document;
+  }
+
+  /**
+   * Locked, because migration races every other candidate mutation: an
+   * unlocked rewrite could drop a candidate captured concurrently, or replay a
+   * pre-accept snapshot over a just-committed one.
+   */
+  writeMigratedCandidateDocument(id: string, candidates: CandidateTrap[], version: number): void {
+    this.withLock(() => {
+      this.writeCandidateDocumentAtVersion(id, candidates, version);
+      this.refreshSessionSummaries(id);
+    });
+  }
+
+  private writeCandidateDocumentAtVersion(id: string, candidates: CandidateTrap[], version: number): void {
     writeFileAtomic(this.candidatesPath(id), `${JSON.stringify({
-      version: SESSION_VERSION,
+      version,
       session_id: id,
       candidates,
     } satisfies CandidateTrapDocument, null, 2)}\n`);
+  }
+
+  private writeCandidateDocument(id: string, candidates: CandidateTrap[]): void {
+    this.writeCandidateDocumentAtVersion(id, candidates, CANDIDATE_SCHEMA_VERSION);
   }
 
   private refreshSessionSummaries(id: string): void {
