@@ -8,6 +8,8 @@ import {
   type CandidateDraft,
 } from "./session-capture";
 import { scoreCandidateTrap } from "./trap-quality";
+import { candidateContentHash, withCandidateEdit } from "./candidate-envelope";
+import type { Executor } from "../domain/learning";
 
 export type CandidateDocumentAddResult = {
   candidates: CandidateTrap[];
@@ -56,7 +58,7 @@ export function recordCandidateConflictCheckInDocument(
     suggestedAction: CandidateTrap["quality"]["suggested_action"];
   }
 ): CandidateDocumentUpdateResult {
-  return updateProposedCandidate(candidates, candidateId, args.sessionId, (candidate) => ({
+  return updateProposedCandidate(candidates, candidateId, args.sessionId, (candidate) => withCandidateEdit(candidate, {
     ...candidate,
     trap: args.trap ?? candidate.trap,
     quality: {
@@ -78,12 +80,12 @@ export function saveCandidateTrapInDocument(
 ): CandidateDocumentUpdateResult {
   return updateProposedCandidate(candidates, candidateId, args.sessionId, (candidate) => {
     const scored = scoreCandidateTrap({ trap: args.trap, evidence: candidate.evidence });
-    return {
+    return withCandidateEdit(candidate, {
       ...candidate,
       trap: args.trap,
       quality_score: scored.score,
       quality: scored.quality,
-    };
+    });
   });
 }
 
@@ -104,7 +106,10 @@ export function acceptCandidateInDocument(
   return updateProposedCandidate(candidates, candidateId, args.sessionId, (candidate) => ({
     ...candidate,
     trap: args.trap ?? candidate.trap,
+    content_hash: candidateContentHash({ trap: args.trap ?? candidate.trap }),
     status: "accepted",
+    review_decision: "approved",
+    delivery_state: "committed",
     accepted_trap_id: args.trapId,
     accepted_scope: acceptedScope(args.scope),
     accepted_at: now.toISOString(),
@@ -115,6 +120,45 @@ export function acceptCandidateInDocument(
       suggested_action: args.suggestedAction ?? candidate.quality.suggested_action,
     },
   }));
+}
+
+/**
+ * Binds a user authorization to the candidate's current revision and content
+ * hash. Commit later recomputes the hash and refuses if it moved, which is what
+ * makes "material edits invalidate authorization" enforceable (§16 1B).
+ */
+export function approveCandidateInDocument(
+  candidates: CandidateTrap[],
+  candidateId: string,
+  args: {
+    sessionId: string;
+    authorizedScope: string;
+    executor: Executor;
+  },
+  now: Date
+): CandidateDocumentUpdateResult {
+  return updateProposedCandidate(candidates, candidateId, args.sessionId, (candidate) => {
+    const revision = candidate.revision ?? 1;
+    // Recomputed, never read from the record: an approval must describe the
+    // content that is actually there, or a stale hash would deadlock every
+    // later commit and every re-approval alike.
+    const contentHash = candidateContentHash(candidate);
+    return {
+      ...candidate,
+      revision,
+      content_hash: contentHash,
+      review_decision: "approved",
+      delivery_state: "staged",
+      authorization: {
+        revision,
+        content_hash: contentHash,
+        authorized_scope: args.authorizedScope,
+        destination: candidate.candidate_kind ?? "pitfall_trap",
+        executor: args.executor,
+        authorized_at: now.toISOString(),
+      },
+    };
+  });
 }
 
 export function rejectCandidateInDocument(
@@ -129,6 +173,11 @@ export function rejectCandidateInDocument(
   return updateProposedCandidate(candidates, candidateId, args.sessionId, (candidate) => ({
     ...candidate,
     status: "rejected",
+    // A user-facing skip is `suppressed`, not `rejected` (§8.1): the lesson is
+    // not wrong, it should simply not be proposed again. Phase 1A already
+    // records the fingerprint that enforces that.
+    review_decision: "suppressed",
+    delivery_state: "draft",
     rejected_at: now.toISOString(),
     rejection_reason: args.reason || undefined,
   }));
@@ -150,8 +199,15 @@ export function rollbackCandidateInDocument(
     throw new Error(`Candidate ${candidateId} is ${candidate.status}, not accepted; nothing to roll back.`);
   }
 
-  const { accepted_trap_id, accepted_scope, accepted_at, ...rest } = candidate;
-  const updated: CandidateTrap = { ...rest, status: "proposed" };
+  const { accepted_trap_id, accepted_scope, accepted_at, authorization, ...rest } = candidate;
+  const updated: CandidateTrap = {
+    ...rest,
+    status: "proposed",
+    // Back to pending, not approved: the authorization covered a commit that
+    // has since been undone, so committing again needs a fresh decision.
+    review_decision: "pending",
+    delivery_state: "rolled_back",
+  };
   return {
     candidates: candidates.map((item) => item.id === candidateId ? updated : item),
     candidate: updated,

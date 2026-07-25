@@ -1262,6 +1262,23 @@ does not reappear from the same evidence.
 Acceptance: migration is lossless and reversible; old accepted records still
 point to their durable traps; material edits invalidate authorization.
 
+> **Status: PASSED, 2026-07-25.** All three criteria met, and the migration was
+> exercised on real Phase 1A data rather than fixtures: `diff -r` against a
+> pre-migration snapshot after `migrate --apply --down` is identical. The
+> envelope is additive, so `status` and the Web review console are unchanged;
+> migration preserves `status` verbatim rather than recomputing it, because a
+> legacy accepted-but-unlinked record would otherwise have changed meaning.
+> Authorization now binds to a content hash: an agent cannot self-authorize, and
+> a material edit invalidates a prior approval. This closes Phase 1A's risk 8.
+> Carried forward as risk: downgrade is lossy in the v2 -> v1 direction by
+> construction (v1 cannot express `suppressed` or `rolled_back`) and now reports
+> each loss before applying; the Web console can display an approval but not
+> create one (no approve route until 1E); `source_manifest_refs` and `rationale`
+> are reserved but unpopulated until 1C's adapters; and restoring a superseded
+> trap is still not possible, so rollback still refuses supersede-accepts.
+> Coverage check (§9.3) went a third consecutive phase unexercised.
+> Evidence: `docs/tasks/2026-07-25-phase1b-candidate-envelope-and-migration/`.
+
 #### Phase 1C — Dual-source adapters
 
 - Add `codetrap learn sources | evidence-pack | review | stage` pull mode for

@@ -1,9 +1,10 @@
 export const LEARNING_VERSION = 1;
 
-// The durable actions a receipt can record. `commit` and `rollback` bracket a
-// trap write; `suppress` and `unsuppress` bracket a suppression entry. Every
-// one of them is a durable write under §3.2 and therefore leaves a receipt.
-export const RECEIPT_ACTIONS = ["commit", "rollback", "suppress", "unsuppress"] as const;
+// The durable actions a receipt can record. `approve` binds a user decision to
+// one candidate revision; `commit` and `rollback` bracket a trap write;
+// `suppress` and `unsuppress` bracket a suppression entry. Every one of them is
+// a durable write under §3.2 and therefore leaves a receipt.
+export const RECEIPT_ACTIONS = ["approve", "commit", "rollback", "suppress", "unsuppress"] as const;
 export type ReceiptAction = (typeof RECEIPT_ACTIONS)[number];
 
 // §3.2 is explicit that codetrap cannot distinguish a human from an agent

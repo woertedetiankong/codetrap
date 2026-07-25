@@ -425,6 +425,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .row.accepted { border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .row.accepted-missing { border-color: color-mix(in srgb, var(--warn), var(--line) 40%); }
     .row.rejected { border-color: color-mix(in srgb, var(--danger), var(--line) 55%); opacity: 0.72; }
+    .row.approved { border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .row-main {
       width: 100%;
       min-height: 0;
@@ -464,6 +465,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .pill.accepted { color: var(--ok); border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .pill.accepted-missing { color: var(--warn); border-color: color-mix(in srgb, var(--warn), var(--line) 55%); }
     .pill.rejected { color: var(--danger); border-color: color-mix(in srgb, var(--danger), var(--line) 55%); }
+    .pill.approved { color: var(--ok); border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn), var(--line) 55%); }
     .pill.scope { color: var(--violet); background: var(--violet-soft); border-color: color-mix(in srgb, var(--violet), var(--line) 55%); }
     .pill.critical { color: var(--danger); border-color: color-mix(in srgb, var(--danger), var(--line) 42%); }

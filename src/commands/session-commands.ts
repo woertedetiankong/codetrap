@@ -31,6 +31,7 @@ import {
   sessionListRequestFromArgs,
   sessionNoteRequestFromArgs,
   sessionPruneRequestFromArgs,
+  sessionApproveRequestFromArgs,
   sessionRejectRequestFromArgs,
   sessionRollbackRequestFromArgs,
   sessionShowRequestFromArgs,
@@ -73,10 +74,14 @@ export async function cmdSession(args: string[], store: TrapStore, trapOperation
         return cmdSessionCandidate(rest, sessions);
       case "accept":
         return cmdSessionAccept(rest, sessions);
+      case "approve":
+        return cmdSessionApprove(rest, sessions);
       case "reject":
         return cmdSessionReject(rest, sessions);
       case "rollback":
         return cmdSessionRollback(rest, sessions);
+      case "migrate":
+        return cmdSessionMigrate(rest, sessions);
       case "receipts":
         return cmdSessionReceipts(rest, sessions);
       case "suppressions":
@@ -90,7 +95,7 @@ export async function cmdSession(args: string[], store: TrapStore, trapOperation
       case "cleanup":
         return cmdSessionCleanup(rest, sessions);
       default:
-        return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|capture|candidates|candidate|accept|reject|rollback|receipts|suppressions|unsuppress|delete|prune|cleanup>");
+        return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|capture|candidates|candidate|accept|approve|reject|rollback|migrate|receipts|suppressions|unsuppress|delete|prune|cleanup>");
     }
   } catch (error) {
     return errorFrom(error, args);
@@ -303,6 +308,26 @@ function cmdSessionReject(args: string[], sessions: SessionOperations): CommandR
   ].join("\n"));
 }
 
+function cmdSessionApprove(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const result = sessions.approveCandidate(sessionApproveRequestFromArgs(positionals, opts));
+  if (opts.json !== undefined) {
+    return jsonResult({
+      success: true,
+      session_id: result.session.id,
+      candidate_id: result.candidate.id,
+      authorization: result.authorization,
+      receipt: result.receipt,
+    });
+  }
+  return textResult([
+    `Approved ${result.candidate.id} at revision ${result.authorization.revision}.`,
+    `Content hash: ${result.authorization.content_hash}`,
+    `An agent may now commit it: codetrap session accept ${result.candidate.id} --session ${result.session.id} --executor agent`,
+    "A material edit to the lesson invalidates this approval.",
+  ].join("\n"));
+}
+
 function cmdSessionRollback(args: string[], sessions: SessionOperations): CommandResult {
   const { opts, positionals } = parseArgs(args);
   const result = sessions.rollbackCandidate(sessionRollbackRequestFromArgs(positionals, opts));
@@ -315,6 +340,41 @@ function cmdSessionRollback(args: string[], sessions: SessionOperations): Comman
     `${result.candidate.id}: accepted -> proposed; it is back in the review queue.`,
     receiptLine(payload.receipt),
   ].join("\n"));
+}
+
+function cmdSessionMigrate(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const apply = opts.apply !== undefined;
+  if (apply && opts["dry-run"] !== undefined) {
+    return errorResult("Choose either --dry-run or --apply, not both.");
+  }
+  const result = sessions.migrateCandidateDocuments({
+    sessionId: positionals[0] ?? stringOptionValue(opts.session),
+    direction: opts.down !== undefined ? "down" : "up",
+    apply,
+  });
+  if (opts.json !== undefined) return jsonResult(result);
+
+  if (result.sessions.length === 0) {
+    return textResult(`No candidate records need migrating to schema version ${result.target_version}.`);
+  }
+  const verb = result.applied ? "Migrated" : "Would migrate";
+  const lines = [
+    `${verb} ${result.sessions.length} session(s) to schema version ${result.target_version}:`,
+    ...result.sessions.flatMap((entry) => [
+      `  ${entry.session_id}: v${entry.from_version} -> v${entry.to_version} (${entry.candidate_count} record(s))`,
+      ...entry.warnings.map((warning) => `    warning: ${warning}`),
+    ]),
+  ];
+  if (result.next_action) {
+    lines.push("", `Nothing was written. Apply with: ${result.next_action.command}`);
+  }
+  return textResult(lines.join("\n"));
+}
+
+function stringOptionValue(value: unknown): string | undefined {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text ? text : undefined;
 }
 
 function cmdSessionReceipts(args: string[], sessions: SessionOperations): CommandResult {

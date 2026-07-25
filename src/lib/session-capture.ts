@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { CANDIDATE_SCHEMA_VERSION, type SourceAgent } from "../domain/candidate";
 import type { CandidateTrap, SessionMetadata, SessionNote } from "../domain/session";
 import { parseSessionNoteKind } from "../domain/session";
 import { buildTrapInput } from "../domain/trap";
@@ -59,19 +60,16 @@ export function proposeCandidateTraps(session: SessionMetadata, notes: SessionNo
     const draft = explicitTrapDraft(session, note);
     if (!draft) continue;
 
-    const scored = scoreCandidateTrap(draft);
-    candidates.push({
-      id: `cand-${String(candidates.length + 1).padStart(3, "0")}`,
-      status: "proposed",
-      quality_score: scored.score,
-      quality: scored.quality,
-      ...draft,
-    });
+    candidates.push(createCandidateTrap(draft, `cand-${String(candidates.length + 1).padStart(3, "0")}`));
   }
   return candidates;
 }
 
-export function createCandidateTrap(draft: CandidateDraft, id: string): CandidateTrap {
+export function createCandidateTrap(
+  draft: CandidateDraft,
+  id: string,
+  options: { sourceAgent?: SourceAgent; destinationHint?: string; rationale?: string } = {}
+): CandidateTrap {
   const scored = scoreCandidateTrap(draft);
   return {
     id,
@@ -79,6 +77,15 @@ export function createCandidateTrap(draft: CandidateDraft, id: string): Candidat
     quality_score: scored.score,
     quality: scored.quality,
     ...draft,
+    schema_version: CANDIDATE_SCHEMA_VERSION,
+    revision: 1,
+    content_hash: trapFingerprint(draft.trap),
+    candidate_kind: "pitfall_trap",
+    review_decision: "pending",
+    delivery_state: "draft",
+    source_agent: options.sourceAgent ?? "unknown",
+    ...(options.destinationHint ? { destination_hint: options.destinationHint } : {}),
+    ...(options.rationale ? { rationale: options.rationale } : {}),
   };
 }
 

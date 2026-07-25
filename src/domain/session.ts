@@ -1,5 +1,12 @@
 import type { TrapEvidenceInput, TrapInput } from "./trap";
 import type { Scope } from "../lib/constants";
+import type {
+  CandidateAuthorization,
+  CandidateKind,
+  DeliveryState,
+  ReviewDecision,
+  SourceAgent,
+} from "./candidate";
 
 export const SESSION_VERSION = 1;
 
@@ -92,6 +99,11 @@ export interface CandidateQuality {
 
 export interface CandidateTrap {
   id: string;
+  /**
+   * Derived from `review_decision` + `delivery_state` (§8.3) and kept in sync
+   * with them. Retained rather than replaced because the Web review console
+   * reads it from untyped browser JS, where a rename would fail silently.
+   */
   status: CandidateStatus;
   quality_score: number;
   quality: CandidateQuality;
@@ -102,10 +114,30 @@ export interface CandidateTrap {
   accepted_at?: string;
   rejected_at?: string;
   rejection_reason?: string;
+
+  // --- v2 envelope (§8.2). Optional on read so v1 records normalize cleanly. ---
+  schema_version?: number;
+  /** Bumped by every material edit; authorization is bound to one revision. */
+  revision?: number;
+  /** Hash of the material fields. Commit refuses when it no longer matches. */
+  content_hash?: string;
+  candidate_kind?: CandidateKind;
+  /** Free-form and non-binding: a hint, never a schema enum (§8.1). */
+  destination_hint?: string;
+  review_decision?: ReviewDecision;
+  delivery_state?: DeliveryState;
+  /** Why the action is right and what breaks otherwise (§1.7's second consumer). */
+  rationale?: string;
+  source_agent?: SourceAgent;
+  source_manifest_refs?: string[];
+  authorization?: CandidateAuthorization;
+  /** Set by migration when a legacy record could not be mapped cleanly. */
+  migration_warning?: string;
 }
 
 export interface CandidateTrapDocument {
-  version: typeof SESSION_VERSION;
+  /** `CANDIDATE_SCHEMA_VERSION`, not `SESSION_VERSION` — see domain/candidate.ts. */
+  version: number;
   session_id: string;
   candidates: CandidateTrap[];
 }

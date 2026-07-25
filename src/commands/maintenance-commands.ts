@@ -30,10 +30,18 @@ export function cmdInit(_args: string[], store: TrapStore): CommandResult {
 export async function cmdDoctor(args: string[], store: TrapStore, operations: TrapOperations): Promise<CommandResult> {
   const { opts } = parseArgs(args);
   const projectRoot = store.getProjectRoot();
-  const candidateReview = projectRoot
-    ? new SessionOperations(new SessionStore(projectRoot), operations).candidateReviewSummary()
+  const sessions = projectRoot
+    ? new SessionOperations(new SessionStore(projectRoot), operations)
     : null;
-  const report = await buildDoctorReport(store, operations, process.cwd(), candidateReview);
+  const candidateReview = sessions?.candidateReviewSummary() ?? null;
+  const candidateMigration = sessions?.candidateMigrationStatus() ?? null;
+  const report = await buildDoctorReport(
+    store,
+    operations,
+    process.cwd(),
+    candidateReview,
+    candidateMigration
+  );
   return opts.json !== undefined
     ? jsonResult(report)
     : textResult(formatDoctorText(report));

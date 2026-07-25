@@ -19,6 +19,12 @@ describe("Phase 1A — authorization, suppression, and rollback", () => {
     const { sessions } = harness("codetrap-1a-receipt-");
     const captured = capture(sessions, scratchpadLesson());
 
+    // Phase 1B: an agent may not authorize itself, so the user approves the
+    // revision first and the agent then executes against that approval.
+    sessions.approveCandidate({
+      candidateId: captured.candidate.id,
+      authorizedScope: "cluster C01 only",
+    });
     const accepted = await sessions.acceptCandidate({
       candidateId: captured.candidate.id,
       executor: "agent",
@@ -39,8 +45,7 @@ describe("Phase 1A — authorization, suppression, and rollback", () => {
     expect(accepted.receipt.fingerprint).toBe(captured.fingerprint);
 
     const receipts = sessions.listReceipts();
-    expect(receipts).toHaveLength(1);
-    expect(receipts[0].action).toBe("commit");
+    expect(receipts.map((receipt) => receipt.action)).toEqual(["commit", "approve"]);
   });
 
   test("C6: executor defaults to user and the scope names the single candidate", async () => {
@@ -58,6 +63,7 @@ describe("Phase 1A — authorization, suppression, and rollback", () => {
   test("C3: a committed trap is findable by search afterward", async () => {
     const { sessions, traps } = harness("codetrap-1a-search-");
     const captured = capture(sessions, scratchpadLesson());
+    sessions.approveCandidate({ candidateId: captured.candidate.id });
     const accepted = await sessions.acceptCandidate({
       candidateId: captured.candidate.id,
       executor: "agent",
@@ -74,6 +80,7 @@ describe("Phase 1A — authorization, suppression, and rollback", () => {
   test("C4: rollback deletes the trap, restores the candidate, and leaves a receipt", async () => {
     const { sessions, traps } = harness("codetrap-1a-rollback-");
     const captured = capture(sessions, scratchpadLesson());
+    sessions.approveCandidate({ candidateId: captured.candidate.id });
     const accepted = await sessions.acceptCandidate({
       candidateId: captured.candidate.id,
       executor: "agent",
@@ -102,7 +109,7 @@ describe("Phase 1A — authorization, suppression, and rollback", () => {
       authorized_scope: "rollback of cluster C01",
       trap_id: accepted.trap_id,
     });
-    expect(sessions.listReceipts().map((receipt) => receipt.action)).toEqual(["rollback", "commit"]);
+    expect(sessions.listReceipts().map((receipt) => receipt.action)).toEqual(["rollback", "commit", "approve"]);
   });
 
   test("C4: a rolled-back candidate can be reviewed and committed again", async () => {
@@ -371,6 +378,12 @@ describe("Phase 1A — CLI authorization surface", () => {
       expectOk(runCli(["session", "capture", "--trap-json", JSON.stringify(scratchpadLesson().trap), "--json"], cwd, home)).stdout
     );
 
+    expectOk(runCli([
+      "session", "approve", captured.candidate_id,
+      "--session", captured.session_id,
+      "--authorized-scope", "cluster C01 only",
+      "--json",
+    ], cwd, home));
     const accept = expectOk(runCli([
       "session", "accept", captured.candidate_id,
       "--session", captured.session_id,
@@ -405,7 +418,7 @@ describe("Phase 1A — CLI authorization surface", () => {
     expect(JSON.parse(afterRollback.stdout).results).toHaveLength(0);
 
     const receipts = JSON.parse(expectOk(runCli(["session", "receipts", "--json"], cwd, home)).stdout);
-    expect(receipts.receipts.map((r: { action: string }) => r.action)).toEqual(["rollback", "commit"]);
+    expect(receipts.receipts.map((r: { action: string }) => r.action)).toEqual(["rollback", "commit", "approve"]);
     expect(receipts.executor_note).toContain("declared");
   });
 
@@ -512,6 +525,8 @@ describe("Phase 1A — Web review surface", () => {
     const traps = new TrapOperations(new TrapStore(project, undefined, home));
     const sessions = new SessionOperations(new SessionStore(project), traps);
     const captured = capture(sessions, scratchpadLesson());
+
+    sessions.approveCandidate({ candidateId: captured.candidate.id, authorizedScope: "cluster C01 only" });
 
     const handler = createWebHandler({ token: WEB_TOKEN, cwd: project, home, currentProjectRoot: project });
     const accepted = await webApi(handler, "/api/candidate/accept", {
