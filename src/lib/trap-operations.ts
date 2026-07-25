@@ -90,6 +90,15 @@ export class TrapOperations {
     this.store.hit(id, scope);
   }
 
+  /**
+   * Records that a recalled lesson actually helped. Deliberately separate from
+   * `hitTrap`: a view is not evidence of usefulness, and conflating them would
+   * make the §17 falsifier unfalsifiable — every search would look successful.
+   */
+  markTrapUseful(id: number, scope?: string, now = new Date()): { success: boolean; scope?: string } {
+    return this.store.markUseful(id, scope, now);
+  }
+
   listTraps(args: ListTrapsArgs = {}): TrapListGroup[] {
     return this.store.list({
       category: args.category,

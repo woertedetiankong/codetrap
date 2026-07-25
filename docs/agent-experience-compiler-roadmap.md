@@ -1223,6 +1223,10 @@ would be easier to build than candidate quality.
 Work 1A through 1E in order. Each subphase is a milestone with its own dossier
 and acceptance evidence; Phase 1 is complete only when all five exit gates pass.
 
+> **Phase 1 status (2026-07-25): 1A–1D passed; 1E criterion 1 is partial, so
+> Phase 1 is NOT complete.** The outstanding item is small and specific — a
+> pre-flight search from Codex — and is described in the 1E dossier.
+
 #### Phase 1A — Existing-surface vertical proof
 
 - Use agent-submitted `pitfall_trap` candidates through the existing session
@@ -1356,6 +1360,27 @@ reviews within budget, authorizes an agent-executed commit, and the trap later
 surfaces in a pre-flight search from the other client and is marked useful. At
 least one curated context pack is exported and handed to an agent at planning
 time.
+
+> **Status: NOT PASSED, 2026-07-25 — criterion 1 partial, criterion 2 met.**
+> The machinery is built and was exercised on real data: a candidate was
+> reviewed (2 in 1s, inside the §4.2 budget), approved by the user against a
+> specific revision, committed by an agent on that approval as trap #5, found by
+> pre-flight search, and marked useful — with `useful_count` and `hit_count`
+> deliberately separate so a view is not mistaken for help. A 2-lesson curated
+> context pack was exported, meeting criterion 2.
+> **The cross-client half was not run.** The search and usefulness call happened
+> in Claude Code, the same client that mined the lesson; the Codex half was
+> skipped by user decision, so §3.1 symmetry remains unproven in use for the
+> fifth consecutive phase. `codetrap setup codex` is done and all six skills are
+> installed; closing this needs `codetrap` on PATH and two commands in a Codex
+> session.
+> Also shipped: `useful`/`mark_trap_useful`, `pack export`, Web approve and
+> rollback routes (closing Phase 1B risk 2), the §4.3 trust receipt in the UI,
+> and §4.2 inbox budgets measured by `doctor`.
+> Carried forward: usefulness has one self-reported sample; the console renders
+> the 1D cluster/coverage fields only partially; staleness uses session rather
+> than per-candidate timestamps; and Phase 0 risk 4 is now six phases old.
+> Evidence: `docs/tasks/2026-07-25-phase1e-learning-inbox-and-runtime-proof/`.
 
 ### Phase 2 — Low-risk destinations + longitudinal validation
 

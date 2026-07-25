@@ -465,6 +465,10 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .pill.accepted { color: var(--ok); border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .pill.accepted-missing { color: var(--warn); border-color: color-mix(in srgb, var(--warn), var(--line) 55%); }
     .pill.rejected { color: var(--danger); border-color: color-mix(in srgb, var(--danger), var(--line) 55%); }
+    .receipt { position: fixed; right: 16px; bottom: 64px; max-width: 380px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 6px 24px rgba(0,0,0,0.18); opacity: 0; pointer-events: none; transition: opacity 160ms; z-index: 40; }
+    .receipt.show { opacity: 1; }
+    .receipt-line { font-size: 12px; line-height: 1.5; }
+    .receipt-line.subtle { color: var(--muted); }
     .pill.approved { color: var(--ok); border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn), var(--line) 55%); }
     .pill.scope { color: var(--violet); background: var(--violet-soft); border-color: color-mix(in srgb, var(--violet), var(--line) 55%); }
@@ -869,6 +873,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     </section>
   </main>
   <div class="status" id="status"></div>
+  <div class="receipt" id="receipt"></div>
 
   <script>${webClientScript()}</script>
 </body>

@@ -234,6 +234,59 @@ export class SessionOperations {
     );
   }
 
+  /**
+   * §4.2 budget reporting: the inbox soft cap and the staleness horizon, as
+   * measured facts rather than documented intentions.
+   */
+  inboxHealth(now = new Date()): {
+    pending_count: number;
+    soft_cap: number;
+    over_cap: boolean;
+    stale_count: number;
+    stale_after_days: number;
+    stale_candidates: { session_id: string; candidate_id: string; title: string; last_touched: string }[];
+  } {
+    const cutoff = now.getTime() - CANDIDATE_STALE_DAYS * 24 * 60 * 60 * 1000;
+    const stale: { session_id: string; candidate_id: string; title: string; last_touched: string }[] = [];
+    let pending = 0;
+
+    for (const sessionId of this.sessions.listSessionIdsOnDisk()) {
+      // The candidate record carries no per-item timestamp until it is decided,
+      // so the session's own last-touched time is the honest proxy. Read once
+      // per session, not once per candidate.
+      const touched = this.sessionUpdatedAt(sessionId);
+      for (const candidate of this.sessions.candidateDocument(sessionId).candidates) {
+        if (candidate.status !== "proposed") continue;
+        pending += 1;
+        if (touched && Date.parse(touched) < cutoff) {
+          stale.push({
+            session_id: sessionId,
+            candidate_id: candidate.id,
+            title: candidate.trap.title,
+            last_touched: touched,
+          });
+        }
+      }
+    }
+
+    return {
+      pending_count: pending,
+      soft_cap: INBOX_SOFT_CAP,
+      over_cap: pending > INBOX_SOFT_CAP,
+      stale_count: stale.length,
+      stale_after_days: CANDIDATE_STALE_DAYS,
+      stale_candidates: stale,
+    };
+  }
+
+  private sessionUpdatedAt(sessionId: string): string | null {
+    try {
+      return this.sessions.getSession(sessionId).updated_at;
+    } catch {
+      return null;
+    }
+  }
+
   candidateReviewSummary(): ProjectCandidateReviewSummary {
     const sessions = this.sessions.listSessions({ status: "all" }).map((session) =>
       sessionCandidateReviewSummary(session, this.sessions.candidateDocument(session.id).candidates)
@@ -436,6 +489,17 @@ export class SessionOperations {
         candidate_id: checked.candidate.id,
         possible_conflicts: conflicts,
       };
+    }
+
+    // §16 1E: only `pitfall_trap` commits end to end. An `unclassified` lesson
+    // can be reviewed and suppressed, but must not be force-fitted into a
+    // destination its kind does not name (§8.1, §11).
+    const kind = candidate.candidate_kind ?? "pitfall_trap";
+    if (kind !== "pitfall_trap") {
+      throw new Error(
+        `Candidate ${candidate.id} is ${kind}, and Phase 1 commits only pitfall_trap. ` +
+        `Re-classify it with --edit-json '{"candidate_kind":"pitfall_trap"}' if it really is a trap, or suppress it.`
+      );
     }
 
     const trap = editedCandidate.trap;
@@ -711,6 +775,11 @@ export class SessionOperations {
  * so `--executor agent` requires an authorization the user recorded against
  * this exact revision — and an edit since then invalidates it.
  */
+/** §4.2: soft cap on pending candidates; beyond it, warn and suggest triage. */
+export const INBOX_SOFT_CAP = 30;
+/** §4.2: pending candidates untouched this long are stale, never deleted. */
+export const CANDIDATE_STALE_DAYS = 60;
+
 function assertAuthorizedToCommit(
   stored: CandidateTrap,
   edited: CandidateTrap,

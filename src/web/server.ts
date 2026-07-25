@@ -263,6 +263,53 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     });
   }
 
+  // §16 1E / Phase 1B risk 2: without this a console-only user cannot record an
+  // authorization at all, so an agent-executed commit is unreachable without
+  // dropping to a terminal.
+  if (request.method === "POST" && url.pathname === "/api/candidate/approve") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const ops = sessionOperations(projectRoot, context.home).sessions;
+    const candidateId = stringBodyField(body, "candidateId");
+    const sessionId = optionalStringBodyField(body, "sessionId");
+    // Persist the draft first so the authorization binds to the content the
+    // user is looking at, not a stored revision they have since edited.
+    const edit = optionalRecordBodyField(body, "trap");
+    if (edit) ops.saveCandidate({ candidateId, sessionId, edit });
+    const result = ops.approveCandidate({
+      candidateId,
+      sessionId,
+      executor: executorBodyField(body),
+      authorizedScope: optionalStringBodyField(body, "authorizedScope"),
+    });
+    return jsonResponse({
+      success: true,
+      session: result.session,
+      candidate: result.candidate,
+      authorization: result.authorization,
+      receipt: result.receipt,
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/candidate/rollback") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const result = sessionOperations(projectRoot, context.home).sessions.rollbackCandidate({
+      candidateId: stringBodyField(body, "candidateId"),
+      sessionId: optionalStringBodyField(body, "sessionId"),
+      executor: executorBodyField(body),
+      authorizedScope: optionalStringBodyField(body, "authorizedScope"),
+    });
+    return jsonResponse({
+      success: true,
+      session: result.session,
+      candidate: result.candidate,
+      trap_id: result.trap_id,
+      trap_deleted: result.trap_deleted,
+      receipt: result.receipt,
+    });
+  }
+
   if (request.method === "POST" && url.pathname === "/api/candidate/reject") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);

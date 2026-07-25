@@ -79,6 +79,20 @@ export const toolDefinitions = [
     },
   },
   {
+    name: "mark_trap_useful",
+    description:
+      "Report that a trap you recalled actually helped on this task — it changed what you did, or caught a mistake before you made it. Call it only when that is true; it is the signal that tells the user which lessons are worth keeping. Viewing a trap already counts as a hit, so do not call this merely for reading one.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Trap ID that helped" },
+        scope: { type: "string", enum: scopeEnum, description: "Which scope the trap is in" },
+        cwd: cwdProperty,
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "list_traps",
     description: "List traps with optional filters.",
     inputSchema: {

@@ -113,6 +113,32 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       return data;
     }
 
+    /**
+     * §4.3: after every durable write, show the receipt. "Users should never
+     * have to wonder whether something was silently written; the product tells
+     * them, every time." The receipt states the declared executor rather than
+     * implying codetrap verified who acted.
+     */
+    function showReceipt(receipt) {
+      if (!receipt) return;
+      const box = el("receipt");
+      if (!box) return;
+      const target = receipt.trap_id === null || receipt.trap_id === undefined
+        ? receipt.destination
+        : receipt.destination + " #" + receipt.trap_id + " (" + receipt.trap_scope + ")";
+      box.innerHTML = \`<div class="receipt-line"><strong>\${escapeHtml(t("receipt.title"))}</strong></div>\`
+        + \`<div class="receipt-line">\${escapeHtml(receipt.action)} → \${escapeHtml(target)}</div>\`
+        + \`<div class="receipt-line">\${escapeHtml(t("receipt.executor", { executor: receipt.executor }))}</div>\`
+        + \`<div class="receipt-line">\${escapeHtml(t("receipt.scope", { scope: receipt.authorized_scope }))}</div>\`
+        + \`<div class="receipt-line subtle">\${escapeHtml(receipt.recorded_at)}</div>\`;
+      box.className = "receipt show";
+    }
+
+    function hideReceipt() {
+      const box = el("receipt");
+      if (box) box.className = "receipt";
+    }
+
     function showStatus(message, isError = false) {
       const box = el("status");
       box.textContent = message;
@@ -1184,6 +1210,9 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     }
 
     function renderDetail() {
+      // A receipt describes one action on one candidate; leaving it pinned
+      // while the user navigates makes it describe something else.
+      hideReceipt();
       if (state.mainView !== "review") return;
       const candidate = state.candidates.find((item) => item.id === state.candidateId);
       el("detail-meta").textContent = candidate ? candidate.id + " / " + valueLabel(candidate.status) : t("meta.selectCandidate");
@@ -1272,10 +1301,17 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         const cleanDeleted = review?.status === "accepted_missing"
           ? \`<button type="button" data-clean-deleted-candidates>\${escapeHtml(t("action.cleanDeletedCandidates"))}</button>\`
           : "";
-        return \`<div class="actions"><span class="pill \${reviewCssClass(candidate)}">\${escapeHtml(reviewLabel(candidate))}</span>\${viewTrap}\${cleanDeleted}</div>\`;
+        // A committed lesson needs a visible way back (§3.2: every durable
+        // write has a rollback path).
+        const rollback = review?.status === "accepted"
+          ? \`<button id="rollback" class="danger">\${escapeHtml(t("action.rollback"))}</button>\`
+          : "";
+        return \`<div class="actions"><span class="pill \${reviewCssClass(candidate)}">\${escapeHtml(reviewLabel(candidate))}</span>\${viewTrap}\${cleanDeleted}\${rollback}</div>\`;
       }
+      const approved = candidate.review?.status === "approved";
       return \`<div class="actions">
         <button id="save" class="primary" \${disabled}>\${escapeHtml(t("action.save"))}</button>
+        <button id="approve" \${disabled}>\${escapeHtml(t(approved ? "action.reapprove" : "action.approve"))}</button>
         <button id="accept" \${disabled}>\${escapeHtml(t("action.accept"))}</button>
         <button id="reject" class="danger" \${disabled}>\${escapeHtml(t("action.reject"))}</button>
         <button id="accept-anyway" \${disabled}>\${escapeHtml(t("action.acceptAnyway"))}</button>
@@ -1327,6 +1363,31 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       document.querySelectorAll("[data-clean-deleted-candidates]").forEach((button) => {
         button.addEventListener("click", cleanupDeletedCandidates);
       });
+      // Bound before the save-button guard: rollback renders on reviewed
+      // candidates, which have no save button, so binding it after the early
+      // return meant the control existed and did nothing.
+      const rollbackButton = el("rollback");
+      if (rollbackButton) {
+        rollbackButton.addEventListener("click", () => runDetailAction(async () => {
+          if (!confirm(t("confirm.rollback"))) return;
+          try {
+            const data = await api("/api/candidate/rollback", {
+              method: "POST",
+              body: JSON.stringify({
+                projectRoot: state.projectRoot,
+                sessionId: state.sessionId,
+                candidateId: candidate.id
+              })
+            });
+            await syncAfterMutation(data.candidate.id);
+            showReceipt(data.receipt);
+            showStatus(t("status.candidateRolledBack"));
+          } catch (error) {
+            showStatus(error.message, true);
+          }
+        }));
+      }
+
       const save = el("save");
       if (!save) return;
       save.addEventListener("click", () => runDetailAction(async () => {
@@ -1342,6 +1403,27 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           showStatus(error.message, true);
         }
       }));
+      const approveButton = el("approve");
+      if (approveButton) {
+        approveButton.addEventListener("click", () => runDetailAction(async () => {
+          try {
+            // Send the current draft, exactly as Save and Accept do. Posting
+            // only the id would authorize the *stored* revision while the
+            // user's unsaved edit sat on screen, and the re-render would then
+            // discard that edit silently.
+            const data = await api("/api/candidate/approve", {
+              method: "POST",
+              body: JSON.stringify(candidatePayload(candidate.id))
+            });
+            await syncAfterMutation(data.candidate.id);
+            showReceipt(data.receipt);
+            showStatus(t("status.candidateApproved"));
+          } catch (error) {
+            showStatus(error.message, true);
+          }
+        }));
+      }
+
       el("accept").addEventListener("click", () => acceptCandidate({}));
       el("accept-anyway").addEventListener("click", () => acceptCandidate({ acceptAnyway: true }));
       el("supersede").addEventListener("click", () => {
@@ -1358,6 +1440,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
             body: JSON.stringify({ projectRoot: state.projectRoot, sessionId: state.sessionId, candidateId: candidate.id, reason })
           });
           await syncAfterMutation(data.candidate.id);
+          showReceipt(data.receipt);
           showStatus(t("status.candidateRejected"));
         } catch (error) {
           showStatus(error.message, true);
@@ -1386,6 +1469,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         await syncAfterMutation(data.candidate.id);
         state.conflicts = [];
         state.candidateDirty = false;
+        showReceipt(data.receipt);
         showStatus(t("status.candidateAccepted"));
       } catch (error) {
         if (error.payload?.possible_conflicts) {

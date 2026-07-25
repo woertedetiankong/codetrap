@@ -205,6 +205,8 @@ codetrap/
 | `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
 | `embeddings` | Manage embedding profiles (`status`, `list`, `use ollama|jina`, `reindex`) |
 | `learn` | Review your own Codex or Claude Code history for reusable lessons (`sources`, `review`, `evidence-pack`, `reviews`, `stage`, `delete`); read-only against history, writes only a review directory |
+| `useful` | Record that a recalled trap actually helped — the signal that separates lessons that work from lessons that merely exist |
+| `pack` | Export a user-curated context pack of committed lessons for planning time (`pack export --traps 1,2,3`) |
 | `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, approve/accept/reject/roll back candidates, migrate candidate records between schema versions, inspect authorization receipts and suppressed lessons, and clean up session files |
 | `web` | Start the local review, trap library, insights, and Embeddings console |
 | `serve` | Start MCP server |
@@ -383,6 +385,37 @@ provenance to resolve.
 The `codetrap-learning-review` skill drives this flow and installs for both
 clients.
 
+### Did it actually help?
+
+`hit_count` counts views. It says nothing about whether a lesson changed what an
+agent did, so it cannot answer the only question that matters about a memory
+product. `codetrap useful <id>` — and the MCP `mark_trap_useful` tool — record
+that separately:
+
+```bash
+codetrap search "block comment terminator" --json   # pre-flight recall
+codetrap useful 5                                   # it actually helped
+```
+
+An agent should call it only when the lesson genuinely changed its behavior.
+Marking every recall useful would make the number meaningless and the product
+unfalsifiable.
+
+### Context packs
+
+Pre-flight search is agent-initiated and catches the pitfall you have already
+forgotten. A context pack is the other direction: **you** pick committed lessons
+and hand them to an agent at planning time.
+
+```bash
+codetrap pack export --traps 2,5            # Markdown, ready to paste
+codetrap pack export --traps 2,5 --json
+```
+
+Only committed lessons are eligible. Packs are never auto-injected and never
+replace pre-flight search — they are a convenience over data you already
+approved.
+
 ### Concurrency
 
 Codex and Claude Code can both be active against one store, so every
@@ -502,6 +535,7 @@ codetrap add_trap_evidence <id> \
 |---|---|
 | `search_traps` | Compact action-card search across active traps |
 | `add_trap` | Record a new trap directly |
+| `mark_trap_useful` | Report that a recalled trap actually helped on this task — the usefulness signal, distinct from a view |
 | `capture_candidate` | Propose a pitfall for human review instead of writing it directly — writes a candidate to the session inbox for `session accept`/`reject` or the web console (preferred for the capture→review→accept workflow) |
 | `get_trap` | Drill down into full trap details and evidence |
 | `list_traps` | List traps with filters |

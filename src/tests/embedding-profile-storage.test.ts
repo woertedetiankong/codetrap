@@ -13,6 +13,7 @@ import {
 } from "../lib/embedder";
 import { passageHashForTrap } from "../lib/trap-search-document";
 import { trap } from "./helpers";
+import { SCHEMA_VERSION } from "../lib/constants";
 
 describe("embedding profile storage", () => {
   test("creates profile-aware embedding tables when no embedding table exists", () => {
@@ -29,7 +30,7 @@ describe("embedding profile storage", () => {
 
       initSchema(db);
 
-      expect((db.query("SELECT version FROM schema_version").get() as { version: number }).version).toBe(7);
+      expect((db.query("SELECT version FROM schema_version").get() as { version: number }).version).toBe(SCHEMA_VERSION);
       expect(columnNames(db, "trap_embeddings")).toContain("profile_id");
       expect(columnNames(db, "embedding_profiles")).toContain("passage_version");
     } finally {
@@ -87,7 +88,7 @@ describe("embedding profile storage", () => {
 
       initSchema(db);
 
-      expect((db.query("SELECT version FROM schema_version").get() as { version: number }).version).toBe(7);
+      expect((db.query("SELECT version FROM schema_version").get() as { version: number }).version).toBe(SCHEMA_VERSION);
       expect(db.query("SELECT trap_id, profile_id, passage_hash FROM trap_embeddings").get()).toEqual({
         trap_id: 1,
         profile_id: "mock:profile:2:p1",
@@ -139,7 +140,7 @@ describe("embedding profile storage", () => {
 
       initSchema(db);
 
-      expect((db.query("SELECT version FROM schema_version").get() as { version: number }).version).toBe(7);
+      expect((db.query("SELECT version FROM schema_version").get() as { version: number }).version).toBe(SCHEMA_VERSION);
       expect(db.query("SELECT * FROM embedding_profiles").get()).toMatchObject({
         id: "jina:jina-embeddings-v5-text-small:1024:p1",
         provider: "jina",
@@ -258,7 +259,7 @@ describe("embedding profile storage", () => {
 
     const reopened = openDatabase(dbPath);
     try {
-      expect((reopened.query("SELECT version FROM schema_version").get() as { version: number }).version).toBe(7);
+      expect((reopened.query("SELECT version FROM schema_version").get() as { version: number }).version).toBe(SCHEMA_VERSION);
       const backups = readdirSync(join(dir, "backups"));
       expect(backups).toHaveLength(1);
       expect(backups[0]).toContain("traps.db.pre-migration-v5.");

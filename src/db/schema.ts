@@ -229,6 +229,21 @@ function applyMigrations(db: Database, from: number): void {
     createProjectMetaTable(db);
     db.prepare("UPDATE schema_version SET version = ?").run(7);
   }
+
+  if (from < 8) {
+    // §16 1E: usefulness is a distinct signal from recall. `hit_count` counts
+    // views (it increments on `codetrap show` and MCP get_trap); it cannot
+    // answer "did this lesson actually help", which is the §17 falsifier's
+    // question and §14's product metric. Additive columns, no data rewrite.
+    addColumnIfMissing(db, "traps", "useful_count", "INTEGER NOT NULL DEFAULT 0");
+    addColumnIfMissing(db, "traps", "last_useful_at", "TEXT");
+    db.prepare("UPDATE schema_version SET version = ?").run(8);
+  }
+}
+
+function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {
+  if (columnExists(db, table, column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 function createProjectMetaTable(db: Database): void {

@@ -118,6 +118,10 @@ export class TrapRepository {
     queries.incrementHitCount(this.db, id);
   }
 
+  markUseful(id: number, at: string): boolean {
+    return queries.markTrapUseful(this.db, id, at);
+  }
+
   top(scope: string, limit = 20): Trap[] {
     return queries.getTopTraps(this.db, scope, limit);
   }

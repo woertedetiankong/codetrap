@@ -240,6 +240,18 @@ export class TrapStore {
     }
   }
 
+  markUseful(id: number, scope?: string, now = new Date()): { success: boolean; scope?: string } {
+    for (const scoped of this.scopes.repositoriesForRead(scope)) {
+      if (scope || scoped.repository.get(id)) {
+        return {
+          success: scoped.repository.markUseful(id, now.toISOString()),
+          scope: scoped.scope,
+        };
+      }
+    }
+    return { success: false };
+  }
+
   topTraps(scope: string, limit = 20): Trap[] {
     const resolvedScope = normalizeScope(scope);
     return this.scopes.repositoryFor(resolvedScope).top(resolvedScope, limit);
