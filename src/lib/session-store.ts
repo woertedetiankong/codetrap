@@ -4,21 +4,21 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import type { CandidateTrap, CandidateTrapDocument, SessionIndexDocument, SessionIndexEntry, SessionMetadata, SessionNote } from "../domain/session";
 import { parseSessionNoteKind, SESSION_VERSION } from "../domain/session";
 import { CODETRAP_DIR } from "./constants";
+import { readJsonFile as readJsonFileRaw, writeFileAtomic } from "./fs-json";
 import {
   acceptCandidateInDocument,
   addCandidateToDocument,
   recordCandidateConflictCheckInDocument,
   rejectCandidateInDocument,
   removeCandidatesFromDocument,
+  rollbackCandidateInDocument,
   saveCandidateTrapInDocument,
   type CandidateDocumentUpdateResult,
 } from "./session-candidate-document";
@@ -62,6 +62,11 @@ export interface CloseSessionResult {
   session: SessionMetadata;
   recap_path: string;
   candidate_count: number;
+}
+
+export interface CloseSessionOptions {
+  /** Drops note-derived candidates whose lesson the user already suppressed. */
+  isSuppressed?: (candidate: CandidateTrap) => boolean;
 }
 
 export interface AcceptCandidateResult {
@@ -120,6 +125,10 @@ const LOCK_RETRY_MS = 25;
 
 export class SessionStore {
   constructor(private readonly projectRoot: string) {}
+
+  getProjectRoot(): string {
+    return this.projectRoot;
+  }
 
   startSession(args: StartSessionArgs, now = new Date()): SessionMetadata {
     const goal = args.goal.trim();
@@ -247,7 +256,12 @@ export class SessionStore {
     };
   }
 
-  closeSession(id: string | undefined, proposeTraps: boolean, now = new Date()): CloseSessionResult {
+  closeSession(
+    id: string | undefined,
+    proposeTraps: boolean,
+    now = new Date(),
+    options: CloseSessionOptions = {}
+  ): CloseSessionResult {
     return this.withLock(() => {
       const session = this.requireSession(this.resolveSessionId(id, { requireActive: id === undefined }));
       if (session.status === "closed") throw new Error(`Session ${session.id} is already closed.`);
@@ -255,8 +269,12 @@ export class SessionStore {
       const closedAt = now.toISOString();
       const notes = this.readNotes(session.id);
       const existingCandidates = this.readCandidateDocument(session.id).candidates;
+      // A suppressed lesson must not come back through close --propose-traps
+      // either; the note that produced it is still in the session (§16 1A).
+      // Only computed under --propose-traps: a plain close must not read the
+      // suppression index at all, let alone fail on it.
       const candidates = proposeTraps
-        ? mergeCandidateTraps(existingCandidates, proposeCandidateTraps(session, notes))
+        ? mergeCandidateTraps(existingCandidates, this.proposeUnsuppressed(session, notes, options))
         : existingCandidates;
       if (proposeTraps) this.writeCandidateDocument(session.id, candidates);
 
@@ -421,6 +439,22 @@ export class SessionStore {
     });
   }
 
+  rollbackCandidate(
+    candidateId: string,
+    args: { sessionId?: string }
+  ): { session: SessionMetadata; candidate: CandidateTrap } {
+    return this.withLock(() => {
+      const sessionId = this.resolveSessionId(args.sessionId);
+      const session = this.requireSession(sessionId);
+      const document = this.readCandidateDocument(sessionId);
+      return this.saveCandidateDocumentMutation(session, rollbackCandidateInDocument(
+        document.candidates,
+        candidateId,
+        { sessionId }
+      ));
+    });
+  }
+
   removeCandidates(sessionId: string | undefined, candidateIds: string[]): RemoveSessionCandidatesResult {
     return this.withLock(() => {
       const resolvedSessionId = this.resolveSessionId(sessionId);
@@ -504,6 +538,17 @@ export class SessionStore {
     };
   }
 
+  private proposeUnsuppressed(
+    session: SessionMetadata,
+    notes: SessionNote[],
+    options: CloseSessionOptions
+  ): CandidateTrap[] {
+    const proposed = proposeCandidateTraps(session, notes);
+    if (!options.isSuppressed || proposed.length === 0) return proposed;
+    const isSuppressed = options.isSuppressed;
+    return proposed.filter((candidate) => !isSuppressed(candidate));
+  }
+
   private withLock<T>(fn: () => T): T {
     this.ensureSessionsDir();
     const lockDir = join(this.sessionsDir(), LOCK_DIR);
@@ -581,7 +626,7 @@ export class SessionStore {
   private getSessionOrNull(id: string): SessionMetadata | null {
     const path = this.sessionJsonPath(id);
     if (!existsSync(path)) return null;
-    return readJsonFile<SessionMetadata>(path);
+    return this.readJson<SessionMetadata>(path);
   }
 
   private findCandidate(sessionId: string, candidateId: string): CandidateTrap {
@@ -599,12 +644,16 @@ export class SessionStore {
     return { session, candidate: mutation.candidate };
   }
 
+  private readJson<T>(path: string): T {
+    return readJsonFileRaw<T>(path, "session file");
+  }
+
   private readCandidateDocument(id: string): CandidateTrapDocument {
     const path = this.candidatesPath(id);
     if (!existsSync(path)) {
       return { version: SESSION_VERSION, session_id: id, candidates: [] };
     }
-    return readJsonFile<CandidateTrapDocument>(path);
+    return this.readJson<CandidateTrapDocument>(path);
   }
 
   private writeCandidateDocument(id: string, candidates: CandidateTrap[]): void {
@@ -630,7 +679,7 @@ export class SessionStore {
   private readIndex(): SessionIndexDocument {
     const path = this.indexPath();
     if (!existsSync(path)) return { version: SESSION_VERSION, sessions: [] };
-    return readJsonFile<SessionIndexDocument>(path);
+    return this.readJson<SessionIndexDocument>(path);
   }
 
   private writeIndexEntry(
@@ -688,7 +737,7 @@ export class SessionStore {
   private readActive(): { active_session_id: string | null; updated_at: string } | null {
     const path = this.activePath();
     if (!existsSync(path)) return null;
-    return readJsonFile<{ active_session_id: string | null; updated_at: string }>(path);
+    return this.readJson<{ active_session_id: string | null; updated_at: string }>(path);
   }
 
   private writeActive(id: string): void {
@@ -760,18 +809,3 @@ export class SessionStore {
   }
 }
 
-function writeFileAtomic(path: string, content: string): void {
-  const tmp = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  writeFileSync(tmp, content);
-  renameSync(tmp, path);
-}
-
-function readJsonFile<T>(path: string): T {
-  const text = readFileSync(path, "utf-8");
-  try {
-    return JSON.parse(text) as T;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Corrupt session file ${path}: ${message}. Fix or delete the file, then retry.`);
-  }
-}

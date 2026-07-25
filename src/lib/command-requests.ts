@@ -5,6 +5,7 @@ import {
   DEFAULT_OLLAMA_ENDPOINT,
   DEFAULT_OLLAMA_MODEL,
 } from "./embedder";
+import { parseExecutor, type AuthorizationInput } from "../domain/learning";
 import { capturedTrapMarkdownInput } from "./session-capture";
 import { uniqueStrings as uniqueStringList } from "./string-list";
 import type { SearchTrapsArgs, ListTrapsArgs } from "./trap-operations";
@@ -73,14 +74,20 @@ export type SessionCandidateRequest = {
   sessionId?: string;
 };
 
-export type SessionAcceptRequest = SessionCandidateRequest & {
+export type SessionAcceptRequest = SessionCandidateRequest & AuthorizationInput & {
   edit?: Record<string, unknown>;
   supersedesId?: number;
   acceptAnyway: boolean;
 };
 
-export type SessionRejectRequest = SessionCandidateRequest & {
+export type SessionRejectRequest = SessionCandidateRequest & AuthorizationInput & {
   reason?: string;
+};
+
+export type SessionRollbackRequest = SessionCandidateRequest & AuthorizationInput;
+
+export type SessionUnsuppressRequest = AuthorizationInput & {
+  fingerprint: string;
 };
 
 export type SessionPruneRequest = {
@@ -273,6 +280,7 @@ export function sessionCandidateRequestFromArgs(positionals: string[], args: Raw
 export function sessionAcceptRequestFromArgs(positionals: string[], args: RawArgs): SessionAcceptRequest {
   return {
     ...sessionCandidateRequestFromArgs(positionals, args),
+    ...authorizationFromArgs(args),
     edit: jsonObjectOption(args, "edit-json"),
     supersedesId: optionalIntOption(args, "supersedes"),
     acceptAnyway: flagPresent(args, "accept-anyway"),
@@ -282,7 +290,33 @@ export function sessionAcceptRequestFromArgs(positionals: string[], args: RawArg
 export function sessionRejectRequestFromArgs(positionals: string[], args: RawArgs): SessionRejectRequest {
   return {
     ...sessionCandidateRequestFromArgs(positionals, args),
+    ...authorizationFromArgs(args),
     reason: stringOption(args, "reason"),
+  };
+}
+
+export function sessionRollbackRequestFromArgs(positionals: string[], args: RawArgs): SessionRollbackRequest {
+  return {
+    ...sessionCandidateRequestFromArgs(positionals, args),
+    ...authorizationFromArgs(args),
+  };
+}
+
+export function sessionUnsuppressRequestFromArgs(positionals: string[], args: RawArgs): SessionUnsuppressRequest {
+  return {
+    fingerprint: requiredPositional(positionals, 0, "fingerprint"),
+    ...authorizationFromArgs(args),
+  };
+}
+
+/**
+ * `--executor` and `--authorized-scope` accompany every durable write (§3.2).
+ * Both are recorded as declared by the caller; codetrap does not verify either.
+ */
+function authorizationFromArgs(args: RawArgs): AuthorizationInput {
+  return {
+    executor: parseExecutor(stringOption(args, "executor")),
+    authorizedScope: stringOption(args, "authorized_scope", "authorized-scope"),
   };
 }
 

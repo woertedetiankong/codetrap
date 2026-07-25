@@ -72,8 +72,21 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
           sourceRef: args.source_ref,
           evidenceNote: args.evidence_note,
         });
+        if (result.suppressed) {
+          return toMcpTextJson({
+            success: true,
+            suppressed: true,
+            fingerprint: result.fingerprint,
+            title: result.title,
+            suppressed_at: result.suppression.suppressed_at,
+            reason: result.suppression.reason,
+            review:
+              "The user already rejected this lesson, so it was not added to the inbox and nothing was written. Do not re-submit it; if the user asks for it back, they run 'codetrap session unsuppress <fingerprint>'.",
+          });
+        }
         return toMcpTextJson({
           success: true,
+          suppressed: false,
           session_id: result.session.id,
           candidate_id: result.candidate.id,
           status: result.candidate.status,

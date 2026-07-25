@@ -1,12 +1,20 @@
 import type { CandidateTrap } from "../domain/session";
 import { parseSessionNoteKind } from "../domain/session";
-import type { Scope } from "./constants";
+import {
+  DEFAULT_EXECUTOR,
+  defaultAuthorizedScope,
+  type AuthorizationInput,
+  type LearningReceipt,
+  type SuppressionRecord,
+} from "../domain/learning";
 import type { TrapOperations } from "./trap-operations";
+import { LearningStore } from "./learning-store";
 import {
   capturedCandidateDraft,
   capturedTrapInput,
   candidateWithTrapEdits,
   captureGoal,
+  trapFingerprint,
 } from "./session-capture";
 import { candidateAcceptedScope } from "./session-candidate-scope";
 import { findCandidateConflicts, type CandidateConflict } from "./session-conflicts";
@@ -28,7 +36,9 @@ import type {
 } from "./session-store";
 import { uniqueStrings } from "./string-list";
 
-export type SessionAcceptRequest = {
+export type { AuthorizationInput };
+
+export type SessionAcceptRequest = AuthorizationInput & {
   candidateId: string;
   sessionId?: string;
   edit?: Record<string, unknown>;
@@ -42,10 +52,19 @@ export type SessionSaveCandidateRequest = {
   edit: Record<string, unknown>;
 };
 
-export type SessionRejectRequest = {
+export type SessionRejectRequest = AuthorizationInput & {
   candidateId: string;
   sessionId?: string;
   reason?: string | null;
+};
+
+export type SessionRollbackRequest = AuthorizationInput & {
+  candidateId: string;
+  sessionId?: string;
+};
+
+export type SessionUnsuppressRequest = AuthorizationInput & {
+  fingerprint: string;
 };
 
 export type SessionPruneRequest = {
@@ -72,12 +91,14 @@ export type SessionConflictResult = {
 
 export type SessionAcceptSuccess = AcceptCandidateResult & {
   success: true;
+  receipt: LearningReceipt;
 };
 
 export type SessionAcceptResult = SessionAcceptSuccess | SessionConflictResult;
 
-export type SessionCaptureResult = {
+export type SessionCapturedResult = {
   success: true;
+  suppressed: false;
   session: ReturnType<SessionStore["getSession"]>;
   candidate: CandidateTrap;
   candidate_count: number;
@@ -86,13 +107,49 @@ export type SessionCaptureResult = {
   closed_session: boolean;
   duplicate: boolean;
   recap_path: string | null;
+  fingerprint: string;
+};
+
+/**
+ * A capture that never entered the inbox because the user already suppressed
+ * this lesson. No session is created and nothing is written.
+ */
+export type SessionCaptureSuppressedResult = {
+  success: true;
+  suppressed: true;
+  suppression: SuppressionRecord;
+  fingerprint: string;
+  title: string;
+};
+
+export type SessionCaptureResult = SessionCapturedResult | SessionCaptureSuppressedResult;
+
+export type SessionRollbackResult = {
+  success: true;
+  session: ReturnType<SessionStore["getSession"]>;
+  candidate: CandidateTrap;
+  trap_id: number;
+  scope: string;
+  trap_deleted: boolean;
+  receipt: LearningReceipt;
+};
+
+export type SessionUnsuppressResult = {
+  success: true;
+  suppression: SuppressionRecord;
+  receipt: LearningReceipt;
 };
 
 export class SessionOperations {
+  private readonly learning: LearningStore;
+
   constructor(
     private readonly sessions: SessionStore,
-    private readonly traps: TrapOperations
-  ) {}
+    private readonly traps: TrapOperations,
+    learning?: LearningStore
+  ) {
+    this.learning = learning ?? new LearningStore(sessions.getProjectRoot());
+  }
 
   startSession(args: StartSessionArgs) {
     return this.sessions.startSession(args);
@@ -131,7 +188,15 @@ export class SessionOperations {
   }
 
   closeSession(id: string | undefined, proposeTraps: boolean): CloseSessionResult {
-    return this.sessions.closeSession(id, proposeTraps);
+    // The index is read once and closed over, rather than re-read for each of
+    // the candidates the close proposes.
+    let suppressed: Set<string> | null = null;
+    return this.sessions.closeSession(id, proposeTraps, new Date(), {
+      isSuppressed: (candidate) => {
+        suppressed ??= new Set(this.learning.listSuppressions().map((entry) => entry.fingerprint));
+        return suppressed.has(trapFingerprint(candidate.trap));
+      },
+    });
   }
 
   captureCandidate(request: SessionCaptureRequest): SessionCaptureResult {
@@ -139,6 +204,15 @@ export class SessionOperations {
     // Validate the note kind before creating any session so an invalid
     // --kind can't leak a permanently-active auto-session (M21).
     parseSessionNoteKind(request.kind);
+
+    // The suppression check runs before any write, including the auto-session:
+    // a suppressed lesson must leave no trace at all, or "does not reappear"
+    // degrades into "reappears in an empty session" (§16 1A).
+    const fingerprint = trapFingerprint(trap);
+    const suppression = this.learning.isSuppressed(fingerprint);
+    if (suppression) {
+      return { success: true, suppressed: true, suppression, fingerprint, title: trap.title };
+    }
 
     const active = this.sessions.status().session;
     const createdSession = active === null;
@@ -162,6 +236,7 @@ export class SessionOperations {
       const closed = createdSession ? this.sessions.closeSession(session.id, false) : null;
       return {
         success: true,
+        suppressed: false,
         session: closed?.session ?? captured.session,
         candidate: captured.candidate,
         candidate_count: this.sessions.candidateDocument(session.id).candidates.length,
@@ -170,6 +245,7 @@ export class SessionOperations {
         closed_session: closed !== null,
         duplicate: captured.duplicate,
         recap_path: closed?.recap_path ?? null,
+        fingerprint,
       };
     } catch (error) {
       // If we created the auto-session solely for this capture and a later
@@ -200,6 +276,14 @@ export class SessionOperations {
       sessionId: session.id,
       trap: editedCandidate.trap,
     });
+  }
+
+  listReceipts(limit = 0): LearningReceipt[] {
+    return this.learning.listReceipts(limit);
+  }
+
+  listSuppressions(): SuppressionRecord[] {
+    return this.learning.listSuppressions();
   }
 
   async acceptCandidate(request: SessionAcceptRequest): Promise<SessionAcceptResult> {
@@ -262,16 +346,131 @@ export class SessionOperations {
       };
     });
 
+    // The receipt is written after the trap is durably committed, so a receipt
+    // never claims a write that did not happen. The reverse gap — a trap with
+    // no receipt — is recoverable by rollback; a receipt with no trap is not.
+    const receipt = this.learning.appendReceipt({
+      action: "commit",
+      executor: request.executor ?? DEFAULT_EXECUTOR,
+      authorizedScope: authorizedScope(request, defaultAuthorizedScope(editedCandidate.id)),
+      fingerprint: trapFingerprint(trap),
+      title: trap.title,
+      sessionId: session.id,
+      candidateId: editedCandidate.id,
+      trapId: accepted.trap_id,
+      trapScope: accepted.scope,
+      supersededId: accepted.superseded_id,
+    });
+
     // Outside the transaction: embedding is an HTTP call and best-effort.
     await this.traps.embedTrapBestEffort(accepted.trap_id, accepted.scope);
-    return accepted;
+    return { ...accepted, receipt };
   }
 
+  /**
+   * Reverses a commit: deletes the durable trap and returns the candidate to
+   * the review queue, so the store matches its pre-accept state and the lesson
+   * can be reviewed again. The receipt log keeps the audit trail.
+   */
+  rollbackCandidate(request: SessionRollbackRequest): SessionRollbackResult {
+    const { session, candidate } = this.sessions.getCandidate(request.candidateId, request.sessionId);
+    if (candidate.status !== "accepted") {
+      throw new Error(`Candidate ${candidate.id} is ${candidate.status}, not accepted; nothing to roll back.`);
+    }
+    const trapId = candidate.accepted_trap_id;
+    if (trapId === undefined) {
+      throw new Error(`Candidate ${candidate.id} has no committed trap to roll back.`);
+    }
+    const scope = candidateAcceptedScope(candidate);
+
+    // A commit that superseded another trap cannot be reversed here: accept
+    // marked the predecessor `superseded`, and nothing in the store can put it
+    // back (status and valid_until are not updatable fields). Deleting the
+    // successor anyway would retire both lessons and silently lose the older
+    // one, so refuse instead. Restoring superseded traps is Phase 1B's.
+    const committed = this.traps.getTrapDetails(trapId, scope);
+    const supersededId = committed?.trap.supersedes_id ?? null;
+    if (supersededId !== null) {
+      throw new Error(
+        `Trap #${trapId} superseded trap #${supersededId}; rolling it back would leave #${supersededId} retired with no replacement. ` +
+        `Roll back manually: re-add trap #${supersededId}'s lesson, then \`codetrap delete ${trapId} --scope ${scope}\`.`
+      );
+    }
+
+    // Tolerate an already-deleted trap: the point of rollback is to reach the
+    // pre-accept state, and a candidate stranded by a bare `codetrap delete`
+    // is exactly the case that needs repairing.
+    const deleted = this.traps.deleteTrap(trapId, scope);
+    const rolledBack = this.sessions.rollbackCandidate(candidate.id, { sessionId: session.id });
+
+    const receipt = this.learning.appendReceipt({
+      action: "rollback",
+      executor: request.executor ?? DEFAULT_EXECUTOR,
+      authorizedScope: authorizedScope(request, defaultAuthorizedScope(candidate.id)),
+      fingerprint: trapFingerprint(candidate.trap),
+      title: candidate.trap.title,
+      sessionId: session.id,
+      candidateId: candidate.id,
+      trapId,
+      trapScope: scope,
+      reason: deleted.success ? null : `Trap #${trapId} was already absent from ${scope} scope.`,
+    });
+
+    return {
+      success: true,
+      session: rolledBack.session,
+      candidate: rolledBack.candidate,
+      trap_id: trapId,
+      scope,
+      trap_deleted: deleted.success,
+      receipt,
+    };
+  }
+
+  /**
+   * Rejecting a candidate also suppresses its lesson project-wide, so the same
+   * lesson mined again from the same evidence does not return to the inbox.
+   */
   rejectCandidate(request: SessionRejectRequest) {
-    return this.sessions.rejectCandidate(request.candidateId, {
+    const rejected = this.sessions.rejectCandidate(request.candidateId, {
       sessionId: request.sessionId,
       reason: request.reason,
     });
+    const fingerprint = trapFingerprint(rejected.candidate.trap);
+    const suppression = this.learning.recordSuppression({
+      fingerprint,
+      title: rejected.candidate.trap.title,
+      reason: request.reason,
+      sessionId: rejected.session.id,
+      candidateId: rejected.candidate.id,
+    });
+    const receipt = this.learning.appendReceipt({
+      action: "suppress",
+      executor: request.executor ?? DEFAULT_EXECUTOR,
+      authorizedScope: authorizedScope(request, defaultAuthorizedScope(rejected.candidate.id)),
+      fingerprint,
+      title: rejected.candidate.trap.title,
+      sessionId: rejected.session.id,
+      candidateId: rejected.candidate.id,
+      reason: request.reason,
+    });
+    return { ...rejected, suppression, receipt };
+  }
+
+  /** Undoes a suppression so the lesson can be captured again. */
+  unsuppress(request: SessionUnsuppressRequest): SessionUnsuppressResult {
+    const removed = this.learning.removeSuppression(request.fingerprint);
+    if (!removed) throw new Error(`No suppression found for fingerprint ${request.fingerprint}.`);
+    const receipt = this.learning.appendReceipt({
+      action: "unsuppress",
+      executor: request.executor ?? DEFAULT_EXECUTOR,
+      authorizedScope: authorizedScope(request, `suppression ${request.fingerprint} only`),
+      fingerprint: removed.fingerprint,
+      title: removed.title,
+      sessionId: removed.session_id,
+      candidateId: removed.candidate_id,
+    });
+    return { success: true, suppression: removed, receipt };
   }
 
   deleteSession(sessionId: string): DeleteSessionResult {
@@ -296,6 +495,10 @@ export class SessionOperations {
       .map((candidate) => candidate.id);
     return this.sessions.removeCandidates(sessionId, missingCandidateIds);
   }
+}
+
+function authorizedScope(request: AuthorizationInput, fallback: string): string {
+  return request.authorizedScope?.trim() || fallback;
 }
 
 function candidateRelatedFiles(candidate: CandidateTrap): string[] {

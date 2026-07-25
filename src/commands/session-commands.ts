@@ -11,13 +11,17 @@ import {
 } from "../lib/session-codec";
 import {
   sessionAcceptPayload,
+  sessionCaptureSuppressedPayload,
+  sessionCaptureSuppressedText,
   sessionCliConflictPayload,
   sessionCleanupPayload,
   sessionConflictPayload,
   sessionConflictText,
   sessionPayload,
   sessionRejectPayload,
+  sessionRollbackPayload,
 } from "../lib/session-review";
+import { EXECUTOR_IS_DECLARED, type LearningReceipt } from "../domain/learning";
 import {
   sessionAcceptRequestFromArgs,
   sessionCandidateRequestFromArgs,
@@ -28,8 +32,10 @@ import {
   sessionNoteRequestFromArgs,
   sessionPruneRequestFromArgs,
   sessionRejectRequestFromArgs,
+  sessionRollbackRequestFromArgs,
   sessionShowRequestFromArgs,
   sessionStartRequestFromArgs,
+  sessionUnsuppressRequestFromArgs,
 } from "../lib/command-requests";
 import { errorResult, jsonResult, textResult, type CommandResult } from "./command-result";
 import { errorFrom, parseArgs } from "./command-args";
@@ -69,6 +75,14 @@ export async function cmdSession(args: string[], store: TrapStore, trapOperation
         return cmdSessionAccept(rest, sessions);
       case "reject":
         return cmdSessionReject(rest, sessions);
+      case "rollback":
+        return cmdSessionRollback(rest, sessions);
+      case "receipts":
+        return cmdSessionReceipts(rest, sessions);
+      case "suppressions":
+        return cmdSessionSuppressions(rest, sessions);
+      case "unsuppress":
+        return cmdSessionUnsuppress(rest, sessions);
       case "delete":
         return cmdSessionDelete(rest, sessions);
       case "prune":
@@ -76,7 +90,7 @@ export async function cmdSession(args: string[], store: TrapStore, trapOperation
       case "cleanup":
         return cmdSessionCleanup(rest, sessions);
       default:
-        return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|capture|candidates|candidate|accept|reject|delete|prune|cleanup>");
+        return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|capture|candidates|candidate|accept|reject|rollback|receipts|suppressions|unsuppress|delete|prune|cleanup>");
     }
   } catch (error) {
     return errorFrom(error, args);
@@ -212,9 +226,15 @@ function cmdSessionCapture(args: string[], sessions: SessionOperations): Command
     readStdin: () => readFileSync(0, "utf-8"),
     readFile: (path) => readFileSync(path, "utf-8"),
   }));
+  if (result.suppressed) {
+    const suppressedPayload = sessionCaptureSuppressedPayload(result);
+    if (opts.json !== undefined) return jsonResult(suppressedPayload);
+    return textResult(sessionCaptureSuppressedText(suppressedPayload));
+  }
   const nextAction = `codetrap session candidate ${result.candidate.id} --session ${result.session.id} --json`;
   const payload = {
     success: true,
+    suppressed: false,
     session_id: result.session.id,
     candidate_id: result.candidate.id,
     status: result.candidate.status,
@@ -265,6 +285,8 @@ async function cmdSessionAccept(args: string[], sessions: SessionOperations): Pr
   if (opts.json !== undefined) return jsonResult(payload);
   const lines = [`Accepted ${accepted.candidate.id}; wrote trap #${accepted.trap_id} to ${accepted.scope} scope.`];
   if (accepted.superseded_id !== null) lines.push(`Superseded trap #${accepted.superseded_id}.`);
+  lines.push(receiptLine(accepted.receipt));
+  lines.push(`Undo: codetrap session rollback ${accepted.candidate.id} --session ${accepted.session.id}`);
   return textResult(lines.join("\n"));
 }
 
@@ -273,7 +295,83 @@ function cmdSessionReject(args: string[], sessions: SessionOperations): CommandR
   const rejected = sessions.rejectCandidate(sessionRejectRequestFromArgs(positionals, opts));
   const payload = sessionRejectPayload(rejected);
   if (opts.json !== undefined) return jsonResult(payload);
-  return textResult(`Rejected ${rejected.candidate.id}.`);
+  return textResult([
+    `Rejected ${rejected.candidate.id}.`,
+    `Suppressed ${payload.suppression.fingerprint} — this lesson will not be proposed again.`,
+    receiptLine(payload.receipt),
+    `Allow it again: codetrap session unsuppress ${payload.suppression.fingerprint}`,
+  ].join("\n"));
+}
+
+function cmdSessionRollback(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const result = sessions.rollbackCandidate(sessionRollbackRequestFromArgs(positionals, opts));
+  const payload = sessionRollbackPayload(result);
+  if (opts.json !== undefined) return jsonResult(payload);
+  return textResult([
+    result.trap_deleted
+      ? `Deleted trap #${result.trap_id} from ${result.scope} scope.`
+      : `Trap #${result.trap_id} was already absent from ${result.scope} scope.`,
+    `${result.candidate.id}: accepted -> proposed; it is back in the review queue.`,
+    receiptLine(payload.receipt),
+  ].join("\n"));
+}
+
+function cmdSessionReceipts(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts } = parseArgs(args);
+  const limit = receiptsLimit(opts.limit);
+  const receipts = sessions.listReceipts(limit);
+  if (opts.json !== undefined) {
+    return jsonResult({ executor_note: EXECUTOR_IS_DECLARED, receipts });
+  }
+  if (receipts.length === 0) return textResult("No receipts recorded.");
+  return textResult([
+    ...receipts.map((receipt) => [
+      `${receipt.recorded_at} ${receipt.action} by ${receipt.executor}`,
+      `  ${receipt.title}`,
+      `  authorized scope: ${receipt.authorized_scope}`,
+      `  destination: ${receipt.destination}${receipt.trap_id === null ? "" : ` trap #${receipt.trap_id} (${receipt.trap_scope})`}`,
+      `  fingerprint: ${receipt.fingerprint}`,
+      ...(receipt.reason ? [`  reason: ${receipt.reason}`] : []),
+    ].join("\n")),
+    "",
+    EXECUTOR_IS_DECLARED,
+  ].join("\n"));
+}
+
+function cmdSessionSuppressions(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts } = parseArgs(args);
+  const suppressions = sessions.listSuppressions();
+  if (opts.json !== undefined) return jsonResult({ suppressions });
+  if (suppressions.length === 0) return textResult("No suppressed lessons.");
+  return textResult(suppressions.map((entry) => [
+    `${entry.fingerprint}  ${entry.title}`,
+    `  suppressed ${entry.suppressed_at.slice(0, 10)}${entry.reason ? `: ${entry.reason}` : ""}`,
+  ].join("\n")).join("\n"));
+}
+
+function cmdSessionUnsuppress(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const result = sessions.unsuppress(sessionUnsuppressRequestFromArgs(positionals, opts));
+  if (opts.json !== undefined) return jsonResult(result);
+  return textResult([
+    `Unsuppressed ${result.suppression.fingerprint} ("${result.suppression.title}").`,
+    "It can be captured again.",
+    receiptLine(result.receipt),
+  ].join("\n"));
+}
+
+function receiptsLimit(value: unknown): number {
+  if (value === undefined) return 0;
+  const limit = Number(String(value));
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error(`Invalid --limit: ${String(value)}. Expected a positive integer.`);
+  }
+  return limit;
+}
+
+function receiptLine(receipt: LearningReceipt): string {
+  return `Receipt: ${receipt.action} by ${receipt.executor} (declared), authorized scope "${receipt.authorized_scope}".`;
 }
 
 function cmdSessionDelete(args: string[], sessions: SessionOperations): CommandResult {

@@ -1236,6 +1236,20 @@ Acceptance: one real candidate is approved, committed by an agent on explicit
 user instruction, searchable afterward, and reversible; one suppressed lesson
 does not reappear from the same evidence.
 
+> **Status: PASSED, 2026-07-25.** All six acceptance criteria met against the
+> real CLI and Web routes, not fixtures. Cluster C01 was reviewed per item,
+> approved as written, and committed by an agent on that instruction; rollback
+> was exercised, not claimed; cluster C16 was declined and did not return from
+> identical evidence. Four authorization receipts recorded scope and executor.
+> Criterion 3 required no code — search already found committed traps.
+> Carried forward as risk, not resolved: candidate quality is now evidenced at
+> n=1 rather than 100%-by-construction, so the §17 falsifier stays live;
+> suppression is exact-match and project-scoped; and the receipt records a
+> content hash but does **not yet enforce** authorization against it, which is
+> Phase 1B's "material edits invalidate authorization" criterion.
+> Coverage check (§9.3) went a second consecutive phase unexercised.
+> Evidence: `docs/tasks/2026-07-25-phase1a-existing-surface-vertical-proof/`.
+
 #### Phase 1B — Stable envelope and compatibility
 
 - Stabilize only `pitfall_trap` and `unclassified`, informed by Phase 0 data.
