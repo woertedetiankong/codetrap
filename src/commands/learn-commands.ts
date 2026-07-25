@@ -9,7 +9,7 @@ import { parseLearningSourceId, type LearningSourceId } from "../domain/learning
 import { errorResult, jsonResult, textResult, type CommandResult } from "./command-result";
 import { errorFrom, parseArgs } from "./command-args";
 
-const USAGE = "Usage: codetrap learn <sources|evidence-pack|review|stage|reviews>";
+const USAGE = "Usage: codetrap learn <sources|evidence-pack|review|stage|reviews|delete>";
 
 export function cmdLearn(args: string[], store: TrapStore, trapOperations: TrapOperations): CommandResult {
   const sub = args[0];
@@ -21,7 +21,8 @@ export function cmdLearn(args: string[], store: TrapStore, trapOperations: TrapO
   const learning = new LearningOperations(
     projectRoot,
     home,
-    new SessionOperations(new SessionStore(projectRoot), trapOperations)
+    new SessionOperations(new SessionStore(projectRoot), trapOperations),
+    trapOperations
   );
 
   try {
@@ -38,6 +39,8 @@ export function cmdLearn(args: string[], store: TrapStore, trapOperations: TrapO
         return cmdLearnReviews(rest, learning);
       case "stage":
         return cmdLearnStage(rest, learning);
+      case "delete":
+        return cmdLearnDelete(rest, learning);
       default:
         return errorResult(USAGE);
     }
@@ -110,7 +113,23 @@ function cmdLearnReviews(args: string[], learning: LearningOperations): CommandR
   const reviews = learning.listReviews();
   if (opts.json !== undefined) return jsonResult({ reviews });
   if (reviews.length === 0) return textResult("No learning reviews yet.");
-  return textResult(reviews.join("\n"));
+  return textResult(reviews
+    .map((entry) => `${entry.review_id}${entry.deleted ? "  (deleted; audit metadata only)" : ""}`)
+    .join("\n"));
+}
+
+function cmdLearnDelete(args: string[], learning: LearningOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const reviewId = positionals[0];
+  if (!reviewId) return errorResult("Usage: codetrap learn delete <review-id> [--json]");
+  const tombstone = learning.deleteReview(reviewId);
+  if (opts.json !== undefined) return jsonResult({ success: true, ...tombstone });
+  return textResult([
+    `Deleted review ${tombstone.review_id}.`,
+    "Excerpts removed. Retained for audit only:",
+    `  ${tombstone.retained.files_read} file(s) read, ${tombstone.retained.sessions} session(s),`,
+    `  ${tombstone.retained.evidence_count} evidence item(s), ${tombstone.retained.file_hashes.length} file hash(es).`,
+  ].join("\n"));
 }
 
 function cmdLearnStage(args: string[], learning: LearningOperations): CommandResult {
@@ -128,6 +147,26 @@ function cmdLearnStage(args: string[], learning: LearningOperations): CommandRes
   } else {
     lines.push(`Validated review ${result.review_id}. Nothing was staged.`);
   }
+  if (result.consolidated.length > 0) {
+    lines.push(`Consolidated ${result.consolidated.length} exact duplicate(s) into existing candidates:`);
+    lines.push(...result.consolidated.map((entry) =>
+      `  ${entry.candidate_id} ${entry.title} (sources: ${entry.contributing_sources.join(", ")})`));
+  }
+  const clustered = result.staged.filter((entry) => entry.review_cluster);
+  if (clustered.length > 0) {
+    lines.push(`Grouped ${clustered.length} candidate(s) into review clusters (both kept; you decide):`);
+    for (const entry of clustered) {
+      lines.push(`  ${entry.candidate_id} ${entry.title} -> ${entry.review_cluster}`);
+      lines.push(...(entry.similar_to ?? []).map((match) =>
+        `    similar to ${match.candidate_id} "${match.title}" (${match.score}, ${match.reason})`));
+    }
+  }
+  if (result.coverage_flagged.length > 0) {
+    lines.push(`Flagged ${result.coverage_flagged.length} candidate(s) with unverified coverage claims:`);
+    for (const entry of result.coverage_flagged) {
+      lines.push(`  ${entry.candidate_id} ${entry.title}: ${entry.failed_refs.join(", ")}`);
+    }
+  }
   if (result.suppressed.length > 0) {
     lines.push(`Suppressed ${result.suppressed.length} previously-skipped lesson(s):`);
     lines.push(...result.suppressed.map((entry) => `  ${entry.title}`));
@@ -141,7 +180,7 @@ function cmdLearnStage(args: string[], learning: LearningOperations): CommandRes
   }
   lines.push("");
   lines.push(
-    `staged: ${result.staged.length} candidates    suppressed: ${result.suppressed.length}`,
+    `staged: ${result.staged.length} candidates    consolidated: ${result.consolidated.length}    suppressed: ${result.suppressed.length}`,
     "durable writes: 0 — staging fills the review inbox; a human still approves and commits."
   );
   if (result.next_action) lines.push("", `Next: ${result.next_action.command}`);

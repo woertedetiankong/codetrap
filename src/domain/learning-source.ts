@@ -1,6 +1,16 @@
 export const SOURCE_MANIFEST_VERSION = 1;
 
 /**
+ * Bumped whenever the noise filter or turn-indexing changes.
+ *
+ * Evidence refs are `<session-id>#<turn-index>` where the index is assigned
+ * after noise filtering. Adding a noise prefix shifts every later index, so a
+ * ref minted under an older normalizer would silently resolve to a *different*
+ * excerpt. Recording the version lets staging refuse rather than mis-attribute.
+ */
+export const TURN_NORMALIZER_VERSION = 1;
+
+/**
  * The history sources codetrap can read itself (§6.1, pull mode). Agent-native
  * sources — memories, internal task summaries — are never read by the CLI; they
  * arrive through `learn stage` as agent-submitted candidates (§6.2).
@@ -72,6 +82,8 @@ export interface SourceManifestEntry {
  */
 export interface SourceManifest {
   version: typeof SOURCE_MANIFEST_VERSION;
+  /** The turn-indexing scheme these refs were minted under. */
+  normalizer_version: number;
   generated_at: string;
   roots: string[];
   entries: SourceManifestEntry[];

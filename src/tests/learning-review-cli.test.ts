@@ -269,7 +269,8 @@ describe("Phase 1C — learn CLI", () => {
     learnCli(["learn", "review", "--source", "claude-code-sessions", "--json"], cwd, home, clientHome);
     const listed = JSON.parse(learnCli(["learn", "reviews", "--json"], cwd, home, clientHome).stdout);
     expect(listed.reviews).toHaveLength(1);
-    expect(listed.reviews[0]).toContain("claude-code-sessions");
+    expect(listed.reviews[0].review_id).toContain("claude-code-sessions");
+    expect(listed.reviews[0].deleted).toBe(false);
   });
 });
 

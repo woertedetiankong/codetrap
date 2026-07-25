@@ -5,7 +5,6 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
 } from "node:fs";
 import { join } from "node:path";
 import type { CandidateTrap, CandidateTrapDocument, SessionIndexDocument, SessionIndexEntry, SessionMetadata, SessionNote } from "../domain/session";
@@ -15,6 +14,7 @@ import { CANDIDATE_SCHEMA_VERSION } from "../domain/candidate";
 import type { Executor } from "../domain/learning";
 import { migrateCandidates, type MigrateCandidateOptions } from "./candidate-envelope";
 import { readJsonFile as readJsonFileRaw, writeFileAtomic } from "./fs-json";
+import { withAdvisoryLock } from "./advisory-lock";
 import {
   acceptCandidateInDocument,
   addCandidateToDocument,
@@ -130,6 +130,12 @@ export function assertReadableCandidateVersion(version: number | undefined, path
 
 const SAFE_SESSION_ID = /^[A-Za-z0-9._-]+$/;
 
+function requireGoal(goal: string): string {
+  const trimmed = goal.trim();
+  if (!trimmed) throw new Error("Session goal is required.");
+  return trimmed;
+}
+
 export function assertSafeSessionId(id: string): void {
   if (!SAFE_SESSION_ID.test(id) || id === "." || id === "..") {
     throw new Error(`Invalid session id: ${id}`);
@@ -137,9 +143,6 @@ export function assertSafeSessionId(id: string): void {
 }
 
 const LOCK_DIR = ".lock";
-const LOCK_TIMEOUT_MS = 5_000;
-const LOCK_STALE_MS = 10_000;
-const LOCK_RETRY_MS = 25;
 
 export class SessionStore {
   private migrateOptions: MigrateCandidateOptions = {};
@@ -160,15 +163,34 @@ export class SessionStore {
   }
 
   startSession(args: StartSessionArgs, now = new Date()): SessionMetadata {
-    const goal = args.goal.trim();
-    if (!goal) throw new Error("Session goal is required.");
-
+    const goal = requireGoal(args.goal);
     return this.withLock(() => {
       const active = this.activeSession();
       if (active) {
         throw new Error(`Session ${active.id} is already active. Close it before starting another session.`);
       }
+      return this.startSessionLocked(goal, args, now);
+    });
+  }
 
+  /**
+   * Atomically returns the active session, creating one only if there is none.
+   *
+   * The check and the create must share one lock. `session capture` used to
+   * read the active session outside the lock and then call `startSession`, so
+   * two concurrent captures both saw "none", both tried to create, and the
+   * loser died with "already active" — losing its candidate entirely (§13.1).
+   */
+  getOrStartSession(args: StartSessionArgs, now = new Date()): { session: SessionMetadata; created: boolean } {
+    const goal = requireGoal(args.goal);
+    return this.withLock(() => {
+      const active = this.activeSession();
+      if (active) return { session: active, created: false };
+      return { session: this.startSessionLocked(goal, args, now), created: true };
+    });
+  }
+
+  private startSessionLocked(goal: string, args: StartSessionArgs, now: Date): SessionMetadata {
       const id = createSessionId(goal, now, (candidate) => existsSync(this.sessionDir(candidate)));
       const createdAt = now.toISOString();
       const session: SessionMetadata = {
@@ -197,7 +219,6 @@ export class SessionStore {
       this.writeIndexEntry(session, [], [], null);
       this.writeActive(id);
       return session;
-    });
   }
 
   addNote(args: AddSessionNoteArgs, now = new Date()): { session: SessionMetadata; note: SessionNote; notes_path: string } {
@@ -486,6 +507,30 @@ export class SessionStore {
     });
   }
 
+  /**
+   * Applies an arbitrary in-place update under the session lock. Used for
+   * provenance consolidation, which merges fields onto an existing candidate
+   * without changing its review state.
+   */
+  updateCandidateInPlace(
+    sessionId: string,
+    candidateId: string,
+    merge: (candidate: CandidateTrap) => CandidateTrap
+  ): CandidateTrap {
+    return this.withLock(() => {
+      const session = this.requireSession(sessionId);
+      const document = this.readCandidateDocument(sessionId);
+      const existing = document.candidates.find((item) => item.id === candidateId);
+      if (!existing) throw new Error(`Candidate ${candidateId} not found in session ${sessionId}.`);
+      const updated = merge(existing);
+      this.saveCandidateDocumentMutation(session, {
+        candidates: document.candidates.map((item) => item.id === candidateId ? updated : item),
+        candidate: updated,
+      });
+      return updated;
+    });
+  }
+
   rollbackCandidate(
     candidateId: string,
     args: { sessionId?: string }
@@ -596,43 +641,37 @@ export class SessionStore {
     return proposed.filter((candidate) => !isSuppressed(candidate));
   }
 
+  /** Milliseconds the most recent locked mutation spent waiting to acquire. */
+  lastLockWaitMs = 0;
+  private lockDepth = 0;
+
+  /**
+   * Runs `fn` under the project session lock, for callers that need a
+   * check-then-write to be one critical section. Re-entrant: the nested
+   * `withLock` calls inside `fn` reuse the held lock instead of deadlocking on
+   * a non-reentrant mkdir.
+   */
+  withProjectLock<T>(fn: () => T): T {
+    return this.withLock(fn);
+  }
+
   private withLock<T>(fn: () => T): T {
+    // A mkdir lock is not reentrant; without this a locked method calling
+    // another locked method would block on itself until the timeout.
+    if (this.lockDepth > 0) return fn();
+
     this.ensureSessionsDir();
-    const lockDir = join(this.sessionsDir(), LOCK_DIR);
-    const deadline = Date.now() + LOCK_TIMEOUT_MS;
-    for (;;) {
-      try {
-        mkdirSync(lockDir);
-        break;
-      } catch {
-        if (this.stealStaleLock(lockDir)) continue;
-        if (Date.now() >= deadline) {
-          throw new Error(
-            `Timed out waiting for the session lock at ${lockDir}. If no other codetrap process is running, delete that directory and retry.`
-          );
-        }
-        Bun.sleepSync(LOCK_RETRY_MS);
-      }
-    }
+    this.lockDepth += 1;
     try {
-      return fn();
+      const outcome = withAdvisoryLock(join(this.sessionsDir(), LOCK_DIR), fn);
+      this.lastLockWaitMs = outcome.lock_wait_ms;
+      return outcome.value;
     } finally {
-      rmSync(lockDir, { recursive: true, force: true });
+      this.lockDepth -= 1;
     }
   }
 
-  private stealStaleLock(lockDir: string): boolean {
-    try {
-      if (Date.now() - statSync(lockDir).mtimeMs > LOCK_STALE_MS) {
-        rmSync(lockDir, { recursive: true, force: true });
-        return true;
-      }
-    } catch {
-      // The lock vanished between attempts; retry immediately.
-      return true;
-    }
-    return false;
-  }
+
 
   private activeSession(): SessionMetadata | null {
     const active = this.readActive();

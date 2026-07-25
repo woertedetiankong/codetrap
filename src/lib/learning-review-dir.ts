@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import type { LearningSourceId, NormalizedSession, SourceManifest } from "../domain/learning-source";
+import { TURN_NORMALIZER_VERSION, type LearningSourceId, type NormalizedSession, type SourceManifest } from "../domain/learning-source";
 import { CODETRAP_DIR } from "./constants";
 import { writeFileAtomic } from "./fs-json";
 import { excerpt, MAX_EXCERPT_CHARS } from "./learning-redaction";
@@ -11,13 +11,28 @@ export const SOURCE_MANIFEST_FILE = "source-manifest.json";
 export const EVIDENCE_PACK_FILE = "evidence-pack.json";
 export const CANDIDATES_FILE = "lesson-candidates.json";
 export const PROMPT_FILE = "discovery-prompt.md";
+export const TOMBSTONE_FILE = "deleted.json";
 
 /** §7.2: both clients produce identical artifacts under this path. */
 export function reviewsRoot(projectRoot: string): string {
   return join(projectRoot, CODETRAP_DIR, LEARNING_DIR, REVIEWS_DIR);
 }
 
+const SAFE_REVIEW_ID = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * A review id becomes a path segment and `deleteReview` recursively removes it,
+ * so an unvalidated id is an arbitrary-directory delete: `learn delete ../..`
+ * would have wiped the entire `.codetrap` directory — traps.db included.
+ */
+export function assertSafeReviewId(reviewId: string): void {
+  if (!SAFE_REVIEW_ID.test(reviewId) || reviewId === "." || reviewId === "..") {
+    throw new Error(`Invalid review id: ${reviewId}`);
+  }
+}
+
 export function reviewDir(projectRoot: string, reviewId: string): string {
+  assertSafeReviewId(reviewId);
   return join(reviewsRoot(projectRoot), reviewId);
 }
 
@@ -58,6 +73,8 @@ export type EvidenceItem = {
 
 export type EvidencePack = {
   version: 1;
+  /** Mirrors the manifest, so a stale pack is detectable without it. */
+  normalizer_version: number;
   review_id: string;
   source: LearningSourceId;
   generated_at: string;
@@ -93,6 +110,7 @@ export function buildEvidencePack(args: {
 
   return {
     version: 1,
+    normalizer_version: TURN_NORMALIZER_VERSION,
     review_id: args.reviewId,
     source: args.source,
     generated_at: args.now.toISOString(),
@@ -161,6 +179,75 @@ export function writeReviewDir(args: {
     evidence_pack_path: packPath,
     prompt_path: promptPath,
   };
+}
+
+export type ReviewTombstone = {
+  version: 1;
+  review_id: string;
+  source: LearningSourceId;
+  deleted_at: string;
+  /** Non-sensitive audit metadata a committed trap's provenance still needs. */
+  retained: {
+    generated_at: string;
+    roots: string[];
+    files_read: number;
+    sessions: number;
+    bytes: number;
+    redactions: number;
+    evidence_count: number;
+    file_hashes: string[];
+  };
+  note: string;
+};
+
+/**
+ * §3.2: "deleting a review removes stored excerpts while preserving only
+ * non-sensitive audit metadata required for durable destinations."
+ *
+ * A trap committed from this review keeps pointing at the review id, so the id,
+ * the roots, the counts and the file hashes must survive. The excerpts — the
+ * only part that carries the user's actual content — do not.
+ */
+export function deleteReview(projectRoot: string, reviewId: string, now: Date): ReviewTombstone {
+  const dir = reviewDir(projectRoot, reviewId);
+  if (!existsSync(dir)) throw new Error(`No such review: ${reviewId}`);
+
+  const manifestPath = join(dir, SOURCE_MANIFEST_FILE);
+  const packPath = join(dir, EVIDENCE_PACK_FILE);
+  const manifest = existsSync(manifestPath)
+    ? JSON.parse(readFileSync(manifestPath, "utf-8")) as SourceManifest
+    : null;
+  const pack = existsSync(packPath)
+    ? JSON.parse(readFileSync(packPath, "utf-8")) as EvidencePack
+    : null;
+
+  const tombstone: ReviewTombstone = {
+    version: 1,
+    review_id: reviewId,
+    source: pack?.source ?? manifest?.entries[0]?.source ?? "claude-code-sessions",
+    deleted_at: now.toISOString(),
+    retained: {
+      generated_at: manifest?.generated_at ?? now.toISOString(),
+      roots: manifest?.roots ?? [],
+      files_read: manifest?.totals.files_read ?? 0,
+      sessions: manifest?.totals.sessions ?? 0,
+      bytes: manifest?.totals.bytes ?? 0,
+      redactions: manifest?.totals.redactions ?? 0,
+      evidence_count: pack?.evidence_count ?? 0,
+      // Hashes identify what was read without reproducing any of it.
+      file_hashes: manifest?.entries.map((entry) => entry.sha256) ?? [],
+    },
+    note: "Excerpts deleted. Only non-sensitive audit metadata is retained (§3.2).",
+  };
+
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  writeFileAtomic(join(dir, TOMBSTONE_FILE), `${JSON.stringify(tombstone, null, 2)}\n`);
+  return tombstone;
+}
+
+export function isDeletedReview(projectRoot: string, reviewId: string): boolean {
+  return existsSync(join(reviewDir(projectRoot, reviewId), TOMBSTONE_FILE));
 }
 
 /**

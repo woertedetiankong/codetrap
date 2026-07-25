@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { SOURCE_AGENT_BY_ID, type LearningSourceId } from "../domain/learning-source";
 import { parseCandidateKind, type CandidateKind } from "../domain/candidate";
+import type { CandidateTrap } from "../domain/session";
+import { buildTrapInput } from "../domain/trap";
 import { readJsonFile } from "./fs-json";
 import {
   CANDIDATES_FILE,
@@ -10,6 +12,7 @@ import {
   type EvidencePack,
 } from "./learning-review-dir";
 import { isRecord } from "./value-types";
+import type { CoverageClaim } from "./coverage-verify";
 
 export type StagedCandidateDraft = {
   title: string;
@@ -27,6 +30,8 @@ export type StagedCandidateDraft = {
   module?: string;
   owner?: string;
   evidence: { ref: string; note?: string }[];
+  /** Agent coverage claims, verified deterministically at staging (§9.3). */
+  coverage?: CoverageClaim;
 };
 
 export type StageRejection = {
@@ -122,6 +127,7 @@ export function validateStagedCandidates(args: {
       module: optionalText(row.module),
       owner: optionalText(row.owner),
       evidence,
+      coverage: isRecord(row.coverage) ? (row.coverage as CoverageClaim) : undefined,
     });
   });
 
@@ -156,8 +162,8 @@ export function readReviewArtifacts(reviewDir: string): { pack: EvidencePack; ca
  * Maps a validated draft onto the trap shape `session capture` already accepts,
  * so staging reuses the Phase 1A/1B inbox rather than inventing a second one.
  */
-export function draftToTrapInput(draft: StagedCandidateDraft): Record<string, unknown> {
-  return {
+export function draftToTrapInput(draft: StagedCandidateDraft): CandidateTrap["trap"] {
+  return buildTrapInput({
     title: draft.title,
     category: draft.category ?? "convention",
     scope: draft.scope ?? "project",
@@ -169,7 +175,7 @@ export function draftToTrapInput(draft: StagedCandidateDraft): Record<string, un
     context: draft.trigger,
     mistake: draft.lesson,
     fix: draft.recommended_action,
-  };
+  });
 }
 
 function normalizeEvidence(

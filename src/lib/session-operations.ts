@@ -276,13 +276,15 @@ export class SessionOperations {
       return { success: true, suppressed: true, suppression, fingerprint, title: trap.title };
     }
 
-    const active = this.sessions.status().session;
-    const createdSession = active === null;
-    const session = active ?? this.sessions.startSession({
+    // Atomic get-or-create: checking for an active session and then creating one
+    // as two steps let concurrent captures collide and lose a candidate (§13.1).
+    const started = this.sessions.getOrStartSession({
       goal: captureGoal(request.goal, trap.title),
       module: trap.module,
       owner: trap.owner,
     });
+    const session = started.session;
+    const createdSession = started.created;
 
     try {
       const captured = this.sessions.addCandidate({
@@ -343,6 +345,43 @@ export class SessionOperations {
       sessionId: session.id,
       trap: editedCandidate.trap,
     });
+  }
+
+  /** Milliseconds the most recent locked mutation waited (§13.1 observability). */
+  lockWaitMs(): number {
+    return this.sessions.lastLockWaitMs;
+  }
+
+  /** Every candidate in the project, for exact-duplicate and similarity checks. */
+  allCandidates(): { session_id: string; candidate: CandidateTrap }[] {
+    return this.sessions.listSessionIdsOnDisk().flatMap((sessionId) =>
+      this.sessions.candidateDocument(sessionId).candidates.map((candidate) => ({
+        session_id: sessionId,
+        candidate,
+      }))
+    );
+  }
+
+  /**
+   * Runs a staging decision with the project-wide candidate corpus read under
+   * the same lock that the resulting write takes.
+   *
+   * Without this the check and the write were separate acquisitions, so two
+   * concurrent `learn stage` runs of the same lesson both saw "no duplicate"
+   * and both created one — defeating the §13.4 consolidation guarantee in
+   * exactly the multi-agent scenario §13.1 exists for.
+   */
+  withCandidateCorpus<T>(fn: (corpus: { session_id: string; candidate: CandidateTrap }[]) => T): T {
+    return this.sessions.withProjectLock(() => fn(this.allCandidates()));
+  }
+
+  /** Writes merged provenance back onto an existing candidate (§13.4). */
+  mergeCandidateProvenance(
+    sessionId: string,
+    candidateId: string,
+    merge: (candidate: CandidateTrap) => CandidateTrap
+  ): CandidateTrap {
+    return this.sessions.updateCandidateInPlace(sessionId, candidateId, merge);
   }
 
   listReceipts(limit = 0): LearningReceipt[] {

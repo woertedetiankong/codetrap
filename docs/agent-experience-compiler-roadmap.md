@@ -1322,6 +1322,26 @@ and source manifest shape from both adapters; per-client doctor passes.
 Acceptance: concurrent stages lose no candidates; exact duplicates consolidate
 provenance; semantic matches remain distinct inside one review cluster.
 
+> **Status: PASSED, 2026-07-25.** All three criteria met against real concurrent
+> processes rather than a mocked lock — the concurrency test failed on first run
+> and exposed a race in session auto-creation the lock alone did not fix.
+> Consolidation is exact-hash only and excludes rejected, suppressed and
+> committed candidates; semantic neighbours are clustered on both sides and
+> never merged. Coverage claims are verified against real trap ids, file paths
+> and section anchors. Closes Phase 1A risk 5 (unlocked suppression index),
+> Phase 1C risk 1 (drifting evidence refs, now normalizer-versioned), and the
+> §3.2 retention/delete gap.
+> A pre-commit review caught twelve issues, including a `learn delete ../..`
+> path traversal that would have removed the entire `.codetrap` directory, and
+> a stale-lock steal with no ownership check that let two processes hold the
+> same lock. See the dossier.
+> Carried forward as risk: the lock is advisory and never refreshed; similarity
+> is lexical, so reworded duplicates cluster but do not consolidate;
+> `already_committed` reports rather than updates a trap's provenance; and
+> Phase 0 risk 4 (assistant reasoning and tool output still discarded by both
+> adapters) is now the oldest unpaid debt, five phases deep.
+> Evidence: `docs/tasks/2026-07-25-phase1d-locking-coverage-and-dedup/`.
+
 #### Phase 1E — Learning Inbox and runtime proof
 
 - Inbox list/card supports approve, edit, reject, user-visible skip/suppress,

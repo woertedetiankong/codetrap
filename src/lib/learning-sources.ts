@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import {
   SOURCE_MANIFEST_VERSION,
+  TURN_NORMALIZER_VERSION,
   type LearningSourceId,
   type NormalizedSession,
   type SourceManifest,
@@ -103,6 +104,7 @@ export function collectSessions(
     sessions,
     manifest: {
       version: SOURCE_MANIFEST_VERSION,
+      normalizer_version: TURN_NORMALIZER_VERSION,
       generated_at: now.toISOString(),
       roots,
       entries,
