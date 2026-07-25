@@ -1291,6 +1291,26 @@ point to their durable traps; material edits invalidate authorization.
 Acceptance: equivalent fixture histories produce the same normalized envelope
 and source manifest shape from both adapters; per-client doctor passes.
 
+> **Status: PASSED, 2026-07-25.** One adapter contract, two clients; `read`
+> takes allowed roots as a required argument so containment cannot be skipped.
+> Both criteria met, and the adapter independently reproduced a Phase 0
+> measurement (exactly 2 Codex sessions in the 30-day window) from shipped code
+> rather than a throwaway script. `learn sources | review | evidence-pack |
+> stage` ship with the shared `codetrap-learning-review` skill installed to both
+> clients. Staging deterministically verifies every claimed evidence ref, which
+> closes Phase 0 risk 5 for refs; review artifacts are gitignored at creation,
+> which closes Phase 0 risk 6.
+> A pre-commit review caught three privacy bugs, including a bearer token that
+> survived redaction because of rule ordering — see the dossier.
+> Carried forward as risk: evidence refs are position-after-filtering and would
+> drift if the noise filter changes; `--since` filters on file mtime, not
+> conversation time; tool output and assistant reasoning are still discarded by
+> both adapters, so Phase 0 risk 4 is carried intact; cross-client overlap
+> remains uncomputed; and Codex history is thin for this user (2 sessions in 30
+> days, 0 for this repo), so §3.1 symmetry is proven in code but still not in use.
+> Coverage check (§9.3) went a fourth consecutive phase unexercised.
+> Evidence: `docs/tasks/2026-07-25-phase1c-learning-review-cli-dual-source/`.
+
 #### Phase 1D — Compiler hardening
 
 - Add `.codetrap/learning/` locks and concurrent-write regression tests (§13.1).
