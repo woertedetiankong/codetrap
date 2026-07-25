@@ -242,6 +242,18 @@ export function incrementHitCount(db: Database, id: number): void {
   db.prepare("UPDATE traps SET hit_count = hit_count + 1 WHERE id = ?").run(id);
 }
 
+/**
+ * Records that a lesson actually helped, which is a different claim from having
+ * been retrieved. Like `incrementHitCount` this deliberately leaves
+ * `updated_at` alone so feedback does not reorder `list`.
+ */
+export function markTrapUseful(db: Database, id: number, at: string): boolean {
+  const result = db
+    .prepare("UPDATE traps SET useful_count = useful_count + 1, last_useful_at = ? WHERE id = ?")
+    .run(at, id);
+  return result.changes > 0;
+}
+
 export function getTopTraps(db: Database, scope: string, limit = 20): Trap[] {
   return db
     .query("SELECT * FROM traps WHERE scope = ? AND status = 'active' ORDER BY hit_count DESC LIMIT ?")
@@ -296,9 +308,9 @@ export function insertTrapRecord(db: Database, record: TrapRecordInsert): number
       title, category, tags, scope, context, mistake, fix, search_text,
       before_code, after_code, severity, state_key, status, supersedes_id,
       valid_from, valid_until, project_path, path_globs, module, owner,
-      hit_count, created_at, updated_at
+      hit_count, useful_count, last_useful_at, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     record.title,
@@ -322,6 +334,8 @@ export function insertTrapRecord(db: Database, record: TrapRecordInsert): number
     normalizeOptionalText(record.module),
     normalizeOptionalText(record.owner),
     record.hit_count,
+    record.useful_count,
+    record.last_useful_at,
     record.created_at,
     record.updated_at
   );

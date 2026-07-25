@@ -40,7 +40,8 @@ export async function cmdDoctor(args: string[], store: TrapStore, operations: Tr
     operations,
     process.cwd(),
     candidateReview,
-    candidateMigration
+    candidateMigration,
+    sessions?.inboxHealth() ?? null
   );
   return opts.json !== undefined
     ? jsonResult(report)

@@ -44,6 +44,8 @@ export type DoctorReport = {
   candidate_review: ProjectCandidateReviewSummary | null;
   /** Candidate records still on an older on-disk schema (§16 1B). */
   candidate_migration: CandidateMigrationStatus | null;
+  /** §4.2 inbox budgets, measured. */
+  inbox_health: InboxHealth | null;
   // §13.3: per-client (codex/claude) integration health — skills, guidance,
   // MCP registration — so a broken or stale client install is visible here
   // instead of failing silently at the next agent session.
@@ -57,12 +59,21 @@ export type CandidateMigrationStatus = {
   pending_records: number;
 };
 
+export type InboxHealth = {
+  pending_count: number;
+  soft_cap: number;
+  over_cap: boolean;
+  stale_count: number;
+  stale_after_days: number;
+};
+
 export async function buildDoctorReport(
   store: TrapStore,
   operations: TrapOperations,
   cwd = process.cwd(),
   candidateReview: ProjectCandidateReviewSummary | null = null,
-  candidateMigration: CandidateMigrationStatus | null = null
+  candidateMigration: CandidateMigrationStatus | null = null,
+  inboxHealth: InboxHealth | null = null
 ): Promise<DoctorReport> {
   const scope = createScopeContext(cwd);
   const stats = operations.getStats();
@@ -92,9 +103,10 @@ export async function buildDoctorReport(
     },
     candidate_review: candidateReview,
     candidate_migration: candidateMigration,
+    inbox_health: inboxHealth,
     clients,
     next_actions: [
-      ...buildDoctorNextActions(embeddingRuntime, embeddings, diagnostics, candidateReview, candidateMigration),
+      ...buildDoctorNextActions(embeddingRuntime, embeddings, diagnostics, candidateReview, candidateMigration, inboxHealth),
       ...clientNextActions(clients),
     ],
     mcp_hint: "Pass cwd in MCP tool calls, or restart codetrap serve after changing projects.",
@@ -136,6 +148,9 @@ export function formatDoctorText(report: DoctorReport): string {
     `  global_db_project_traps: ${report.diagnostics.mis_scoped_traps.global_db_project_traps.length}`,
     "Candidate review:",
     formatCandidateReview(report.candidate_review),
+    ...(report.inbox_health
+      ? [`Inbox budget:\n  ${report.inbox_health.pending_count}/${report.inbox_health.soft_cap} pending${report.inbox_health.over_cap ? " (over soft cap)" : ""}, ${report.inbox_health.stale_count} stale (>${report.inbox_health.stale_after_days}d)`]
+      : []),
     ...(report.candidate_migration && report.candidate_migration.pending_records > 0
       ? [`Candidate schema:\n  ${report.candidate_migration.pending_records} record(s) need migrating in: ${report.candidate_migration.pending_sessions.join(", ")}`]
       : []),
@@ -152,7 +167,8 @@ function buildDoctorNextActions(
   embeddings: EmbeddingStatsResult,
   diagnostics: ReturnType<TrapStore["diagnostics"]>,
   candidateReview: ProjectCandidateReviewSummary | null,
-  candidateMigration: CandidateMigrationStatus | null = null
+  candidateMigration: CandidateMigrationStatus | null = null,
+  inboxHealth: InboxHealth | null = null
 ): DoctorNextAction[] {
   const actions: DoctorNextAction[] = [];
   if (!embeddingRuntime.available) {
@@ -181,6 +197,18 @@ function buildDoctorNextActions(
     actions.push({
       command: "codetrap web",
       reason: "Open the candidate review console.",
+    });
+  }
+  if (inboxHealth?.over_cap) {
+    actions.push({
+      command: "codetrap web",
+      reason: `${inboxHealth.pending_count} pending candidates exceeds the soft cap of ${inboxHealth.soft_cap}; triage before the next review.`,
+    });
+  }
+  if (inboxHealth && inboxHealth.stale_count > 0) {
+    actions.push({
+      command: "codetrap session candidates --json",
+      reason: `${inboxHealth.stale_count} pending candidate(s) untouched for ${inboxHealth.stale_after_days}+ days need more evidence or a decision.`,
     });
   }
   if (candidateMigration && candidateMigration.pending_records > 0) {

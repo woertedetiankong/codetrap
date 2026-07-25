@@ -137,6 +137,8 @@ export function importRecordToTrapRecordInsert(
     module: input.module ?? null,
     owner: input.owner ?? null,
     hit_count: record.hit_count ?? 0,
+    useful_count: record.useful_count ?? 0,
+    last_useful_at: record.last_useful_at ?? null,
     created_at: createdAt,
     updated_at: isoToSqliteTimestamp(record.updated_at) ?? createdAt,
   };

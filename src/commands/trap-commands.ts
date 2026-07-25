@@ -16,6 +16,7 @@ import {
 } from "../lib/command-requests";
 import { mutationJsonPayload } from "../lib/trap-mutation-result";
 import { errorResult, jsonResult, textResult, type CommandResult } from "./command-result";
+import { buildContextPack, formatContextPackMarkdown } from "../lib/context-pack";
 import { errorFrom, errorMessage, failureMessage, parseArgs, wantsJson } from "./command-args";
 
 export async function cmdAdd(args: string[], operations: TrapOperations): Promise<CommandResult> {
@@ -110,6 +111,93 @@ export function cmdShow(args: string[], operations: TrapOperations): CommandResu
   return opts.json !== undefined
     ? jsonResult(toTrapDetailsJson(result))
     : textResult(formatTrapDetails(result));
+}
+
+/**
+ * §16 1E: the runtime-proof signal. An agent that recalled a lesson and found it
+ * genuinely useful says so here. Kept separate from `show`'s hit counter — a
+ * view is not evidence of help, and merging them would make every search look
+ * like a success and the §17 falsifier unfalsifiable.
+ */
+export function cmdUseful(args: string[], operations: TrapOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const id = parseId(positionals[0], "Usage: codetrap useful <id> [--scope project|global] [--json]");
+  if (typeof id !== "number") return id;
+
+  const details = operations.getTrapDetails(id, opts.scope);
+  if (!details) return failureMessage(`Trap #${id} not found.`, args);
+
+  const marked = operations.markTrapUseful(id, details.scope);
+  if (!marked.success) return failureMessage(`Trap #${id} could not be marked useful.`, args);
+
+  const updated = operations.getTrapDetails(id, details.scope);
+  const payload = {
+    success: true,
+    id,
+    scope: details.scope,
+    useful_count: updated?.trap.useful_count ?? 0,
+    last_useful_at: updated?.trap.last_useful_at ?? null,
+    title: details.trap.title,
+  };
+  if (opts.json !== undefined) return jsonResult(payload);
+  return textResult(
+    `Marked trap #${id} useful (${payload.useful_count} time(s)): ${details.trap.title}`
+  );
+}
+
+/**
+ * §12.1 / §16 1E: a curated context pack. Only *committed* lessons are eligible
+ * (§12.2), and the user chooses which — that is the whole point of the surface.
+ */
+export function cmdPack(args: string[], operations: TrapOperations, projectPath: string | null): CommandResult {
+  const sub = args[0];
+  if (sub !== "export") return errorResult("Usage: codetrap pack export --traps <id,id,...> [--scope <s>] [--json]");
+
+  const { opts } = parseArgs(args.slice(1));
+  const raw = typeof opts.traps === "string" ? opts.traps.trim() : "";
+  if (!raw) return errorResult("--traps is required: a comma-separated list of committed trap ids.");
+
+  // Every token must be a clean id. Dropping the unparseable ones would hand
+  // the user a pack quietly missing lessons they asked for.
+  const tokens = raw.split(",").map((value) => value.trim()).filter((value) => value !== "");
+  const invalid = tokens.filter((token) => !/^\d+$/.test(token));
+  if (invalid.length > 0) {
+    return errorResult(
+      `Invalid trap id(s) in --traps: ${invalid.join(", ")}. Expected a comma-separated list like 2,5 (no spaces).`
+    );
+  }
+  const ids = [...new Set(tokens.map((token) => Number.parseInt(token, 10)))];
+
+  const details = [];
+  const missing: number[] = [];
+  const retired: string[] = [];
+  for (const id of ids) {
+    const found = operations.getTrapDetails(id, opts.scope);
+    if (!found) {
+      missing.push(id);
+      continue;
+    }
+    // §12.2: only committed, runtime-eligible lessons belong in a pack. An
+    // archived or superseded trap pasted into planning context reads as
+    // current advice when it is precisely the opposite.
+    if (found.trap.status !== "active") {
+      retired.push(`#${id} (${found.trap.status})`);
+      continue;
+    }
+    details.push(found);
+  }
+  if (missing.length > 0) {
+    return errorResult(`No such trap(s): ${missing.join(", ")}. A context pack contains committed lessons only.`);
+  }
+  if (retired.length > 0) {
+    return errorResult(
+      `Not active: ${retired.join(", ")}. A context pack carries current lessons only; archived and superseded traps are excluded.`
+    );
+  }
+
+  const pack = buildContextPack({ details, projectPath, now: new Date() });
+  if (opts.json !== undefined) return jsonResult(pack);
+  return textResult(formatContextPackMarkdown(pack));
 }
 
 export async function cmdEdit(args: string[], operations: TrapOperations): Promise<CommandResult> {

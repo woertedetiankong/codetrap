@@ -34,6 +34,9 @@ export interface Trap {
   module: string | null;
   owner: string | null;
   hit_count: number;
+  /** Times a caller reported this lesson actually helped — not the same as being seen. */
+  useful_count: number;
+  last_useful_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -137,6 +140,8 @@ export type TrapImportRecord = Omit<TrapInput, "tags" | "before_code" | "after_c
   valid_from?: string | null;
   valid_until?: string | null;
   hit_count?: number | null;
+  useful_count?: number | null;
+  last_useful_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   evidence?: TrapImportEvidence[];

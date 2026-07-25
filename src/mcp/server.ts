@@ -113,6 +113,22 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
         return toMcpTextJson(toTrapDetailsJson(result));
       }
 
+      case "mark_trap_useful": {
+        const details = operations.getTrapDetails(args.id, args.scope);
+        if (!details) return toMcpTextError("not found");
+        const marked = operations.markTrapUseful(args.id, details.scope);
+        if (!marked.success) return toMcpTextError(`Trap #${args.id} could not be marked useful.`);
+        const updated = operations.getTrapDetails(args.id, details.scope);
+        return toMcpTextJson({
+          success: true,
+          id: args.id,
+          scope: details.scope,
+          useful_count: updated?.trap.useful_count ?? 0,
+          last_useful_at: updated?.trap.last_useful_at ?? null,
+          title: details.trap.title,
+        });
+      }
+
       case "list_traps": {
         const groups = operations.listTraps(listRequestFromArgs(args));
         return toMcpTextJson(toListJson(groups));
@@ -164,7 +180,8 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
           operations,
           effectiveCwd(args),
           sessions?.candidateReviewSummary() ?? null,
-          sessions?.candidateMigrationStatus() ?? null
+          sessions?.candidateMigrationStatus() ?? null,
+          sessions?.inboxHealth() ?? null
         );
         // §13.3: clients spawn MCP servers at startup, so after a binary
         // upgrade a stale server can keep running invisibly. Compare this

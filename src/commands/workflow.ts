@@ -13,6 +13,8 @@ import {
   cmdList,
   cmdSearch,
   cmdShow,
+  cmdPack,
+  cmdUseful,
   cmdStats,
   cmdSupersedeTrap,
 } from "./trap-commands";
@@ -49,6 +51,10 @@ async function dispatchCommand(sub: string, args: string[], store: TrapStore): P
       return cmdList(args, operations);
     case "show":
       return cmdShow(args, operations);
+    case "useful":
+      return cmdUseful(args, operations);
+    case "pack":
+      return cmdPack(args, operations, store.getProjectRoot());
     case "edit":
       return cmdEdit(args, operations);
     case "delete":
@@ -90,7 +96,7 @@ async function dispatchCommand(sub: string, args: string[], store: TrapStore): P
     default:
       return errorResult([
         `Unknown command: ${sub}`,
-        "Commands: init, add, search, list, show, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, setup, repair-scope, migrate-project, embed, embeddings, session, learn",
+        "Commands: init, add, search, list, show, useful, pack, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, setup, repair-scope, migrate-project, embed, embeddings, session, learn",
       ].join("\n"));
   }
 }
