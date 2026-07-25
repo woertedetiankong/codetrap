@@ -2,7 +2,9 @@
 
 Parent plan: `docs/agent-experience-compiler-roadmap.md` §16 Phase 0
 Date: 2026-07-25
-Status: **mining complete; awaiting user review** (the gate cannot close without it)
+Status: **closed 2026-07-25** — mining complete; all 16 clusters approved by
+user blanket decision. Candidate-quality gate **waived, not met** (see
+`metrics.md`). Proceeding to Phase 1A.
 
 ## What Phase 0 is for
 
@@ -57,10 +59,10 @@ Codex history worth mining.
 
 | Run | Corpus | Files | Lens |
 |---|---|---|---|
-| primary-failures | embedded-ai (+lanes) | 61 digests | recurring failure/misuse patterns |
-| primary-human | embedded-ai (+lanes) | 61 digests | user corrections, conventions, preferences |
-| primary-workflow | embedded-ai (+lanes) | 61 digests | workflows, SOPs, insights |
-| repeat-independent | zcode-UI, skill-op, codetrap | 19 digests | full discovery prompt, different projects |
+| primary-failures | Project-A (+lanes) | 61 digests | recurring failure/misuse patterns |
+| primary-human | Project-A (+lanes) | 61 digests | user corrections, conventions, preferences |
+| primary-workflow | Project-A (+lanes) | 61 digests | workflows, SOPs, insights |
+| repeat-independent | Project-B, Project-C, codetrap | 19 digests | full discovery prompt, different projects |
 
 The repeat run satisfies §16's "one repeat run from a different project". The
 three primary runs are independent lenses over one corpus: they never saw each
@@ -101,10 +103,18 @@ projects. Committing the excerpts would be precisely the trust failure §3.2
 exists to prevent, so the excerpt-bearing artifacts are gitignored and stay
 local. See `.gitignore` in this directory.
 
-## What is still required to close the gate
+## How the gate actually closed
 
-The user reviews `review-shortlist.md` and marks approve / edit / skip /
-reject on each of the 16 items, plus actual review time. Only then can direct
-approval, edited approval, rejection, suppression, actionability and edit
-burden be filled in. **No approval number in `metrics.md` is a prediction —
-the fields are blank until the user marks them.**
+The user reviewed the analysis, judged it sufficient, and approved all 16
+clusters as a single blanket decision rather than marking each item. The
+approved set is recorded, sanitized, in `accepted-candidates.md`.
+
+This closes Phase 0 procedurally but leaves the candidate-quality question
+**untested rather than answered** — a bulk approval cannot measure whether
+candidates survive independent judgment. `metrics.md` records that distinction
+in full, and `handoff.md` carries it forward as risk into Phase 1A rather than
+letting it disappear.
+
+Private project identifiers in all committed files are replaced with stable
+aliases (`Project-A` = primary mining corpus, `Project-B` / `Project-C` =
+repeat-run projects).
