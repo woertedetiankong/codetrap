@@ -56,3 +56,4 @@ longitudinal validation as one compatible milestone.
 - Final verification: `bun test` passed 374 tests with 1 intentional browser
   smoke skip and 0 failures (375 total); `bun run build` produced both Windows
   CLI and MCP executables; `git diff --check` passed.
+- Phase 2 implementation and the decisions above landed in commit `c294eb1`.

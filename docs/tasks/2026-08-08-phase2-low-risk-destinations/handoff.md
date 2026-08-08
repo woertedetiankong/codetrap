@@ -18,7 +18,7 @@ Implementation and acceptance are complete on `phase2-low-risk-destinations`.
 
 ## Git And Persistent State
 
-- Branch: `phase2-low-risk-destinations`; Phase 2 commit is the next action.
+- Branch: `phase2-low-risk-destinations`; Phase 2 commit is `c294eb1`.
 - Persistent state: runtime Phase 2 data lives under `.codetrap/phase2/`.
 
 ## Key Decisions
