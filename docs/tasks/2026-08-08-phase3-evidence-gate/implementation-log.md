@@ -45,3 +45,4 @@ Audit Phase 0-2 organic evidence and choose the justified Phase 3 destination.
 - Phase 2 landed in commit `c294eb1`. Phase 3 should implement only the
   `skill_candidate` lifecycle, then ask the user to individually approve the
   screenshot-review candidate before exercising install/rollback acceptance.
+- The evidence gate and go/no-go decisions landed in commit `978984b`.

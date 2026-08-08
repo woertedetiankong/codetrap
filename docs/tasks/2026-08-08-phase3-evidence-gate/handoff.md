@@ -18,8 +18,9 @@ approval for the recommended screenshot-review workflow.
 
 ## Git And Persistent State
 
-- Branch: `phase2-low-risk-destinations`; Phase 2 is commit `c294eb1`.
-- Uncommitted state: this Phase 3 audit dossier and reconciled roadmap pointers.
+- Branch: `phase3-skill-candidate`; Phase 2 is `c294eb1` and the gate audit is
+  `978984b`.
+- Persistent state: no Phase 3 destination has been installed or enabled.
 
 ## Key Decisions
 
@@ -55,10 +56,10 @@ approval for the recommended screenshot-review workflow.
 ## Restart Verify
 
 ```bash
-git log --oneline -2
-# expected: c294eb1 Complete Phase 2 low-risk destinations above 34ad8fb.
+git log --oneline -3
+# expected: 978984b above c294eb1 above 34ad8fb.
 git status --short --branch
-# expected: Phase 3 audit docs only; mismatch means scope drift.
+# expected: phase3-skill-candidate and a clean tree; mismatch means scope drift.
 ```
 
 ## Next Steps

@@ -11,5 +11,6 @@ Now do: 1. confirm screenshot-first UI critique as the acceptance candidate
 2. implement the skill lifecycle only after confirmation.
 Red lines: do not manufacture custom-agent/automation demand; do not install a
 skill without exact approval; do not touch `question.txt` if it reappears; do not push.
-First verify: `git log --oneline -2; git status --short --branch` (expected
-`c294eb1` above `34ad8fb` and only the audit docs uncommitted).
+First verify: `git log --oneline -3; git status --short --branch` (expected
+`978984b` above `c294eb1` above `34ad8fb`, branch `phase3-skill-candidate`, and
+a clean tree).
