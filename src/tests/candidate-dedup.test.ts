@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { runCli, tempHome, tempProjectDir, type CliResult } from "./helpers";
+import { fixturePathKey, runCli, tempHome, tempProjectDir, type CliResult } from "./helpers";
 import { verifyCoverage } from "../lib/coverage-verify";
 import { TrapOperations } from "../lib/trap-operations";
 import { TrapStore } from "../lib/store";
@@ -420,7 +420,7 @@ function allCandidates(cwd: string): any[] {
 }
 
 function writeClaudeSession(clientHome: string, sessionId: string, cwd: string): void {
-  const dir = join(clientHome, ".claude", "projects", cwd.replace(/[\\/]/g, "-"));
+  const dir = join(clientHome, ".claude", "projects", fixturePathKey(cwd));
   mkdirSync(dir, { recursive: true });
   const base = { sessionId, cwd, version: "2.1.204", gitBranch: "main" };
   writeFileSync(join(dir, `${sessionId}.jsonl`), `${[

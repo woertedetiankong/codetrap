@@ -74,6 +74,12 @@ export function tempDir(prefix: string, options: TempDirOptions = {}): string {
   return options.realpath ? realpathSync(dir) : dir;
 }
 
+export function fixturePathKey(path: string): string {
+  return path
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-")
+    .replace(/[. ]+$/g, "-");
+}
+
 export function tempProjectDir(prefix: string, options: TempDirOptions = {}): string {
   const dir = tempDir(prefix, options);
   mkdirSync(join(dir, ".codetrap"));

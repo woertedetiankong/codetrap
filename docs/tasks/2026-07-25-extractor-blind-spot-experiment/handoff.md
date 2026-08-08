@@ -109,10 +109,6 @@ data work would look different.
 3. **`useful_count` is still the only real outcome measure**, and it has one
    sample. This experiment says the *input* to mining was impoverished; it says
    nothing about whether the output changes behavior.
-4. **The pre-existing `embedding reindex API` test failure remains** — and is now
-   visibly the single most repeated failure in the corpus (36 occurrences),
-   which is itself a small argument for fixing it.
-
 ## Next highest-ROI task
 
 **Re-run Phase 0's mining with the wide lens and a genuine per-item review.**

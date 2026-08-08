@@ -1,7 +1,7 @@
 # codetrap Mature Product Roadmap v2.3: Agent Experience Compiler
 
 Date: 2026-06-22 (v1)
-Updated: 2026-07-25 (v2.3)
+Updated: 2026-08-08 (v2.3 implementation status)
 Status: Product direction / long-term roadmap — authoritative parent plan
 Scope: Parent plan for codetrap mature product evolution
 Clients served: **Codex and Claude Code, symmetrically** (Cursor and others: future)
@@ -10,6 +10,34 @@ This document is the parent plan for all future codetrap development. It is writ
 to be consumed both by humans and by an autonomous implementing agent. Individual
 milestones must use the implementation-journal (task dossier, implementation log,
 handoff) — see §19.
+
+## Status Dashboard
+
+> Updated: 2026-08-08
+
+| Milestone | Status | Updated | Evidence | Note |
+|---|---|---|---|---|
+| Phase 0 — proof point | Closed with waived gate | 2026-07-25 | [proof-point handoff](tasks/2026-07-25-phase0-claude-code-proof-point/handoff.md) | Candidate-quality gate was waived, not passed; later wide-lens review measured 20% at n=5. |
+| Phase 1 — MVP compiler loop | **Done** | 2026-08-08 | [closeout handoff](tasks/2026-08-08-phase1-closeout/handoff.md) | All five slices pass; trap #5 travelled from Claude Code mining to useful Codex recall. |
+| Phase 2 — low-risk destinations | Not started | 2026-08-08 | [Phase 2 plan](#phase-2--low-risk-destinations--longitudinal-validation) | Next implementation phase. |
+| Phase 3 — high-side-effect destinations | Not started | 2026-08-08 | [Phase 3 plan](#phase-3--high-side-effect-destinations--runtime-loop-closure) | Gated on Phase 2 evidence. |
+| Phase 4 — external validation | Not started | 2026-08-08 | [Phase 4 plan](#phase-4--external-validation-and-legibility) | Requires reproducible and privacy-safe longitudinal evidence. |
+
+### Recently closed decisions
+
+- 2026-08-08 Phase 1 closed after a Codex pre-flight search retrieved the
+  Claude Code-mined project trap #5 and the current CLI marked it useful
+  ([detail](tasks/2026-08-08-phase1-closeout/handoff.md)).
+- 2026-07-25 The embedding reindex failure was diagnosed as a loopback proxy
+  product bug and fixed; the full Windows suite is green after the closeout
+  fixture repair ([detail](tasks/2026-07-25-loopback-proxy-fix/handoff.md)).
+
+### Top risks
+
+- Candidate quality has one genuine five-item review at 20%, from an unusually
+  tool-heavy self-development corpus; Phase 2 must not treat it as stable.
+- Useful cross-client recall is proven end to end but has only two usefulness
+  marks on one trap; longitudinal product claims remain premature.
 
 What changed in v2:
 
@@ -1238,9 +1266,11 @@ would be easier to build than candidate quality.
 Work 1A through 1E in order. Each subphase is a milestone with its own dossier
 and acceptance evidence; Phase 1 is complete only when all five exit gates pass.
 
-> **Phase 1 status (2026-07-25): 1A–1D passed; 1E criterion 1 is partial, so
-> Phase 1 is NOT complete.** The outstanding item is small and specific — a
-> pre-flight search from Codex — and is described in the 1E dossier.
+> **Phase 1 status (2026-08-08): COMPLETE.** Phase 1A–1D passed on 2026-07-25.
+> Phase 1E closed on 2026-08-08 when a Codex pre-flight search returned project
+> trap #5, originally mined and committed through Claude Code, and the current
+> repository CLI marked it useful. Evidence:
+> `docs/tasks/2026-08-08-phase1-closeout/`.
 
 #### Phase 1A — Existing-surface vertical proof
 
@@ -1376,26 +1406,23 @@ surfaces in a pre-flight search from the other client and is marked useful. At
 least one curated context pack is exported and handed to an agent at planning
 time.
 
-> **Status: NOT PASSED, 2026-07-25 — criterion 1 partial, criterion 2 met.**
-> The machinery is built and was exercised on real data: a candidate was
-> reviewed (2 in 1s, inside the §4.2 budget), approved by the user against a
-> specific revision, committed by an agent on that approval as trap #5, found by
-> pre-flight search, and marked useful — with `useful_count` and `hit_count`
-> deliberately separate so a view is not mistaken for help. A 2-lesson curated
-> context pack was exported, meeting criterion 2.
-> **The cross-client half was not run.** The search and usefulness call happened
-> in Claude Code, the same client that mined the lesson; the Codex half was
-> skipped by user decision, so §3.1 symmetry remains unproven in use for the
-> fifth consecutive phase. `codetrap setup codex` is done and all six skills are
-> installed; closing this needs `codetrap` on PATH and two commands in a Codex
-> session.
+> **Status: PASSED, 2026-08-08.** The original real-data run reviewed two
+> candidates in 1s, approved a specific revision, committed trap #5 through an
+> agent on that authorization, and exported a two-lesson curated context pack.
+> On 2026-08-08, the missing other-client half ran in Codex:
+> `codetrap search "block comment terminator jsdoc" --json` returned project
+> trap #5, whose evidence points to the Claude Code learning review, and the
+> current repository CLI raised its `useful_count` from 1 to 2. This proves the
+> Phase 1 cross-client path in use, while remaining only one trap and two
+> usefulness samples.
 > Also shipped: `useful`/`mark_trap_useful`, `pack export`, Web approve and
 > rollback routes (closing Phase 1B risk 2), the §4.3 trust receipt in the UI,
 > and §4.2 inbox budgets measured by `doctor`.
-> Carried forward: usefulness has one self-reported sample; the console renders
+> Carried forward: usefulness has only two samples; the console renders
 > the 1D cluster/coverage fields only partially; staleness uses session rather
 > than per-candidate timestamps; and Phase 0 risk 4 is now six phases old.
-> Evidence: `docs/tasks/2026-07-25-phase1e-learning-inbox-and-runtime-proof/`.
+> Evidence: `docs/tasks/2026-07-25-phase1e-learning-inbox-and-runtime-proof/`
+> and `docs/tasks/2026-08-08-phase1-closeout/`.
 
 ### Phase 2 — Low-risk destinations + longitudinal validation
 

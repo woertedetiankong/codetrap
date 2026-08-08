@@ -1,0 +1,15 @@
+# Task Index
+
+| Module / Slice | Status | Task Dossier | Latest Handoff | Depends On | Referenced By | Notes |
+|---|---|---|---|---|---|---|
+| Dual-client setup parity | Done | [task](2026-07-10-setup-claude-and-skill-parity/task-brief.md) | [handoff](2026-07-10-setup-claude-and-skill-parity/handoff.md) | None | Phase 1C/1E | Shared setup and skills for Codex and Claude Code. |
+| Phase 0 proof point | Closed, gate waived | [task](2026-07-25-phase0-claude-code-proof-point/task-brief.md) | [handoff](2026-07-25-phase0-claude-code-proof-point/handoff.md) | Setup parity | Phase 1 | Candidate-quality gate was not passed. |
+| Phase 1A vertical proof | Done | [task](2026-07-25-phase1a-existing-surface-vertical-proof/task-brief.md) | [handoff](2026-07-25-phase1a-existing-surface-vertical-proof/handoff.md) | Phase 0 | Phase 1B | Authorization, suppression, rollback. |
+| Phase 1B envelope | Done | [task](2026-07-25-phase1b-candidate-envelope-and-migration/task-brief.md) | [handoff](2026-07-25-phase1b-candidate-envelope-and-migration/handoff.md) | Phase 1A | Phase 1C | Versioned candidate envelope and migration. |
+| Phase 1C adapters | Done | [task](2026-07-25-phase1c-learning-review-cli-dual-source/task-brief.md) | [handoff](2026-07-25-phase1c-learning-review-cli-dual-source/handoff.md) | Phase 1B | Phase 1D | Dual-source learning CLI. |
+| Phase 1D hardening | Done | [task](2026-07-25-phase1d-locking-coverage-and-dedup/task-brief.md) | [handoff](2026-07-25-phase1d-locking-coverage-and-dedup/handoff.md) | Phase 1C | Phase 1E | Locking, coverage, and dedup. |
+| Phase 1E runtime proof | Done | [task](2026-07-25-phase1e-learning-inbox-and-runtime-proof/task-brief.md) | [handoff](2026-07-25-phase1e-learning-inbox-and-runtime-proof/handoff.md) | Phase 1D | Phase 1 closeout | Closed cross-client proof on 2026-08-08. |
+| Extractor blind spot | Done | [task](2026-07-25-extractor-blind-spot-experiment/task-brief.md) | [handoff](2026-07-25-extractor-blind-spot-experiment/handoff.md) | Phase 0 | Wide-lens run | Wider lens confirmed the extraction artifact. |
+| Wide-lens mining | Done | [task](2026-07-25-wide-lens-mining-run/task-brief.md) | [handoff](2026-07-25-wide-lens-mining-run/handoff.md) | Extractor experiment | Phase 2 evidence | Genuine per-item approval measured 20% at n=5. |
+| Loopback proxy fix | Done | Not created | [handoff](2026-07-25-loopback-proxy-fix/handoff.md) | Wide-lens finding | Phase 1 closeout | Fixed embedding reindex failure. |
+| Phase 1 closeout | Done | [task](2026-08-08-phase1-closeout/task-brief.md) | [handoff](2026-08-08-phase1-closeout/handoff.md) | Phase 1E, loopback fix | Parent roadmap, Phase 2 | Windows suite green and real Codex recall proven. |

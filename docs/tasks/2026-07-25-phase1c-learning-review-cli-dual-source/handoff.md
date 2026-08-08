@@ -119,9 +119,6 @@ scope disclosure                stated on every review run          PASS
    days, 0 for this repository. Dual-client symmetry is now proven *in code and
    in fixtures*; it is still not proven *in use* for Codex, which was Phase 0
    risk 2 and remains open.
-6. **The pre-existing `embedding reindex API` test failure remains**, reproduced
-   on a clean `HEAD` worktree.
-
 ## Next highest-ROI task
 
 **Phase 1D — compiler hardening (§16).**

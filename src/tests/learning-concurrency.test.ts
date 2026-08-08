@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { LearningStore } from "../lib/learning-store";
 import { withAdvisoryLock } from "../lib/advisory-lock";
-import { tempHome, tempProjectDir } from "./helpers";
+import { fixturePathKey, tempHome, tempProjectDir } from "./helpers";
 
 const CLI = join(import.meta.dir, "..", "index.ts");
 
@@ -227,7 +227,7 @@ function candidateIds(cwd: string, sessionId: string): string[] {
 }
 
 function writeClaudeSession(clientHome: string, sessionId: string, cwd: string): void {
-  const dir = join(clientHome, ".claude", "projects", cwd.replace(/[\\/]/g, "-"));
+  const dir = join(clientHome, ".claude", "projects", fixturePathKey(cwd));
   mkdirSync(dir, { recursive: true });
   const base = { sessionId, cwd, version: "2.1.204", gitBranch: "main" };
   writeFileSync(join(dir, `${sessionId}.jsonl`), `${[

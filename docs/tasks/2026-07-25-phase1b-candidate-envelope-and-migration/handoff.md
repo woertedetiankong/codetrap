@@ -109,9 +109,6 @@ Eight findings, two of which were unrecoverable states in new code:
    `TRAP_UPDATE_FIELDS`, so rollback still refuses supersede-accepts and an
    agent is now refused the supersede path entirely. The restore query is small
    and would close both.
-6. **The pre-existing `embedding reindex API` test failure remains**, reproduced
-   on a clean `HEAD` worktree — environmental, not from this slice.
-
 ## Next highest-ROI task
 
 **Phase 1C — dual-source adapters (§16).**

@@ -81,3 +81,13 @@ destroyed `useful_count`.
 
 Full suite: 351 pass, 1 fail — the pre-existing `embedding reindex API` failure
 that reproduces on a clean `HEAD` worktree. `bunx tsc --noEmit` clean.
+
+## Closeout
+
+### 2026-08-08
+
+- A Codex pre-flight search returned project trap #5 from the Claude Code
+  learning review, and the current repository CLI raised its `useful_count`
+  from 1 to 2. This closes criterion 1 and Phase 1. The resolved embedding
+  failure and Windows suite evidence live in the Phase 1 closeout dossier so
+  this historical implementation record stays append-only.

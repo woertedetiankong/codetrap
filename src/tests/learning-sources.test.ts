@@ -8,6 +8,7 @@ import { collectSessions, inventorySource, parseSinceDays, parseTurnLens } from 
 import { buildEvidencePack, sampleTurns } from "../lib/learning-review-dir";
 import { assertInsideRoot, type SessionSourceAdapter } from "../lib/learning-source-adapter";
 import { excerpt, isHarnessNoise, redact } from "../lib/learning-redaction";
+import { fixturePathKey } from "./helpers";
 
 import type { NormalizedSession } from "../domain/learning-source";
 
@@ -23,6 +24,13 @@ const CONVERSATION = [
 ];
 
 describe("Phase 1C — dual-source adapter parity", () => {
+  test("fixture project keys are valid Windows directory segments", () => {
+    expect(fixturePathKey("C:\\Users\\codetrap\\project"))
+      .toBe("C--Users-codetrap-project");
+    expect(fixturePathKey("/mnt/d/codetrap/project"))
+      .toBe("-mnt-d-codetrap-project");
+  });
+
   test("C1: equivalent histories normalize to the same envelope from both adapters", () => {
     const home = fixtureHome();
     writeCodexSession(home, "0199bead-cd4f-73c3-9377-5414357c9ef0", "/mnt/d/project");
@@ -339,7 +347,7 @@ describe("Extractor lens — what the reader is allowed to see", () => {
 // --- fixtures -----------------------------------------------------------
 
 function writeRichClaudeSession(home: string, sessionId: string, cwd: string): void {
-  const dir = join(home, ".claude", "projects", cwd.replace(/[\\/]/g, "-"));
+  const dir = join(home, ".claude", "projects", fixturePathKey(cwd));
   mkdirSync(dir, { recursive: true });
   const base = { sessionId, cwd, version: "2.1.204", gitBranch: "main" };
   const lines = [
@@ -401,7 +409,7 @@ function writeCodexSession(home: string, sessionId: string, cwd: string): string
 }
 
 function writeNoiseOnlyClaudeSession(home: string, sessionId: string, cwd: string): void {
-  const dir = join(home, ".claude", "projects", cwd.replace(/[\\/]/g, "-"));
+  const dir = join(home, ".claude", "projects", fixturePathKey(cwd));
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${sessionId}.jsonl`), `${[
     JSON.stringify({ type: "mode", mode: "normal", sessionId }),
@@ -415,7 +423,7 @@ function writeClaudeSession(
   cwd: string,
   options: { branch?: string; sessionIdInFile?: string } = {}
 ): string {
-  const dir = join(home, ".claude", "projects", cwd.replace(/[\\/]/g, "-"));
+  const dir = join(home, ".claude", "projects", fixturePathKey(cwd));
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${sessionId}.jsonl`);
   const base = {

@@ -103,9 +103,6 @@ coverage verification      per-ref detail, flagged not dropped        PASS
    been built on the unverified assumption that this does not matter.
 6. **Codex history remains thin for this user** (2 sessions in 30 days, 0 for
    this repo), so cross-client consolidation is proven in fixtures and not in use.
-7. **The pre-existing `embedding reindex API` test failure remains**, reproduced
-   on a clean `HEAD` worktree.
-
 ## Next highest-ROI task
 
 **Phase 1E — Learning Inbox and runtime proof (§16).**

@@ -129,11 +129,6 @@ review" — is closed for this one candidate. One item is not a rate.
 9. **Phase 0 risks 2–6 are untouched.** Dual-client symmetry is still unproven in
    evidence, the 1-of-34 codebase-lesson result is still unexplained, and the
    `evidence[].excerpt` verbatim contract is still unenforced.
-10. **A pre-existing test failure remains.** `web API > embedding reindex API
-   refreshes project and global profile status` fails identically on a clean
-   `HEAD` worktree — environmental (no embedding provider), not from this slice,
-   but it is a red test in the suite.
-
 ## Next highest-ROI task
 
 **Phase 1B — stable envelope and compatibility (§16).**

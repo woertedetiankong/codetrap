@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { runCli, tempHome, tempProjectDir, type CliResult } from "./helpers";
+import { fixturePathKey, runCli, tempHome, tempProjectDir, type CliResult } from "./helpers";
 
 // `learn` reads the *client* home, which is separate from the codetrap home the
 // CLI harness isolates. CODETRAP_CLIENT_HOME points it at a fixture instead of
@@ -279,7 +279,7 @@ function project(prefix: string): { cwd: string; home: string; clientHome: strin
 }
 
 function writeClaudeSession(clientHome: string, sessionId: string, cwd: string): void {
-  const dir = join(clientHome, ".claude", "projects", cwd.replace(/[\\/]/g, "-"));
+  const dir = join(clientHome, ".claude", "projects", fixturePathKey(cwd));
   mkdirSync(dir, { recursive: true });
   const base = { sessionId, cwd, version: "2.1.204", gitBranch: "main" };
   const lines = [

@@ -3,7 +3,8 @@
 Parent plan: `docs/agent-experience-compiler-roadmap.md` §16 Phase 1E
 Predecessor: `docs/tasks/2026-07-25-phase1d-locking-coverage-and-dedup/`
 Date opened: 2026-07-25
-Status: **criterion 2 met; criterion 1 partial** — cross-client half not run; see `handoff.md`
+Created: 2026-07-25
+Status: **complete 2026-08-08** — both criteria met; see `handoff.md`
 
 ## Goal
 
@@ -38,7 +39,7 @@ learning review (either client)
 - No currency/staleness down-ranking in recall (§12.3, Phase 2). 1E marks stale
   *candidates*, which §4.2 requires; stale *traps* are Phase 2.
 
-## Acceptance criteria (§16, unchanged)
+## Success Criteria (§16, unchanged)
 
 1. A user on a real project runs learning review from either client, reviews
    within budget, authorizes an agent-executed commit, and the trap later
@@ -99,6 +100,14 @@ and §12.2 that only committed lessons are eligible.
 5. `pack export`.
 6. `unclassified` blocked from commit, reviewable and suppressible.
 7. The live ceremony, with both clients.
+
+## Constraints
+
+- No durable candidate commit without authorization bound to the reviewed
+  revision and content hash.
+- Only `pitfall_trap` commits in Phase 1E; `unclassified` remains reviewable but
+  cannot be forced into a speculative destination.
+- Context packs are explicit user-curated exports, never automatic injection.
 
 ## Risk
 

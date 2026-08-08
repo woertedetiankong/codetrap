@@ -121,22 +121,13 @@ suppressed         4 new, 6 total; 2 recovered from the receipt log
    `project_convention` and `docs_guidance`, mining will keep producing them and
    users will keep rejecting them — which depresses the approval rate for a
    reason that is not about lesson quality.
-4. **Phase 1E criterion 1 is still open** — the cross-client search from Codex.
-5. **The `embedding reindex` test still fails.** The user's rejection reason was
-   that it should be fixed rather than memorialised, which is a fair instruction.
-
 ## Next highest-ROI task
 
-**Fix the embedding reindex test.** The user rejected a candidate specifically
-because the defect should be fixed instead — that is a direct instruction, it is
-the most repeated failure in the corpus, and it is the only red test in the
-suite.
+Phase 1 closed on 2026-08-08 after the missing Codex cross-client proof ran, and
+the embedding reindex defect was fixed by the loopback proxy change. The next
+evidence task is:
 
-Then, in order:
-
-- `session suppressions --rebuild` from receipts (small; justified by an actual
-  incident this run).
-- Close Phase 1E criterion 1 from a Codex session.
 - Re-run this mining against a **different project's** history before drawing
   any positioning conclusion from the 20%. This corpus is codetrap building
   itself and is not representative.
+- Then begin Phase 2's low-risk destinations from the roadmap acceptance gate.
