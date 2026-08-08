@@ -57,6 +57,8 @@ export function normalizeTrapForExport(trap: Trap): Omit<TrapExportRecord, "evid
     updated_at: sqliteTimestampToIso(trap.updated_at),
     valid_from: sqliteTimestampToIso(trap.valid_from),
     valid_until: sqliteTimestampToIso(trap.valid_until),
+    last_validated: sqliteTimestampToIso(trap.last_validated),
+    graduated_at: sqliteTimestampToIso(trap.graduated_at),
   };
 }
 
@@ -139,6 +141,9 @@ export function importRecordToTrapRecordInsert(
     hit_count: record.hit_count ?? 0,
     useful_count: record.useful_count ?? 0,
     last_useful_at: record.last_useful_at ?? null,
+    last_validated: isoToSqliteTimestamp(record.last_validated) ?? createdAt,
+    graduated_at: isoToSqliteTimestamp(record.graduated_at) ?? null,
+    graduated_to: record.graduated_to ?? null,
     created_at: createdAt,
     updated_at: isoToSqliteTimestamp(record.updated_at) ?? createdAt,
   };

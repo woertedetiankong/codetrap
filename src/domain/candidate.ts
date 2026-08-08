@@ -8,17 +8,24 @@ import type { Executor } from "./learning";
  * v1 — the Phase 0/1A record: `status` plus the accepted and rejected fields.
  * v2 — the §8.2 envelope: three orthogonal state axes, revision, content hash,
  *      and a revision-bound authorization.
+ * v3 — Phase 2 low-risk destinations and destination-specific payloads.
  */
-export const CANDIDATE_SCHEMA_VERSION = 2;
+export const CANDIDATE_SCHEMA_VERSION = 3;
 export const LEGACY_CANDIDATE_SCHEMA_VERSION = 1;
+export const PHASE1_CANDIDATE_SCHEMA_VERSION = 2;
 
 /**
- * Phase 1 stabilizes only these two (§8.1). Other destination kinds ride as
- * `unclassified` carrying a free-form `destination_hint` until their own phase
- * begins — they deliberately do not enter this enum, so no dead-end proposal
- * stubs are created for destinations that cannot yet be committed.
+ * Phase 1 stabilized the first two (§8.1); Phase 2 adds only destinations that
+ * now have a complete apply/revert lifecycle. Phase 3 kinds remain absent.
  */
-export const CANDIDATE_KINDS = ["pitfall_trap", "unclassified"] as const;
+export const CANDIDATE_KINDS = [
+  "pitfall_trap",
+  "unclassified",
+  "project_convention",
+  "docs_guidance",
+  "search_eval_case",
+  "insight",
+] as const;
 export type CandidateKind = (typeof CANDIDATE_KINDS)[number];
 
 /** §8.3 axis 2: what the user decided. */

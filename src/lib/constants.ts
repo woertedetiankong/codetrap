@@ -49,7 +49,7 @@ export const DEFAULT_TRAP_STATUS: TrapStatus = "active";
 
 // Increment this when schema changes in a breaking way.
 // Migrations are stored in src/db/migrations.ts
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 // Directory and file names
 export const CODETRAP_DIR = ".codetrap";

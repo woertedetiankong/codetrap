@@ -122,6 +122,14 @@ export class TrapRepository {
     return queries.markTrapUseful(this.db, id, at);
   }
 
+  validate(id: number, at: string): boolean {
+    return queries.validateTrap(this.db, id, at);
+  }
+
+  graduate(id: number, target: string, at: string): boolean {
+    return queries.graduateTrap(this.db, id, target, at);
+  }
+
   top(scope: string, limit = 20): Trap[] {
     return queries.getTopTraps(this.db, scope, limit);
   }

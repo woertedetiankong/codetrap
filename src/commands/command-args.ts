@@ -25,6 +25,8 @@ const BOOLEAN_FLAGS = new Set([
   "stdin",
   "mcp",
   "no-agents",
+  "useful",
+  "not-useful",
 ]);
 
 export function parseArgs(args: string[]): ParsedArgs {

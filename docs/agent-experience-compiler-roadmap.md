@@ -19,12 +19,15 @@ handoff) — see §19.
 |---|---|---|---|---|
 | Phase 0 — proof point | Closed with waived gate | 2026-07-25 | [proof-point handoff](tasks/2026-07-25-phase0-claude-code-proof-point/handoff.md) | Candidate-quality gate was waived, not passed; later wide-lens review measured 20% at n=5. |
 | Phase 1 — MVP compiler loop | **Done** | 2026-08-08 | [closeout handoff](tasks/2026-08-08-phase1-closeout/handoff.md) | All five slices pass; trap #5 travelled from Claude Code mining to useful Codex recall. |
-| Phase 2 — low-risk destinations | Not started | 2026-08-08 | [Phase 2 plan](#phase-2--low-risk-destinations--longitudinal-validation) | Next implementation phase. |
+| Phase 2 – low-risk destinations | **Done** | 2026-08-08 | [handoff](tasks/2026-08-08-phase2-low-risk-destinations/handoff.md) | Four review-bound destinations, insight study, currency/graduation, metrics, and decision rule pass end to end. |
 | Phase 3 — high-side-effect destinations | Not started | 2026-08-08 | [Phase 3 plan](#phase-3--high-side-effect-destinations--runtime-loop-closure) | Gated on Phase 2 evidence. |
 | Phase 4 — external validation | Not started | 2026-08-08 | [Phase 4 plan](#phase-4--external-validation-and-legibility) | Requires reproducible and privacy-safe longitudinal evidence. |
 
 ### Recently closed decisions
 
+- 2026-08-08 Phase 2 closed after low-risk destinations, insight consultation,
+  currency/graduation, longitudinal metrics, and their CLI acceptance suite
+  passed ([detail](tasks/2026-08-08-phase2-low-risk-destinations/handoff.md)).
 - 2026-08-08 Phase 1 closed after a Codex pre-flight search retrieved the
   Claude Code-mined project trap #5 and the current CLI marked it useful
   ([detail](tasks/2026-08-08-phase1-closeout/handoff.md)).
@@ -35,7 +38,8 @@ handoff) — see §19.
 ### Top risks
 
 - Candidate quality has one genuine five-item review at 20%, from an unusually
-  tool-heavy self-development corpus; Phase 2 must not treat it as stable.
+  tool-heavy self-development corpus; Phase 2 did not make it stable, so Phase 3
+  remains evidence-gated.
 - Useful cross-client recall is proven end to end but has only two usefulness
   marks on one trap; longitudinal product claims remain premature.
 
@@ -1447,6 +1451,25 @@ prevents known noise from returning and at least two committed lessons are
 marked useful in later work. At least one insight is shelved and later
 consulted on the study surface, and at least one stale or graduated lesson
 visibly leaves default recall.
+
+> **Status: PASSED, 2026-08-08.** Candidate schema v3 preserves v1/v2 reads,
+> promotes insight-hinted v2 records, and includes destination payloads in the
+> revision-bound authorization hash. Real CLI-process acceptance tests prove:
+> agent execution is refused before approval; equivalent managed convention
+> patches land in `AGENTS.md` and `CLAUDE.md`; docs and search-eval patches and
+> the insight shelf round-trip through exact revert; an edited payload drops
+> authorization; two committed lessons can be marked useful; an insight is
+> shelved then consulted; stale recall is visibly penalized; and graduation
+> removes a lesson from default recall without deleting its history.
+> Phase 1 cross-client consolidation tests remain green with payload-aware
+> hashes. `phase2 metrics` exposes suppression, useful recall, invalidations,
+> Inbox health, cross-client provenance, insight consultation, validation, and
+> graduation; `phase2 decision` implements the retrieve-vs-curate rule.
+> This closes the implementation gate, not the longitudinal evidence risk: the
+> repo still has too little organic multi-session usefulness data for product
+> success claims. Evidence:
+> `docs/tasks/2026-08-08-phase2-low-risk-destinations/` and
+> `src/tests/phase2.test.ts`.
 
 ### Phase 3 — High-side-effect destinations + runtime loop closure
 

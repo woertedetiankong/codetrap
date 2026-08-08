@@ -37,6 +37,11 @@ export interface Trap {
   /** Times a caller reported this lesson actually helped — not the same as being seen. */
   useful_count: number;
   last_useful_at: string | null;
+  /** Last time the lesson was explicitly checked against current reality. */
+  last_validated: string | null;
+  /** Graduation retires default recall in favor of a deterministic check. */
+  graduated_at: string | null;
+  graduated_to: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -142,6 +147,9 @@ export type TrapImportRecord = Omit<TrapInput, "tags" | "before_code" | "after_c
   hit_count?: number | null;
   useful_count?: number | null;
   last_useful_at?: string | null;
+  last_validated?: string | null;
+  graduated_at?: string | null;
+  graduated_to?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   evidence?: TrapImportEvidence[];

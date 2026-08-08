@@ -4,6 +4,7 @@ import {
   LEARNING_VERSION,
   type LearningReceipt,
   type ReceiptAction,
+  type ReceiptDestination,
   type SuppressionDocument,
   type SuppressionRecord,
 } from "../domain/learning";
@@ -35,6 +36,7 @@ export type AppendReceiptArgs = {
   trapScope?: string | null;
   supersededId?: number | null;
   reason?: string | null;
+  destination?: ReceiptDestination;
 };
 
 /**
@@ -111,7 +113,7 @@ export class LearningStore {
       action: args.action,
       executor: args.executor,
       authorized_scope: args.authorizedScope,
-      destination: "pitfall_trap",
+      destination: args.destination ?? "pitfall_trap",
       session_id: args.sessionId ?? null,
       candidate_id: args.candidateId ?? null,
       fingerprint: args.fingerprint,

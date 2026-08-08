@@ -239,6 +239,23 @@ function applyMigrations(db: Database, from: number): void {
     addColumnIfMissing(db, "traps", "last_useful_at", "TEXT");
     db.prepare("UPDATE schema_version SET version = ?").run(8);
   }
+
+  if (from < 9) {
+    // Phase 2 currency is additive. Existing lessons begin with their creation
+    // timestamp as the best honest validation proxy; explicit validation moves
+    // it forward. Graduation archives the lesson while retaining its target.
+    addColumnIfMissing(db, "traps", "last_validated", "TEXT");
+    addColumnIfMissing(db, "traps", "graduated_at", "TEXT");
+    addColumnIfMissing(db, "traps", "graduated_to", "TEXT");
+    if (columnExists(db, "traps", "created_at")) {
+      db.exec("UPDATE traps SET last_validated = COALESCE(last_validated, created_at)");
+    } else {
+      // Some migration tests intentionally model the minimal v5 embedding
+      // schema. Currency must not make those valid historical shapes fail.
+      db.exec("UPDATE traps SET last_validated = COALESCE(last_validated, datetime('now'))");
+    }
+    db.prepare("UPDATE schema_version SET version = ?").run(9);
+  }
 }
 
 function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {

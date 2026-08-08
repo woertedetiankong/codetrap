@@ -436,7 +436,7 @@ describe("Phase 1B — the migrate command", () => {
     expect(dry.exitCode).toBe(0);
     const report = JSON.parse(dry.stdout);
     expect(report).toMatchObject({ applied: false, direction: "up", target_version: CANDIDATE_SCHEMA_VERSION });
-    expect(report.sessions[0]).toMatchObject({ session_id: "2026-07-01-legacy", from_version: 1, to_version: 2 });
+    expect(report.sessions[0]).toMatchObject({ session_id: "2026-07-01-legacy", from_version: 1, to_version: CANDIDATE_SCHEMA_VERSION });
     expect(report.sessions[0].warnings[0]).toContain("no trap link");
     expect(report.next_action.command).toBe("codetrap session migrate --apply");
 

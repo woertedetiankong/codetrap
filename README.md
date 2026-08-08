@@ -208,6 +208,7 @@ codetrap/
 | `useful` | Record that a recalled trap actually helped — the signal that separates lessons that work from lessons that merely exist |
 | `pack` | Export a user-curated context pack of committed lessons for planning time (`pack export --traps 1,2,3`) |
 | `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, approve/accept/reject/roll back candidates, migrate candidate records between schema versions, inspect authorization receipts and suppressed lessons, and clean up session files |
+| `phase2` | Review-bound low-risk destinations: conventions/docs/eval patches, insight shelf, lesson validation/graduation, longitudinal metrics, and retrieve-vs-curate decisions |
 | `web` | Start the local review, trap library, insights, and Embeddings console |
 | `serve` | Start MCP server |
 
@@ -401,6 +402,53 @@ provenance to resolve.
 
 The `codetrap-learning-review` skill drives this flow and installs for both
 clients.
+
+### Low-risk destinations and insight shelf
+
+Phase 2 widens the candidate envelope without weakening approval. A proposal's
+destination payload participates in its content hash, so editing a patch or
+insight after approval bumps the revision and invalidates that approval.
+
+```bash
+codetrap phase2 propose --input-json '{
+  "kind":"project_convention",
+  "title":"Safe migrations",
+  "rationale":"Keep both clients on the same migration rule.",
+  "payload":{"section_id":"safe-migrations","title":"Safe migrations","content":"Run the migration and rollback test together."}
+}' --json
+codetrap session approve cand-001 --session <session-id> --executor agent
+codetrap phase2 preview cand-001 --session <session-id> --json
+codetrap phase2 apply cand-001 --session <session-id> --executor agent --json
+codetrap phase2 revert <phase2-commit-id> --json
+```
+
+`project_convention` writes equivalent managed sections to `AGENTS.md` and
+`CLAUDE.md`. `docs_guidance` is allowlisted to README/client guidance and
+`docs/**/*.md`; `search_eval_case` can only update
+`src/tests/fixtures/search-eval.json`. Commits store exact before/after
+snapshots, refuse to overwrite a later edit during revert, and record the
+destination in the receipt log.
+
+`insight` uses a separate shelf rather than entering trap recall:
+
+```bash
+codetrap phase2 insights --json
+codetrap phase2 consult <insight-id> --json
+codetrap phase2 migrate-insights          # dry run for v2 insight hints
+codetrap phase2 migrate-insights --apply
+```
+
+Validation refreshes `last_validated`; stale active lessons receive a visible
+`stale_currency` ranking penalty. Graduation archives a mechanized lesson from
+default recall while retaining its deterministic-check reference and history.
+
+```bash
+codetrap phase2 validate 42 --scope project
+codetrap phase2 graduate 42 --to "test:schema-snapshot" --scope project
+codetrap phase2 metrics --json
+codetrap phase2 outcome 42 --channel preflight --useful --scope project
+codetrap phase2 decision --json
+```
 
 ### Did it actually help?
 

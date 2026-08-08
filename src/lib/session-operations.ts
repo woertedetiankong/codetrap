@@ -21,6 +21,7 @@ import {
   downgradeLosses,
   isLegacyCandidate,
   migrateCandidates,
+  withCandidateEdit,
   type MigrateCandidateOptions,
 } from "./candidate-envelope";
 import type { TrapOperations } from "./trap-operations";
@@ -138,6 +139,7 @@ export type SessionCaptureRequest = {
   destinationHint?: string;
   rationale?: string;
   sourceManifestRefs?: string[];
+  destinationPayload?: Record<string, unknown>;
 };
 
 export type SessionConflictResult = {
@@ -362,7 +364,8 @@ export class SessionOperations {
           sourceAgent: request.sourceAgent,
           destinationHint: request.destinationHint,
           rationale: request.rationale,
-          sourceManifestRefs: request.sourceManifestRefs,
+      sourceManifestRefs: request.sourceManifestRefs,
+      destinationPayload: request.destinationPayload,
         }),
       });
       const closed = createdSession ? this.sessions.closeSession(session.id, false) : null;
@@ -447,6 +450,58 @@ export class SessionOperations {
     return this.sessions.updateCandidateInPlace(sessionId, candidateId, merge);
   }
 
+  editDestinationCandidate(
+    sessionId: string,
+    candidateId: string,
+    payload: Record<string, unknown>
+  ): CandidateTrap {
+    return this.sessions.updateCandidateInPlace(sessionId, candidateId, (candidate) => {
+      if (candidate.status !== "proposed") {
+        throw new Error(`Candidate ${candidateId} is ${candidate.status}, not editable.`);
+      }
+      return withCandidateEdit(candidate, { ...candidate, destination_payload: payload });
+    });
+  }
+
+  commitDestinationCandidate(
+    sessionId: string,
+    candidateId: string,
+    commitId: string,
+    executor: Executor
+  ): CandidateTrap {
+    const { candidate } = this.sessions.getCandidate(candidateId, sessionId);
+    if ((candidate.candidate_kind ?? "pitfall_trap") === "pitfall_trap") {
+      throw new Error(`Candidate ${candidateId} is a pitfall_trap; use session accept.`);
+    }
+    assertAuthorizedToCommit(candidate, candidate, executor, undefined);
+    if (candidate.authorization && candidate.authorization.destination !== candidate.candidate_kind) {
+      throw new Error(`Authorization destination ${candidate.authorization.destination} does not match ${candidate.candidate_kind}.`);
+    }
+    return this.sessions.updateCandidateInPlace(sessionId, candidateId, (current) => ({
+      ...current,
+      status: "accepted",
+      review_decision: "approved",
+      delivery_state: "committed",
+      destination_commit_id: commitId,
+      accepted_at: new Date().toISOString(),
+    }));
+  }
+
+  rollbackDestinationCandidate(sessionId: string, candidateId: string): CandidateTrap {
+    return this.sessions.updateCandidateInPlace(sessionId, candidateId, (candidate) => {
+      if (candidate.delivery_state !== "committed") {
+        throw new Error(`Candidate ${candidateId} is not committed; nothing to roll back.`);
+      }
+      const { authorization, destination_commit_id, accepted_at, ...rest } = candidate;
+      return {
+        ...rest,
+        status: "proposed",
+        review_decision: "pending",
+        delivery_state: "rolled_back",
+      };
+    });
+  }
+
   listReceipts(limit = 0): LearningReceipt[] {
     return this.learning.listReceipts(limit);
   }
@@ -476,6 +531,7 @@ export class SessionOperations {
       title: approved.candidate.trap.title,
       sessionId: approved.session.id,
       candidateId: approved.candidate.id,
+      destination: authorization.destination,
     });
     return { success: true, ...approved, authorization, receipt };
   }

@@ -99,6 +99,14 @@ export class TrapOperations {
     return this.store.markUseful(id, scope, now);
   }
 
+  validateTrap(id: number, scope?: string, now = new Date()) {
+    return this.store.validate(id, scope, now);
+  }
+
+  graduateTrap(id: number, target: string, scope?: string, now = new Date()) {
+    return this.store.graduate(id, target, scope, now);
+  }
+
   listTraps(args: ListTrapsArgs = {}): TrapListGroup[] {
     return this.store.list({
       category: args.category,

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixturePathKey, runCli, tempHome, tempProjectDir, type CliResult } from "./helpers";
+import { CANDIDATE_SCHEMA_VERSION } from "../domain/candidate";
 
 // `learn` reads the *client* home, which is separate from the codetrap home the
 // CLI harness isolates. CODETRAP_CLIENT_HOME points it at a fixture instead of
@@ -158,7 +159,7 @@ describe("Phase 1C — learn CLI", () => {
       status: "proposed",
       candidate_kind: "pitfall_trap",
       source_agent: "claude-code",
-      schema_version: 2,
+      schema_version: CANDIDATE_SCHEMA_VERSION,
     });
     expect(candidates[0].source_manifest_refs).toEqual([goodRef]);
     expect(candidates[0].rationale).toContain("harness limit");

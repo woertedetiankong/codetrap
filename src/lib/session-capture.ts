@@ -22,6 +22,7 @@ export type CandidateDraft = Pick<CandidateTrap, "trap" | "evidence"> & {
   destination_hint?: string;
   rationale?: string;
   source_manifest_refs?: string[];
+  destination_payload?: Record<string, unknown>;
 };
 
 export type CapturedCandidateDraftArgs = {
@@ -35,6 +36,7 @@ export type CapturedCandidateDraftArgs = {
   destinationHint?: string;
   rationale?: string;
   sourceManifestRefs?: string[];
+  destinationPayload?: Record<string, unknown>;
 };
 
 export type ParsedTrapMarkdownInput = {
@@ -88,7 +90,7 @@ export function createCandidateTrap(draft: CandidateDraft, id: string): Candidat
     evidence: draft.evidence,
     schema_version: CANDIDATE_SCHEMA_VERSION,
     revision: 1,
-    content_hash: trapFingerprint(draft.trap),
+    content_hash: candidateDraftFingerprint(draft),
     candidate_kind: draft.candidate_kind ?? "pitfall_trap",
     review_decision: "pending",
     delivery_state: "draft",
@@ -96,6 +98,7 @@ export function createCandidateTrap(draft: CandidateDraft, id: string): Candidat
     ...(draft.destination_hint ? { destination_hint: draft.destination_hint } : {}),
     ...(draft.rationale ? { rationale: draft.rationale } : {}),
     ...(draft.source_manifest_refs?.length ? { source_manifest_refs: draft.source_manifest_refs } : {}),
+    ...(draft.destination_payload ? { destination_payload: draft.destination_payload } : {}),
   };
 }
 
@@ -112,7 +115,31 @@ export function mergeCandidateTraps(existing: CandidateTrap[], proposed: Candida
 }
 
 export function candidateTrapKey(candidate: CandidateTrap): string {
-  return trapContentKey(candidate.trap);
+  return candidateDraftFingerprint(candidate);
+}
+
+function candidateDraftFingerprint(candidate: Pick<CandidateTrap, "trap" | "candidate_kind" | "destination_payload">): string {
+  if (!candidate.destination_payload && (!candidate.candidate_kind || candidate.candidate_kind === "pitfall_trap")) {
+    return trapFingerprint(candidate.trap);
+  }
+  return createHash("sha256")
+    .update(JSON.stringify({
+      trap: trapFingerprint(candidate.trap),
+      kind: candidate.candidate_kind ?? "pitfall_trap",
+      payload: stableValue(candidate.destination_payload ?? null),
+    }))
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, stableValue(item)]));
+  }
+  return value;
 }
 
 /**
@@ -184,6 +211,7 @@ export function capturedCandidateDraft(
     ...(args.destinationHint ? { destination_hint: args.destinationHint } : {}),
     ...(args.rationale ? { rationale: args.rationale } : {}),
     ...(args.sourceManifestRefs?.length ? { source_manifest_refs: args.sourceManifestRefs } : {}),
+    ...(args.destinationPayload ? { destination_payload: args.destinationPayload } : {}),
   };
 }
 

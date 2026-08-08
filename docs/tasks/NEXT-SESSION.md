@@ -1,17 +1,13 @@
 # Next Session
 
 Project `D:\llm\codetrap\codetrap` (codetrap). Read
-`docs/tasks/2026-08-08-phase1-closeout/handoff.md` first.
-Previous session: Phase 1 closed with a 367-pass Windows suite and real Codex
-recall/usefulness evidence for Claude Code-mined trap #5.
-Errata: PATH resolves a stale codetrap installation without `useful`; use the
-repository CLI until it is refreshed.
-Current state: Phase 1 is done; Phase 2 has not started.
-Environment: project trap #5 has `useful_count >= 2`; one unrelated codetrap
-candidate remains proposed for review.
-Now do: 1. refresh the installed CLI 2. start Phase 2 from the roadmap gate.
-Red lines: preserve the user's deletion of `docs/codebase-audit.md`; do not
-accept pending learning candidates without explicit user approval; do not push
-without explicit user instruction.
-First verify: `bun test --timeout 10000` (expected 367 pass, 1 skip, 0 fail;
-mismatch means the closeout validation regressed).
+`docs/tasks/2026-08-08-phase2-low-risk-destinations/handoff.md` first.
+Previous session: Phase 2 completed with 374 passed, 1 skip, and 0 failed.
+Errata: the global PATH installation was removed; use `bun run src/index.ts`.
+Current state: Phase 2 is complete; Phase 3 requires an evidence gate audit.
+Environment: untracked `question.txt` belongs to the user.
+Now do: 1. inspect Phase 0-2 evidence 2. choose go/no-go per destination.
+Red lines: do not manufacture Phase 3 demand; do not touch `question.txt`; do
+not push without explicit instruction.
+First verify: `git status --short --branch` (expected Phase 2 branch and only
+user-owned `question.txt`; mismatch means scope drift).

@@ -252,6 +252,18 @@ export class TrapStore {
     return { success: false };
   }
 
+  validate(id: number, scope?: string, now = new Date()): { success: boolean; scope?: string } {
+    return this.resolveMutation(id, scope, (scoped) => ({
+      success: scoped.repository.validate(id, now.toISOString()),
+    }));
+  }
+
+  graduate(id: number, target: string, scope?: string, now = new Date()): { success: boolean; scope?: string } {
+    return this.resolveMutation(id, scope, (scoped) => ({
+      success: scoped.repository.graduate(id, target, now.toISOString()),
+    }));
+  }
+
   topTraps(scope: string, limit = 20): Trap[] {
     const resolvedScope = normalizeScope(scope);
     return this.scopes.repositoryFor(resolvedScope).top(resolvedScope, limit);

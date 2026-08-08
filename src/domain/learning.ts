@@ -20,7 +20,14 @@ export const EXECUTOR_IS_DECLARED =
 
 // Phase 1A ships one destination. Kept as a field rather than an implicit
 // constant so 1B can widen it without rewriting stored receipts.
-export const RECEIPT_DESTINATIONS = ["pitfall_trap"] as const;
+export const RECEIPT_DESTINATIONS = [
+  "pitfall_trap",
+  "unclassified",
+  "project_convention",
+  "docs_guidance",
+  "search_eval_case",
+  "insight",
+] as const;
 export type ReceiptDestination = (typeof RECEIPT_DESTINATIONS)[number];
 
 export interface LearningReceipt {

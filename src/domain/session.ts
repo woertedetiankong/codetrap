@@ -124,6 +124,10 @@ export interface CandidateTrap {
   candidate_kind?: CandidateKind;
   /** Free-form and non-binding: a hint, never a schema enum (§8.1). */
   destination_hint?: string;
+  /** Destination-specific material. Included in the authorization hash. */
+  destination_payload?: Record<string, unknown>;
+  /** Durable Phase 2 commit id, used by the exact revert path. */
+  destination_commit_id?: string;
   review_decision?: ReviewDecision;
   delivery_state?: DeliveryState;
   /** Why the action is right and what breaks otherwise (§1.7's second consumer). */

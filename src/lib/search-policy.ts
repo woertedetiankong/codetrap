@@ -55,6 +55,8 @@ export interface RankingConfig {
   pathMatchBoost: number;
   moduleMatchBoost: number;
   ownerMatchBoost: number;
+  stalePenalty: number;
+  staleAfterDays: number;
 }
 
 export const DEFAULT_RANKING_CONFIG: RankingConfig = {
@@ -72,6 +74,8 @@ export const DEFAULT_RANKING_CONFIG: RankingConfig = {
   pathMatchBoost: 0.12,
   moduleMatchBoost: 0.08,
   ownerMatchBoost: 0.04,
+  stalePenalty: -0.35,
+  staleAfterDays: 180,
 };
 
 export class TrapSearchPolicy {
@@ -105,7 +109,7 @@ export class TrapSearchPolicy {
   }
 
   candidateLimit(opts: SearchPolicyOptions, resultLimit: number): number {
-    return shouldOverfetch(opts) ? Math.max(resultLimit * 5, 50) : resultLimit;
+    return opts.rerank !== false || shouldOverfetch(opts) ? Math.max(resultLimit * 5, 50) : resultLimit;
   }
 
   semanticMinScore(): number {
@@ -319,6 +323,16 @@ function rankingSignals(
   }
   if (filter.owner && trap.owner === filter.owner) {
     signals.push({ code: "owner_scope_match", weight: ranking.ownerMatchBoost, detail: filter.owner });
+  }
+
+
+  const validatedAt = trap.last_validated ?? trap.created_at;
+  const validatedMs = Date.parse(validatedAt);
+  if (Number.isFinite(validatedMs)) {
+    const ageDays = Math.floor((Date.now() - validatedMs) / (24 * 60 * 60 * 1000));
+    if (ageDays > ranking.staleAfterDays) {
+      signals.push({ code: "stale_currency", weight: ranking.stalePenalty, detail: `${ageDays} days since validation` });
+    }
   }
 
   return signals;

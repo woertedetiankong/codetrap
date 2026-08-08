@@ -30,9 +30,10 @@ export function insertTrap(db: Database, input: TrapInput): number {
     INSERT INTO traps (
       title, category, tags, scope, context, mistake, fix, search_text,
       before_code, after_code, severity, state_key, status, supersedes_id,
-      valid_from, valid_until, project_path, path_globs, module, owner
+      valid_from, valid_until, project_path, path_globs, module, owner,
+      last_validated
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, datetime('now'))
   `);
   const result = stmt.run(
     input.title,
@@ -254,6 +255,21 @@ export function markTrapUseful(db: Database, id: number, at: string): boolean {
   return result.changes > 0;
 }
 
+export function validateTrap(db: Database, id: number, at: string): boolean {
+  const result = db.prepare("UPDATE traps SET last_validated = ? WHERE id = ?").run(at, id);
+  return result.changes > 0;
+}
+
+export function graduateTrap(db: Database, id: number, target: string, at: string): boolean {
+  const result = db.prepare(`
+    UPDATE traps
+    SET status = 'archived', graduated_at = ?, graduated_to = ?,
+        valid_until = COALESCE(valid_until, datetime('now')), updated_at = datetime('now')
+    WHERE id = ? AND status = 'active'
+  `).run(at, target, id);
+  return result.changes > 0;
+}
+
 export function getTopTraps(db: Database, scope: string, limit = 20): Trap[] {
   return db
     .query("SELECT * FROM traps WHERE scope = ? AND status = 'active' ORDER BY hit_count DESC LIMIT ?")
@@ -308,9 +324,10 @@ export function insertTrapRecord(db: Database, record: TrapRecordInsert): number
       title, category, tags, scope, context, mistake, fix, search_text,
       before_code, after_code, severity, state_key, status, supersedes_id,
       valid_from, valid_until, project_path, path_globs, module, owner,
-      hit_count, useful_count, last_useful_at, created_at, updated_at
+      hit_count, useful_count, last_useful_at, last_validated,
+      graduated_at, graduated_to, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     record.title,
@@ -336,6 +353,9 @@ export function insertTrapRecord(db: Database, record: TrapRecordInsert): number
     record.hit_count,
     record.useful_count,
     record.last_useful_at,
+    record.last_validated,
+    record.graduated_at,
+    record.graduated_to,
     record.created_at,
     record.updated_at
   );

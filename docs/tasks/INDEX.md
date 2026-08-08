@@ -13,3 +13,4 @@
 | Wide-lens mining | Done | [task](2026-07-25-wide-lens-mining-run/task-brief.md) | [handoff](2026-07-25-wide-lens-mining-run/handoff.md) | Extractor experiment | Phase 2 evidence | Genuine per-item approval measured 20% at n=5. |
 | Loopback proxy fix | Done | Not created | [handoff](2026-07-25-loopback-proxy-fix/handoff.md) | Wide-lens finding | Phase 1 closeout | Fixed embedding reindex failure. |
 | Phase 1 closeout | Done | [task](2026-08-08-phase1-closeout/task-brief.md) | [handoff](2026-08-08-phase1-closeout/handoff.md) | Phase 1E, loopback fix | Parent roadmap, Phase 2 | Windows suite green and real Codex recall proven. |
+| Phase 2 low-risk destinations | Done | [task](2026-08-08-phase2-low-risk-destinations/task-brief.md) | [handoff](2026-08-08-phase2-low-risk-destinations/handoff.md) | Phase 1 closeout, wide-lens evidence | Parent roadmap, Phase 3 | Patch proposals, insight shelf, currency, metrics, and acceptance gates passed. |

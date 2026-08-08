@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import type { CandidateTrap } from "../domain/session";
 import {
   CANDIDATE_SCHEMA_VERSION,
   LEGACY_CANDIDATE_SCHEMA_VERSION,
+  PHASE1_CANDIDATE_SCHEMA_VERSION,
   type CandidateKind,
   type DeliveryState,
   type ReviewDecision,
@@ -25,8 +27,18 @@ export type MigrateCandidateOptions = {
  * Reformatting or retagging is therefore not a material edit, but changing what
  * the lesson actually says is.
  */
-export function candidateContentHash(candidate: Pick<CandidateTrap, "trap">): string {
-  return trapFingerprint(candidate.trap);
+export function candidateContentHash(
+  candidate: Pick<CandidateTrap, "trap"> & Partial<Pick<CandidateTrap, "candidate_kind" | "destination_payload">>
+): string {
+  if (!candidate.destination_payload && (!candidate.candidate_kind || candidate.candidate_kind === "pitfall_trap")) {
+    return trapFingerprint(candidate.trap);
+  }
+  const normalized = stableValue({
+    trap: trapFingerprint(candidate.trap),
+    kind: candidate.candidate_kind ?? "pitfall_trap",
+    payload: candidate.destination_payload ?? null,
+  });
+  return createHash("sha256").update(JSON.stringify(normalized)).digest("hex").slice(0, 32);
 }
 
 export function isLegacyCandidate(candidate: CandidateTrap): boolean {
@@ -55,6 +67,18 @@ export function migrateCandidate(
   options: MigrateCandidateOptions = {}
 ): CandidateTrap {
   if (!isLegacyCandidate(candidate)) return candidate;
+
+  const version = candidate.schema_version ?? LEGACY_CANDIDATE_SCHEMA_VERSION;
+  if (version === PHASE1_CANDIDATE_SCHEMA_VERSION) {
+    const hintedInsight = candidate.candidate_kind === "unclassified"
+      && candidate.destination_hint?.trim().toLowerCase() === "insight";
+    const migrated = {
+      ...candidate,
+      schema_version: CANDIDATE_SCHEMA_VERSION,
+      candidate_kind: hintedInsight ? "insight" as const : candidate.candidate_kind ?? "pitfall_trap",
+    };
+    return { ...migrated, content_hash: candidateContentHash(migrated) };
+  }
 
   const mapped = mapLegacyState(candidate, options);
   return {
@@ -94,6 +118,8 @@ export function downgradeCandidate(candidate: CandidateTrap): CandidateTrap {
     content_hash,
     candidate_kind,
     destination_hint,
+    destination_payload,
+    destination_commit_id,
     review_decision,
     delivery_state,
     rationale,
@@ -104,6 +130,16 @@ export function downgradeCandidate(candidate: CandidateTrap): CandidateTrap {
     ...legacy
   } = candidate;
   return legacy;
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, stableValue(item)]));
+  }
+  return value;
 }
 
 export function migrateCandidates(
