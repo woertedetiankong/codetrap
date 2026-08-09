@@ -65,6 +65,7 @@ export class Phase2Operations {
     const executor = parseExecutor(executorInput);
     const { candidate } = this.sessions.getCandidate(candidateId, sessionId);
     const kind = phase2Kind(candidate);
+    this.sessions.assertDestinationCommitAuthorized(sessionId, candidateId, executor);
     const commit = this.phase2.apply(sessionId, candidate);
     let committed: CandidateTrap;
     try {

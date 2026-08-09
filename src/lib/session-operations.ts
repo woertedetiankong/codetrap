@@ -469,14 +469,7 @@ export class SessionOperations {
     commitId: string,
     executor: Executor
   ): CandidateTrap {
-    const { candidate } = this.sessions.getCandidate(candidateId, sessionId);
-    if ((candidate.candidate_kind ?? "pitfall_trap") === "pitfall_trap") {
-      throw new Error(`Candidate ${candidateId} is a pitfall_trap; use session accept.`);
-    }
-    assertAuthorizedToCommit(candidate, candidate, executor, undefined);
-    if (candidate.authorization && candidate.authorization.destination !== candidate.candidate_kind) {
-      throw new Error(`Authorization destination ${candidate.authorization.destination} does not match ${candidate.candidate_kind}.`);
-    }
+    const candidate = this.assertDestinationCommitAuthorized(sessionId, candidateId, executor);
     return this.sessions.updateCandidateInPlace(sessionId, candidateId, (current) => ({
       ...current,
       status: "accepted",
@@ -485,6 +478,22 @@ export class SessionOperations {
       destination_commit_id: commitId,
       accepted_at: new Date().toISOString(),
     }));
+  }
+
+  assertDestinationCommitAuthorized(
+    sessionId: string,
+    candidateId: string,
+    executor: Executor
+  ): CandidateTrap {
+    const { candidate } = this.sessions.getCandidate(candidateId, sessionId);
+    if ((candidate.candidate_kind ?? "pitfall_trap") === "pitfall_trap") {
+      throw new Error(`Candidate ${candidateId} is a pitfall_trap; use session accept.`);
+    }
+    assertAuthorizedToCommit(candidate, candidate, executor, undefined);
+    if (candidate.authorization && candidate.authorization.destination !== candidate.candidate_kind) {
+      throw new Error(`Authorization destination ${candidate.authorization.destination} does not match ${candidate.candidate_kind}.`);
+    }
+    return candidate;
   }
 
   rollbackDestinationCandidate(sessionId: string, candidateId: string): CandidateTrap {

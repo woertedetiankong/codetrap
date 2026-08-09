@@ -280,8 +280,8 @@ codetrap session approve cand-001 --authorized-scope "cand-001 only"
 codetrap session accept  cand-001 --executor agent
 ```
 
-Approval is bound to a content hash covering the trigger, mistake, fix and
-scope. Editing any of them bumps the candidate's revision and drops the
+Approval is bound to a content hash covering the title, trigger, mistake, fix
+and scope. Editing any of them bumps the candidate's revision and drops the
 approval, so a lesson that changed after you read it cannot be committed on the
 strength of your earlier decision:
 
@@ -801,12 +801,12 @@ Current checked-in results:
 |---|---:|---:|---:|---:|
 | Default hybrid + deterministic proxy | 1.0000 | 1.0000 | 0.9028 | 0 |
 | FTS only | 0.8333 | 0.8333 | 0.8333 | 2 |
-| Deterministic semantic proxy only | 1.0000 | 1.0000 | 0.7083 | 0 |
+| Deterministic semantic proxy only | 1.0000 | 1.0000 | 0.8750 | 0 |
 | Hybrid with semantic unavailable | 0.8333 | 0.8333 | 0.8333 | 2 |
 
 The weaker rows are intentional and remain visible. This benchmark measures
 retrieval on a released synthetic dataset. Its semantic provider is a
-deterministic category proxy used for reproducibility, not a production
+public-only deterministic category proxy used for reproducibility, not a production
 embedding model. It does not measure candidate quality, human approval quality,
 longitudinal usefulness, or later agent behavior. See
 [`benchmarks/retrieval-v1/README.md`](benchmarks/retrieval-v1/README.md) for the

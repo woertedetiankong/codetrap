@@ -16,10 +16,31 @@ import { CANDIDATE_SCHEMA_VERSION, statusFromAxes } from "../domain/candidate";
 import type { CandidateTrap } from "../domain/session";
 import { runCli, tempHome, tempProjectDir } from "./helpers";
 import { reviewedSessionCandidates } from "../lib/session-review";
+import { candidateTrapKey, createCandidateTrap } from "../lib/session-capture";
 
 // One test per Phase 1B acceptance criterion (§16), plus a fixture for each of
 // the four legacy states the §8.3 mapping names.
 describe("Phase 1B — candidate envelope migration", () => {
+  test("destination candidates use one identity for capture, dedup, edits, and authorization", () => {
+    const candidate = createCandidateTrap({
+      trap: {
+        title: "Keep review guidance current",
+        category: "other",
+        scope: "project",
+        context: "When publishing reviewed guidance.",
+        mistake: "Letting identity drift invalidates unchanged drafts.",
+        fix: "Use one canonical content hash implementation.",
+        severity: "warning",
+      },
+      evidence: [],
+      candidate_kind: "docs_guidance",
+      destination_payload: { path: "docs/review.md", content: "Review this first." },
+    }, "cand-001");
+
+    expect(candidate.content_hash).toBe(candidateContentHash(candidate));
+    expect(candidateTrapKey(candidate)).toBe(candidateContentHash(candidate));
+  });
+
   test("C1: the §8.3 mapping covers every legacy state", () => {
     const migrated = migrateCandidates(
       [

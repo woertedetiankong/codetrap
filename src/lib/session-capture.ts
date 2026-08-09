@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { CANDIDATE_SCHEMA_VERSION, type CandidateKind, type SourceAgent } from "../domain/candidate";
 import type { CandidateTrap, SessionMetadata, SessionNote } from "../domain/session";
 import { parseSessionNoteKind } from "../domain/session";
@@ -14,6 +13,9 @@ import { uniqueStrings } from "./string-list";
 import { trimOuterBlankLines } from "./text-lines";
 import { scoreCandidateTrap } from "./trap-quality";
 import { isRecord } from "./value-types";
+import { candidateContentHash, trapContentKey, trapFingerprint } from "./candidate-identity";
+
+export { trapContentKey, trapFingerprint } from "./candidate-identity";
 
 export type CandidateDraft = Pick<CandidateTrap, "trap" | "evidence"> & {
   /** §8.2 provenance, populated by the Phase 1C adapters. */
@@ -90,7 +92,7 @@ export function createCandidateTrap(draft: CandidateDraft, id: string): Candidat
     evidence: draft.evidence,
     schema_version: CANDIDATE_SCHEMA_VERSION,
     revision: 1,
-    content_hash: candidateDraftFingerprint(draft),
+    content_hash: candidateContentHash(draft),
     candidate_kind: draft.candidate_kind ?? "pitfall_trap",
     review_decision: "pending",
     delivery_state: "draft",
@@ -115,31 +117,7 @@ export function mergeCandidateTraps(existing: CandidateTrap[], proposed: Candida
 }
 
 export function candidateTrapKey(candidate: CandidateTrap): string {
-  return candidateDraftFingerprint(candidate);
-}
-
-function candidateDraftFingerprint(candidate: Pick<CandidateTrap, "trap" | "candidate_kind" | "destination_payload">): string {
-  if (!candidate.destination_payload && (!candidate.candidate_kind || candidate.candidate_kind === "pitfall_trap")) {
-    return trapFingerprint(candidate.trap);
-  }
-  return createHash("sha256")
-    .update(JSON.stringify({
-      trap: trapFingerprint(candidate.trap),
-      kind: candidate.candidate_kind ?? "pitfall_trap",
-      payload: stableValue(candidate.destination_payload ?? null),
-    }))
-    .digest("hex")
-    .slice(0, 32);
-}
-
-function stableValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => [key, stableValue(item)]));
-  }
-  return value;
+  return candidateContentHash(candidate);
 }
 
 /**
@@ -148,21 +126,6 @@ function stableValue(value: unknown): unknown {
  * same evidence produce the same key, which is what lets a suppression survive
  * a re-run (§16 Phase 1A).
  */
-export function trapContentKey(trap: CandidateTrap["trap"]): string {
-  return [
-    trap.title,
-    trap.context,
-    trap.mistake,
-    trap.fix,
-    trap.scope,
-  ].map(normalizeKeyPart).join("\u0000");
-}
-
-/** Stable short hash of `trapContentKey`, used as the suppression fingerprint. */
-export function trapFingerprint(trap: CandidateTrap["trap"]): string {
-  return createHash("sha256").update(trapContentKey(trap)).digest("hex").slice(0, 32);
-}
-
 export function nextCandidateId(candidates: CandidateTrap[]): string {
   const max = candidates
     .map((candidate) => candidate.id.match(/^cand-(\d+)$/)?.[1])

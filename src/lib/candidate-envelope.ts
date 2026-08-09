@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { CandidateTrap } from "../domain/session";
 import {
   CANDIDATE_SCHEMA_VERSION,
@@ -8,7 +7,9 @@ import {
   type DeliveryState,
   type ReviewDecision,
 } from "../domain/candidate";
-import { trapFingerprint } from "./session-capture";
+import { candidateContentHash } from "./candidate-identity";
+
+export { candidateContentHash } from "./candidate-identity";
 
 export type MigrateCandidateOptions = {
   /**
@@ -27,20 +28,6 @@ export type MigrateCandidateOptions = {
  * Reformatting or retagging is therefore not a material edit, but changing what
  * the lesson actually says is.
  */
-export function candidateContentHash(
-  candidate: Pick<CandidateTrap, "trap"> & Partial<Pick<CandidateTrap, "candidate_kind" | "destination_payload">>
-): string {
-  if (!candidate.destination_payload && (!candidate.candidate_kind || candidate.candidate_kind === "pitfall_trap")) {
-    return trapFingerprint(candidate.trap);
-  }
-  const normalized = stableValue({
-    trap: trapFingerprint(candidate.trap),
-    kind: candidate.candidate_kind ?? "pitfall_trap",
-    payload: candidate.destination_payload ?? null,
-  });
-  return createHash("sha256").update(JSON.stringify(normalized)).digest("hex").slice(0, 32);
-}
-
 export function isLegacyCandidate(candidate: CandidateTrap): boolean {
   return (candidate.schema_version ?? LEGACY_CANDIDATE_SCHEMA_VERSION) < CANDIDATE_SCHEMA_VERSION;
 }
@@ -136,16 +123,6 @@ export function downgradeCandidate(candidate: CandidateTrap): CandidateTrap {
     ...legacy
   } = candidate;
   return legacy;
-}
-
-function stableValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => [key, stableValue(item)]));
-  }
-  return value;
 }
 
 export function migrateCandidates(

@@ -344,17 +344,10 @@ function caseReport(item: EvalQuery, fixture: EvalFixture, results: TrapSearchRe
     (item.goldTrapIds.length === 0 && item.judgment !== "no_relevant_trap"
       ? "goldTrapIds is required unless judgment is no_relevant_trap."
       : undefined);
-  const resultIdsAt3 = new Set(results.slice(0, 3).map((result) => result.trap.id));
-  const resultIdsAt5 = new Set(results.map((result) => result.trap.id));
-  const hasGoldTraps = item.goldTrapIds.length > 0;
-  const recallAt3 = hasGoldTraps
-    ? item.goldTrapIds.filter((id) => resultIdsAt3.has(id)).length / item.goldTrapIds.length
-    : 1;
-  const recallAt5 = hasGoldTraps
-    ? item.goldTrapIds.filter((id) => resultIdsAt5.has(id)).length / item.goldTrapIds.length
-    : 1;
-  const rank = hasGoldTraps ? results.findIndex((result) => item.goldTrapIds.includes(result.trap.id)) : -1;
-  const reciprocalRank = rank >= 0 ? 1 / (rank + 1) : 0;
+  const { recallAt3, recallAt5, reciprocalRank } = retrievalMetricsForRanking(
+    item.goldTrapIds,
+    results.map((result) => result.trap.id)
+  );
   const minRecallAt3 = item.minRecallAt3 ?? 0;
   const minRecallAt5 = item.minRecallAt5 ?? 0;
   const passed = !caseError && recallAt3 >= minRecallAt3 && recallAt5 >= minRecallAt5;
@@ -377,6 +370,28 @@ function caseReport(item: EvalQuery, fixture: EvalFixture, results: TrapSearchRe
     reciprocalRank,
     passed,
     ...(caseError ? { error: caseError } : {}),
+  };
+}
+
+/** Compute retrieval cutoffs independently of the search layer's result limit. */
+export function retrievalMetricsForRanking(goldTrapIds: number[], rankedTrapIds: number[]): {
+  recallAt3: number;
+  recallAt5: number;
+  reciprocalRank: number;
+} {
+  if (goldTrapIds.length === 0) {
+    return { recallAt3: 1, recallAt5: 1, reciprocalRank: 0 };
+  }
+
+  const resultIdsAt3 = new Set(rankedTrapIds.slice(0, 3));
+  const resultIdsAt5 = new Set(rankedTrapIds.slice(0, 5));
+  const recallAt3 = goldTrapIds.filter((id) => resultIdsAt3.has(id)).length / goldTrapIds.length;
+  const recallAt5 = goldTrapIds.filter((id) => resultIdsAt5.has(id)).length / goldTrapIds.length;
+  const rank = rankedTrapIds.findIndex((id) => goldTrapIds.includes(id));
+  return {
+    recallAt3,
+    recallAt5,
+    reciprocalRank: rank >= 0 ? 1 / (rank + 1) : 0,
   };
 }
 

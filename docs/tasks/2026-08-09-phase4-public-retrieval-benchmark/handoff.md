@@ -1,5 +1,5 @@
 ---
-title: Handoff 2026-08-09 - Phase 4A public retrieval benchmark
+title: Handoff 2026-08-09 - Phase 4A benchmark audit hardening
 status: Complete
 updated: 2026-08-09
 ---
@@ -8,104 +8,102 @@ updated: 2026-08-09
 
 ## Summary
 
-Phase 4A implementation is complete: codetrap now has an offline, synthetic,
-MIT-licensed retrieval benchmark with four honest configurations, stable
-SHA-256/metric drift verification, packaged methodology, one-command output,
-and a pinned-Bun Windows/Linux clean-runner gate with JSON artifacts. Overall
-Phase 4 remains open for the first remote workflow run, independent reproduction,
-and privacy-safe longitudinal evidence.
+Phase 4A remains locally complete and is now hardened against the confirmed
+audit findings: scope migration preserves lifecycle fields, candidate identity
+has one implementation, Phase 2 authorization precedes destination writes,
+the public benchmark has no dogfood vocabulary dependency, Windows atomic
+writes retry bounded contention, and typecheck/full-suite CI gates cover PRs,
+main, and releases. Overall Phase 4 still needs remote CI evidence, independent
+reproduction, and privacy-safe longitudinal data.
 
 ## Current State
 
-The benchmark implementation passes local validation, is package-ready, and is
-merged into local `main`. The CI workflow has not run because local `main` has
-not been pushed; nothing has been externally published or independently
-reproduced.
+The audit-hardening implementation is complete locally, committed on its
+temporary branch, and all quality gates listed below are green. It has not been
+merged, pushed, or run in remote CI.
 
 ## Git And Persistent State
 
-- Branch: local `main`; the completed `phase4-public-benchmark` branch was
-  fast-forwarded into `main` and deleted locally.
-- Local `main` contains the Phase 4A commit and is ahead of `origin/main` until
-  an explicitly authorized push succeeds.
-- No user trap store, session record, embedding service, or external system was
-  mutated; benchmark execution is in-memory and offline.
+- Branch: `phase4-audit-hardening`, based on `767daf0` (`main` and
+  `origin/main` at the start of this work).
+- HEAD commit: `fix: harden phase 4 audit findings`.
+- All audit-hardening changes are committed locally; nothing was pushed,
+  merged, released, or published during this task.
+- User stores and external services were not modified.
 
 ## Key Decisions
 
-- The internal eval fixture stays private-facing because it mixes regression,
-  dogfood, and project-shaped content; the public dataset is newly authored.
-- `EvalEmbedder` is labeled a deterministic semantic proxy, never a production
-  embedding score.
-- Phase 4A measures retrieval only. Candidate quality, approval quality,
-  longitudinal usefulness, and behavior change remain explicitly unmeasured.
+- One shared module owns candidate hashes and trap identity across capture,
+  deduplication, approval, edit, and destination authorization.
+- The public semantic proxy uses generic public categories only. It is still a
+  deterministic retrieval proxy, not a production embedding measurement.
+- Destination authorization is checked before Phase 2 apply and again at
+  commit, so an unauthorized attempt cannot create its commit ledger.
+- Existing HTTP security tests already cover token and project isolation. MCP
+  cwd semantics, advisory-lock leases, and broad redaction were not changed
+  without a reproduced boundary failure or a separately scoped design.
 
 ## Changed Surfaces
 
-- `benchmarks/retrieval-v1/`: dataset, method, claim boundary, expected summary.
-- `src/lib/public-retrieval-benchmark.ts`: four-run report and drift gate.
-- `scripts/public-retrieval-benchmark.ts`: text/JSON/verify CLI.
-- `.github/workflows/retrieval-benchmark.yml`: pinned Bun 1.3.14 matrix for
-  clean Windows/Linux verification and per-runner report upload.
-- `src/tests/public-retrieval-benchmark.test.ts`: package, drift, and isolated-
-  home proofs, report persistence, and workflow contract.
-- `.gitignore`, `package.json`, `README.md`: generated report, npm surface, and
-  operator workflow.
-
-## Cross-Module References
-
-- Depends on: [Phase 3 handoff](../2026-08-08-phase3-skill-candidate-lifecycle/handoff.md) - prior roadmap gate.
-- Reuses: `search-eval.ts`, `search-policy.ts`, and the in-memory repository;
-  internal fixture content is not reused.
-- Referenced by: [parent roadmap](../../agent-experience-compiler-roadmap.md) - Phase 4 status and claim boundary.
+- Candidate lifecycle: `candidate-identity.ts`, candidate/session operations,
+  Phase 2 operations, trap transfer, and their regression tests.
+- Reliability: `fs-json.ts`, explicit Recall@5 with a rank-six boundary test,
+  and focused tests.
+- Benchmark: public-only embedder, expected results, methodology, and tests.
+- Quality gates: pinned TypeScript, PR/main CI, release/npm workflows, and
+  release preflight.
 
 ## Validation
 
-- `bun run benchmark:retrieval -- --verify` -> passed; dataset SHA-256
-  `2f180e09...fcefc8e`.
-- Focused evaluation suite -> 17 passed, 0 failed.
-- `bun test src/tests/public-retrieval-benchmark.test.ts` -> 6 passed, 0 failed.
-- `bun test` -> 386 passed, 1 intentional browser-smoke skip, 0 failed. One
-  earlier rerun saw a transient unrelated Windows `EPERM` rename in the Phase 3
-  fixture; that file passed twice in isolation and the final full run is green.
-- `npm pack --dry-run --json` -> benchmark data, docs, runner, and library included.
-- Extracted npm tarball -> `bun run benchmark:retrieval -- --verify` passed
-  outside the workspace on the same machine.
-- `bun run build` -> Windows CLI and MCP executables built.
-- `bunx tsc --noEmit` -> three pre-existing Phase 2 errors; no Phase 4A file is
-  named by the diagnostics.
+- `bun run typecheck` -> passed.
+- `bun test` -> 395 passed, 1 configured browser-smoke skip, 0 failed, and 1661
+  assertions across 56 files.
+- `bun run benchmark:retrieval -- --verify` -> passed; default hybrid MRR
+  0.9028 and semantic proxy-only MRR 0.875.
+- `bun run build` -> Windows CLI and MCP builds passed.
+- `npm pack --dry-run --json` -> passed with the new packaged source files.
+- All four GitHub workflow files parse as YAML; `git diff --check` has no
+  whitespace errors.
+
+## Next Steps
+
+1. Review the commit, then fast-forward it into `main` only when the user
+   requests that Git operation.
+2. Push only with explicit authorization, then inspect the Windows/Linux CI
+   results and retain benchmark artifacts.
+3. Obtain an independent reproduction before claiming external validation;
+   keep Phase 4B publication blocked until real privacy-safe evidence exists.
 
 ## Restart Verify
 
 ```bash
 git status --short --branch
-# expected: clean main ahead of origin/main by the Phase 4A commit; mismatch means inspect repository state.
+# expected: clean phase4-audit-hardening branch at the audit-hardening commit.
+bun run typecheck
+# expected: exit 0 with no TypeScript diagnostics.
+bun test
+# expected: 395 passed, 1 configured browser-smoke skip, 0 failed.
 bun run benchmark:retrieval -- --verify
-# expected: verification passed and SHA-256 2f180e09...fcefc8e; mismatch means dataset or retrieval drift.
-bun test src/tests/public-retrieval-benchmark.test.ts
-# expected: 6 passed, 0 failed; mismatch means package, isolation, workflow, or drift contract regressed.
+# expected: verification passed; hybrid MRR 0.9028, semantic proxy MRR 0.875.
 ```
 
-## Next Steps
+Expected state: clean branch `phase4-audit-hardening` at the audit-hardening
+commit, green typecheck, 395 pass/1 skip/0 fail, and benchmark verification
+passed. A mismatch means inspect the working tree or the failing gate before
+merging; do not update the recorded expectations to hide drift.
 
-1. After an authorized push, inspect both clean-runner workflow legs and retain
-   their JSON artifacts; seek independent reproduction before claiming external
-   validation.
-2. Keep Phase 4B blocked from publication until privacy-safe longitudinal
-   metrics exist; do not synthesize them.
+## Red Lines
 
-## Red Lines And Gotchas
+- Do not publish the internal eval fixture or call proxy scores real embedding
+  quality.
+- Do not claim remote or independent evidence before it exists.
+- Do not push, publish npm artifacts, or create a release without approval.
 
-- Do not publish the internal eval fixture or user-derived evidence.
-- Do not call deterministic proxy scores real embedding quality.
-- Do not push, publish npm artifacts, or create a release without user approval.
+## References
 
-## Docs And Wiki
-
-- README, roadmap, task index, dossier, and next-session entry are reconciled.
-- No project wiki exists, so none was created.
+- [Parent roadmap](../../agent-experience-compiler-roadmap.md)
 
 ## Implementation Log
 
-- [implementation-log.md](implementation-log.md) records privacy, claims,
-  reproducibility, packaging, and validation decisions.
+- [implementation-log.md](implementation-log.md) records the reproduced audit
+  findings, fix boundaries, and validation evidence.

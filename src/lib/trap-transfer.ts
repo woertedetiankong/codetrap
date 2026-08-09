@@ -85,6 +85,9 @@ function toProjectTransferRecord(record: TrapExportRecord, projectPath: string):
     hit_count: record.hit_count ?? 0,
     useful_count: record.useful_count ?? 0,
     last_useful_at: record.last_useful_at ?? null,
+    last_validated: record.last_validated ?? null,
+    graduated_at: record.graduated_at ?? null,
+    graduated_to: record.graduated_to ?? null,
     created_at: record.created_at,
     updated_at: record.updated_at,
   };

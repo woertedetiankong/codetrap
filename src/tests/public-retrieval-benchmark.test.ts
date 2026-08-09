@@ -9,8 +9,22 @@ import {
   runPublicRetrievalBenchmark,
   verifyPublicBenchmark,
 } from "../lib/public-retrieval-benchmark";
+import { PublicRetrievalEmbedder } from "../lib/public-retrieval-embedder";
 
 describe("Phase 4A public retrieval benchmark", () => {
+  test("uses a public-only generic proxy instead of internal dogfood vocabulary", async () => {
+    const embedder = new PublicRetrievalEmbedder();
+    const [projectShaped, unrelated, api] = await embedder.embed([
+      "sticks3 esp-idf es8311 gpio14",
+      "an otherwise unclassified concept",
+      "retry an outbound HTTP request",
+    ], "retrieval.passage");
+
+    expect(Array.from(projectShaped)).toEqual(Array.from(unrelated));
+    expect(Array.from(api)).not.toEqual(Array.from(unrelated));
+    expect(embedder.dimensions).toBe(7);
+  });
+
   test("ships the public dataset and runner in the npm package", () => {
     const manifest = JSON.parse(readFileSync("package.json", "utf8"));
     expect(manifest.files).toContain("benchmarks");

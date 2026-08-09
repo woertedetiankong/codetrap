@@ -25,6 +25,10 @@ behavior change.
   and honest claim boundaries.
 - A pinned-toolchain Windows/Linux CI matrix runs the drift gate from a clean
   checkout and uploads the actual JSON report, including on verification drift.
+- Project-wide typecheck and full-suite gates cover pull requests, main pushes,
+  and release paths on the supported Windows/Linux runner matrix.
+- Lifecycle scope migration, candidate authorization identity, and Windows
+  atomic-write behavior retain their data and no-write-on-rejection contracts.
 - README and roadmap distinguish deterministic retrieval reproducibility from
   real-provider semantic quality, candidate quality, and behavior change.
 
@@ -37,6 +41,7 @@ In scope:
   tests.
 - Deterministic weak-configuration comparisons.
 - Clean-runner CI automation and machine-readable report artifacts.
+- Audit hardening required to make the benchmark and release gates trustworthy.
 
 Out of scope:
 

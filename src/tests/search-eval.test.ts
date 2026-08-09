@@ -6,6 +6,7 @@ import {
   EvalEmbedder,
   evaluateSearchFixture,
   readEvalFixture,
+  retrievalMetricsForRanking,
 } from "../lib/search-eval";
 
 const fixture = readEvalFixture(fileURLToPath(new URL("./fixtures/search-eval.json", import.meta.url)));
@@ -16,6 +17,14 @@ describe("search evaluation fixture", () => {
     expect(report.failures).toEqual([]);
     expect(report.metrics.recall_at_5).toBeGreaterThanOrEqual(1);
     expect(report.metrics.mrr).toBeGreaterThanOrEqual(0.8);
+  });
+
+  test("excludes a gold result at rank 6 from Recall@5", () => {
+    const metrics = retrievalMetricsForRanking([6], [1, 2, 3, 4, 5, 6]);
+
+    expect(metrics.recallAt3).toBe(0);
+    expect(metrics.recallAt5).toBe(0);
+    expect(metrics.reciprocalRank).toBeCloseTo(1 / 6);
   });
 
   test("reranking exposes generic exact-match signals", async () => {

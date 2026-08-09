@@ -113,6 +113,7 @@ describe("Phase 1E — curated context pack", () => {
           valid_from: null as unknown as string, valid_until: null,
           project_path: "/p",
           hit_count: 0, useful_count: 3, last_useful_at: "2026-07-25T00:00:00.000Z",
+          last_validated: null, graduated_at: null, graduated_to: null,
           created_at: "", updated_at: "",
         },
         evidence: [],

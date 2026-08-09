@@ -21,10 +21,16 @@ handoff) — see §19.
 | Phase 1 — MVP compiler loop | **Done** | 2026-08-08 | [closeout handoff](tasks/2026-08-08-phase1-closeout/handoff.md) | All five slices pass; trap #5 travelled from Claude Code mining to useful Codex recall. |
 | Phase 2 – low-risk destinations | **Done** | 2026-08-08 | [handoff](tasks/2026-08-08-phase2-low-risk-destinations/handoff.md) | Four review-bound destinations, insight study, currency/graduation, metrics, and decision rule pass end to end. |
 | Phase 3 — high-side-effect destinations | **Done** | 2026-08-09 | [skill lifecycle handoff](tasks/2026-08-08-phase3-skill-candidate-lifecycle/handoff.md) | Cross-client install is current; a later Codex screenshot-review task changed the implemented UI workflow. |
-| Phase 4 — external validation | **In progress (4A + CI gate implemented)** | 2026-08-09 | [Phase 4A handoff](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md) | Package-ready benchmark and Windows/Linux clean-runner gate are implemented; first remote run, independent reproduction, and longitudinal publication remain open. |
+| Phase 4 — external validation | **In progress (4A audit-hardened locally)** | 2026-08-09 | [Phase 4A handoff](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md) | Benchmark, shared authorization identity, migration/atomic-write fixes, and project CI gates are committed on a temporary branch; merge, remote run, independent reproduction, and longitudinal publication remain open. |
 
 ### Closed decisions by date
 
+- 2026-08-09 Phase 4A audit hardening reproduced and fixed lifecycle-field
+  loss during scope migration, divergent candidate identity hashing,
+  authorization after destination writes, Windows rename contention, and the
+  public proxy's dogfood vocabulary dependency. Typecheck and the full suite
+  now gate PR, main, and release paths; these changes are committed locally but
+  not merged or pushed ([detail](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md)).
 - 2026-08-09 Phase 4A now includes a pinned-Bun Windows/Linux CI matrix and
   machine-readable artifacts. This automates clean-runner reproduction after a
   push; it is not labeled third-party independent validation before or after
@@ -1548,8 +1554,10 @@ type merely to satisfy the roadmap; unsupported types remain unshipped.
 > four visible configurations. Default hybrid proxy reaches R@3=1, R@5=1,
 > MRR=0.9028; weaker FTS/fallback rows remain published in the report. The
 > deterministic semantic proxy is explicitly not a production embedding score.
-> Packaging and Phase 4A checks pass. A pinned-Bun Windows/Linux clean-runner
-> workflow and JSON artifacts are implemented but have not run remotely yet.
+> The public proxy is now vocabulary-independent from the dogfood evaluator;
+> its semantic-only MRR is 0.875. Packaging, project typecheck, and the full
+> local suite pass. Pinned-Bun Windows/Linux clean-runner workflows and JSON
+> artifacts are implemented but the hardening changes have not run remotely.
 > Independent reproduction and privacy-safe longitudinal flywheel evidence are
 > still required.
 > Evidence: `docs/tasks/2026-08-09-phase4-public-retrieval-benchmark/` and

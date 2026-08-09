@@ -122,6 +122,8 @@ describe("scope repair and project migration CLI", () => {
       source_type: "test_failure",
       source_ref: "run-123",
     }, "project");
+    sourceStore.validate(sourceTrap.id, "project", new Date("2026-08-08T12:00:00.000Z"));
+    sourceStore.graduate(sourceTrap.id, "test:scope-migration", "project", new Date("2026-08-09T12:00:00.000Z"));
     destinationStore.add(trap({
       scope: "project",
       title: "Existing destination trap",
@@ -158,7 +160,13 @@ describe("scope repair and project migration CLI", () => {
       .list({ scope: "project", status: "all" })[0].traps
       .find((candidate) => candidate.title === "Move this project trap");
     expect(moved).toBeTruthy();
-    expect(moved?.project_path).toBe(destination);
+    expect(moved).toMatchObject({
+      project_path: destination,
+      status: "archived",
+      last_validated: "2026-08-08T12:00:00.000Z",
+      graduated_at: "2026-08-09T12:00:00.000Z",
+      graduated_to: "test:scope-migration",
+    });
   });
 
   test("scope migration safety cases return stable CLI outcomes", () => {

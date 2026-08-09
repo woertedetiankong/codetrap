@@ -9,6 +9,7 @@ const published = await packageVersionExists(packageJson.name, packageJson.versi
 
 const commands: { name: string; cmd: string[]; optional?: boolean }[] = [
   ...(tag ? [{ name: "check release version", cmd: ["bun", "run", "check:release-version", tag] }] : []),
+  { name: "typecheck", cmd: ["bun", "run", "typecheck"] },
   { name: "test", cmd: ["bun", "test", "src/tests"] },
   { name: "build", cmd: ["bun", "run", "build"] },
   { name: "build release assets", cmd: ["bun", "run", "build:release"] },

@@ -49,6 +49,7 @@ describe("Phase 2 low-risk destinations", () => {
     expect(JSON.parse(refused.stdout).error).toContain("no recorded authorization");
     expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toBe("# Agents\n");
     expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
+    expect(existsSync(join(cwd, ".codetrap", "phase2", "commits.json"))).toBe(false);
 
     runJson(["session", "approve", candidateId, "--session", sessionId, "--executor", "agent"], cwd, home);
     const applied = runJson(["phase2", "apply", candidateId, "--session", sessionId, "--executor", "agent"], cwd, home);
@@ -202,7 +203,8 @@ function candidate(kind: any, payload: Record<string, unknown>): CandidateTrap {
   return {
     id: "cand-001", status: "proposed", quality_score: 100,
     quality: {
-      complete: true, actionable: true, proper_scope: true, evidence_count: 1,
+      has_clear_trigger: true, has_clear_mistake: true, has_actionable_fix: true,
+      not_too_broad: true, future_reuse_likely: true, proper_scope: true, evidence_count: 1,
       conflict_checked: false, conflict_status: "none", staleness_risk: "low",
       suggested_action: "accept", warnings: [],
     },

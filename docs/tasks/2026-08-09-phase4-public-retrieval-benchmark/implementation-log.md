@@ -68,3 +68,42 @@ benchmark without exposing internal evidence or overstating product quality.
   386 passes, one intentional browser skip, and zero failures. An earlier rerun
   hit one transient Windows `EPERM` rename in an unrelated Phase 3 fixture; that
   focused file passed twice consecutively before the final green full run.
+
+### 2026-08-09 audit hardening
+
+- The external audit's scope-migration loss report was reproduced. Manual
+  project-transfer construction omitted `last_validated`, `graduated_at`, and
+  `graduated_to`; the transfer now preserves all three and a lifecycle
+  round-trip test protects the contract.
+- Runtime comparison exposed a stronger candidate-identity issue than the
+  report described: capture and envelope hashing had already diverged as the
+  candidate shape evolved. One shared identity module now owns candidate
+  content hashes, trap keys, and fingerprints for capture, deduplication,
+  approval, edit, and destination authorization.
+- Phase 2 destination authorization now runs before any destination apply can
+  write its commit ledger, and the commit path repeats the check defensively.
+  The rejection test asserts the destination file is never created.
+- The public benchmark no longer imports the dogfood evaluator's vocabulary.
+  It uses a public-only generic seven-category proxy; opaque internal tokens
+  fall into the unrelated category. The unchanged dataset now reports semantic
+  proxy-only MRR 0.875 while default hybrid remains 0.9028.
+- Atomic JSON writes now fsync the temporary file, use bounded exponential
+  retry for Windows rename contention, clean up temporary siblings, and
+  best-effort fsync the parent directory where supported. Dedicated tests cover
+  overwrite cleanup, retryable `EPERM`, non-retryable errors, and the retry cap.
+- Recall@5 is explicitly computed from the first five results rather than
+  relying on the current repository result limit. A boundary regression puts
+  the gold result at rank six and verifies Recall@5 remains zero while MRR is
+  still `1/6`.
+- TypeScript 7.0.2 is pinned and `bun run typecheck` is a green project gate.
+  Pull requests and main pushes now run typecheck plus the full suite on Windows
+  and Linux; release and npm-publish paths run the same typecheck before tests.
+- Two audit suggestions were investigated but not changed: HTTP token/project
+  isolation already has direct API coverage, and changing MCP working-directory
+  trust would alter the local client threat model without a demonstrated
+  boundary failure. Advisory-lock leases and broad payload redaction remain
+  separate hardening work, not hidden inside this correction set.
+- Final local evidence: `bun run typecheck`, benchmark verification, Windows
+  CLI/MCP build, npm dry-run, and workflow YAML parsing pass. The full suite is
+  green at 395 passed, one configured browser-smoke skip, 1661 assertions, and
+  zero failures.

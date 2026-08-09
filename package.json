@@ -55,6 +55,7 @@
     "eval:dogfood": "bun run scripts/dogfood-eval.ts",
     "eval:search-policy": "bun run scripts/search-policy-sweep.ts",
     "benchmark:retrieval": "bun run scripts/public-retrieval-benchmark.ts",
+    "typecheck": "tsc --noEmit",
     "build": "bun build ./src/index.ts --compile --outfile dist/codetrap && bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve",
     "build:cli": "bun build ./src/index.ts --compile --outfile dist/codetrap",
     "build:serve": "bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve"
@@ -67,6 +68,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "playwright-core": "^1.56.1"
+    "playwright-core": "^1.56.1",
+    "typescript": "7.0.2"
   }
 }

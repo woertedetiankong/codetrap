@@ -2,13 +2,13 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { SearchMode } from "./constants";
 import {
-  EvalEmbedder,
   evaluateSearchFixtureCases,
   parseEvalFixture,
   type EvalCaseReport,
   type EvalFixture,
   type SearchEvalMetrics,
 } from "./search-eval";
+import { PublicRetrievalEmbedder } from "./public-retrieval-embedder";
 import { isRecord } from "./value-types";
 
 export const PUBLIC_RETRIEVAL_BENCHMARK_ID = "codetrap-retrieval-v1";
@@ -93,7 +93,7 @@ export async function runPublicRetrievalBenchmark(options: {
     const fixture = withMode(document, run.mode);
     const result = await evaluateSearchFixtureCases(
       fixture,
-      run.semantic === "deterministic_proxy" ? new EvalEmbedder() : undefined
+      run.semantic === "deterministic_proxy" ? new PublicRetrievalEmbedder() : undefined
     );
     configurations.push({
       name: run.name,

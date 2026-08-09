@@ -15,8 +15,8 @@ bun install --frozen-lockfile
 bun run benchmark:retrieval -- --verify
 ```
 
-The command is offline: it uses an in-memory SQLite database and a deterministic
-category proxy for semantic retrieval. It does not read `~/.codetrap`, project
+The command is offline: it uses an in-memory SQLite database and a public-only
+generic category proxy for semantic retrieval. It does not read `~/.codetrap`, project
 databases, API keys, or external embedding services.
 
 Use `--json` for the machine-readable report and `--include-cases` to include
@@ -42,8 +42,8 @@ it does not by itself constitute independent third-party validation.
 - Queries: concept paraphrases plus exact API/identifier lookups.
 - Metrics: Recall@3, Recall@5, and mean reciprocal rank (MRR).
 - Configurations:
-  - `default-hybrid-proxy`: the default hybrid policy with deterministic
-    semantic proxy vectors.
+  - `default-hybrid-proxy`: the default hybrid policy with public-only,
+    deterministic generic category vectors.
   - `fts-only`: lexical retrieval without semantic candidates.
   - `semantic-proxy-only`: proxy semantic retrieval without lexical candidates.
   - `hybrid-fts-fallback`: hybrid mode with semantics unavailable, exercising
@@ -56,8 +56,9 @@ it does not by itself constitute independent third-party validation.
 This benchmark measures retrieval behavior on a released synthetic dataset. It
 does **not** measure real embedding-provider quality, mined candidate quality,
 human approval quality, longitudinal usefulness, or later agent behavior. The
-deterministic semantic proxy exists to make fusion and fallback reproducible;
-it is not a substitute for an external semantic benchmark.
+deterministic semantic proxy exists to make fusion and fallback reproducible.
+It has its own public-only vocabulary and does not reuse the internal dogfood
+embedder; it is not a substitute for an external semantic benchmark.
 
 The weaker configurations are deliberately published. Their failures make the
 tradeoff legible and prevent the default result from being presented without a
