@@ -7,6 +7,8 @@ import { TrapOperations } from "../lib/trap-operations";
 import { SessionOperations } from "../lib/session-operations";
 import { parseExecutor, type Executor } from "../domain/learning";
 import { SessionStore } from "../lib/session-store";
+import { Phase2Store } from "../lib/phase2-store";
+import { DEFAULT_RANKING_CONFIG } from "../lib/search-policy";
 import { toListJson, toTrapDetailsJson } from "../lib/output-json";
 import { isRecord } from "../lib/value-types";
 import {
@@ -108,6 +110,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
         categories: [...CATEGORIES],
         severities: [...SEVERITIES],
         scopes: [...SCOPES],
+        stale_after_days: DEFAULT_RANKING_CONFIG.staleAfterDays,
       },
     });
   }
@@ -171,6 +174,29 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     const details = trapOperations(projectRoot, context.home).getTrapDetails(id, scope);
     if (!details) throw new WebHttpError(404, `Trap #${id} not found.`);
     return jsonResponse(toTrapDetailsJson(details));
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/insights") {
+    const projectRoot = projectRootFromQuery(url, context);
+    return jsonResponse({
+      project_root: projectRoot,
+      insights: new Phase2Store(projectRoot).listInsights(),
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/insight/consult") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const id = stringBodyField(body, "id");
+    const store = new Phase2Store(projectRoot);
+    if (!store.listInsights().some((insight) => insight.id === id)) {
+      throw new WebHttpError(404, `Insight ${id} not found.`);
+    }
+    return jsonResponse({
+      success: true,
+      project_root: projectRoot,
+      insight: store.consultInsight(id),
+    });
   }
 
   if (request.method === "GET" && url.pathname === "/api/embeddings") {

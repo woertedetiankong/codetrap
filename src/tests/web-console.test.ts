@@ -48,7 +48,9 @@ describe("web API", () => {
 
     const ok = await api(handler, "/api/bootstrap");
     expect(ok.status).toBe(200);
-    expect((await ok.json()).projects[0].root).toBe(project);
+    const payload = await ok.json();
+    expect(payload.projects[0].root).toBe(project);
+    expect(payload.options.stale_after_days).toBe(180);
   });
 
   test("refuses a project param for an initialized project that is not in the session registry (M30)", async () => {
@@ -165,6 +167,78 @@ describe("web API", () => {
     expect(detailPayload.trap.tags).toEqual(["web", "api"]);
     expect(detailPayload.trap.path_globs).toEqual(["src/web/**"]);
     expect(detailPayload.evidence[0].related_files).toEqual(["src/web/static.ts"]);
+  });
+
+  test("keeps learning insights separate from traps and consults them explicitly", async () => {
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-insights-", { realpath: true });
+    const outsider = tempProjectDir("codetrap-web-insights-outsider-", { realpath: true });
+    addWebProject(project, home);
+    new TrapOperations(new TrapStore(project, undefined, home)).addTrap({ ...trapInput({
+      title: "A retrieval trap, not a learning insight",
+      category: "api",
+      scope: "project",
+      context: "When the trap library is loaded.",
+      mistake: "Mixing the trap library with the learning shelf.",
+      fix: "Keep the two stores and APIs separate.",
+      tags: ["web"],
+      severity: "warning",
+      module: "web",
+    }) });
+    const insightDir = join(project, ".codetrap", "phase2");
+    mkdirSync(insightDir, { recursive: true });
+    writeFileSync(join(insightDir, "insights.json"), `${JSON.stringify({
+      version: 1,
+      insights: [{
+        id: "ins-web-separation",
+        title: "A learning-only reflection",
+        summary: "Useful for deliberate study, not retrieval.",
+        body: "Review this note and mark it learned only when you intentionally consult it.",
+        tags: ["learning", "web"],
+        source_refs: ["session:test"],
+        shelved_at: "2026-08-09T12:00:00.000Z",
+        consulted_count: 0,
+        last_consulted_at: null,
+      }],
+    }, null, 2)}\n`);
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+
+    const trapPayload = await (await api(handler, `/api/traps?project=${encodeURIComponent(project)}`)).json();
+    expect(trapPayload.traps.map((trap: any) => trap.title)).toEqual(["A retrieval trap, not a learning insight"]);
+    expect(trapPayload.traps.some((trap: any) => trap.title === "A learning-only reflection")).toBe(false);
+
+    const list = await api(handler, `/api/insights?project=${encodeURIComponent(project)}`);
+    expect(list.status).toBe(200);
+    const listPayload = await list.json();
+    expect(listPayload.insights.map((insight: any) => insight.title)).toEqual(["A learning-only reflection"]);
+    expect(listPayload.insights.some((insight: any) => insight.title === "A retrieval trap, not a learning insight")).toBe(false);
+    expect(listPayload.insights[0].consulted_count).toBe(0);
+    expect(listPayload.insights[0].last_consulted_at).toBeNull();
+
+    const unauthorized = await handler(new Request("http://codetrap.local/api/insight/consult", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectRoot: project, id: "ins-web-separation" }),
+    }));
+    expect(unauthorized.status).toBe(401);
+
+    const blocked = await api(handler, `/api/insights?project=${encodeURIComponent(outsider)}`);
+    expect(blocked.status).toBe(403);
+
+    const consulted = await api(handler, "/api/insight/consult", {
+      method: "POST",
+      body: { projectRoot: project, id: "ins-web-separation" },
+    });
+    expect(consulted.status).toBe(200);
+    const consultedPayload = await consulted.json();
+    expect(consultedPayload.insight.consulted_count).toBe(1);
+    expect(consultedPayload.insight.last_consulted_at).toBeString();
+
+    const missing = await api(handler, "/api/insight/consult", {
+      method: "POST",
+      body: { projectRoot: project, id: "ins-missing" },
+    });
+    expect(missing.status).toBe(404);
   });
 
   test("embedding settings API exposes status and preserves unrelated config on provider switch", async () => {

@@ -623,6 +623,30 @@ export const WEB_INDEX_HTML = `<!doctype html>
       text-transform: uppercase;
     }
 
+    .health-metric {
+      width: 100%;
+      text-align: left;
+      color: inherit;
+      box-shadow: none;
+    }
+
+    .health-metric:hover,
+    .health-metric.active {
+      border-color: color-mix(in srgb, var(--accent), var(--line) 38%);
+      background: #fff;
+    }
+
+    .health-metric.active { box-shadow: inset 3px 0 0 var(--accent); }
+
+    .learning-empty {
+      display: grid;
+      gap: 8px;
+    }
+
+    .learning-title { font-size: 18px; }
+    .learning-summary { font-size: 14px; line-height: 1.55; }
+    .learning-body { white-space: pre-wrap; line-height: 1.65; overflow-wrap: anywhere; }
+
     .insight-grid {
       display: grid;
       gap: 10px;
@@ -880,7 +904,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
           <div class="segmented main-nav" aria-label="Main view">
             <button type="button" class="active" data-main-view="review">Review</button>
             <button type="button" data-main-view="library">Library</button>
-            <button type="button" data-main-view="insights">Insights</button>
+            <button type="button" data-main-view="learning">Learning</button>
             <button type="button" data-main-view="embeddings">Embeddings</button>
           </div>
           <div class="segmented" aria-label="Language">

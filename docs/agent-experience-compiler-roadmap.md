@@ -21,16 +21,22 @@ handoff) — see §19.
 | Phase 1 — MVP compiler loop | **Done** | 2026-08-08 | [closeout handoff](tasks/2026-08-08-phase1-closeout/handoff.md) | All five slices pass; trap #5 travelled from Claude Code mining to useful Codex recall. |
 | Phase 2 – low-risk destinations | **Done** | 2026-08-08 | [handoff](tasks/2026-08-08-phase2-low-risk-destinations/handoff.md) | Four review-bound destinations, insight study, currency/graduation, metrics, and decision rule pass end to end. |
 | Phase 3 — high-side-effect destinations | **Done** | 2026-08-09 | [skill lifecycle handoff](tasks/2026-08-08-phase3-skill-candidate-lifecycle/handoff.md) | Cross-client install is current; a later Codex screenshot-review task changed the implemented UI workflow. |
-| Phase 4 — external validation | **In progress (4A audit-hardened locally)** | 2026-08-09 | [Phase 4A handoff](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md) | Benchmark, shared authorization identity, migration/atomic-write fixes, and project CI gates are committed on a temporary branch; merge, remote run, independent reproduction, and longitudinal publication remain open. |
+| Phase 4 — external validation | **In progress (4A merged and synced)** | 2026-08-09 | [Phase 4A handoff](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md) | Benchmark and audit hardening are on `origin/main`; remote CI evidence has not been inspected in this task, while independent reproduction and longitudinal publication remain open. |
 
 ### Closed decisions by date
 
+- 2026-08-09 The Web console's former trap-derived `Insights` analytics page
+  was removed. Its navigation slot now reads the real, learning-only Phase 2
+  Insight Shelf; opening is read-only and consultation requires an explicit
+  **Mark learned** action. Actionable currency/usefulness health filters remain
+  in the trap Library ([detail](tasks/2026-08-09-web-insight-shelf/handoff.md)).
 - 2026-08-09 Phase 4A audit hardening reproduced and fixed lifecycle-field
   loss during scope migration, divergent candidate identity hashing,
   authorization after destination writes, Windows rename contention, and the
   public proxy's dogfood vocabulary dependency. Typecheck and the full suite
-  now gate PR, main, and release paths; these changes are committed locally but
-  not merged or pushed ([detail](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md)).
+  now gate PR, main, and release paths. Commit `ac09710` is merged and synced to
+  `origin/main`; remote runner results remain a separate evidence check
+  ([detail](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md)).
 - 2026-08-09 Phase 4A now includes a pinned-Bun Windows/Linux CI matrix and
   machine-readable artifacts. This automates clean-runner reproduction after a
   push; it is not labeled third-party independent validation before or after

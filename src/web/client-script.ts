@@ -32,8 +32,10 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       trapSearch: "",
       trapFilters: { scope: "", status: "", category: "", module: "", owner: "" },
       trapSort: "updated",
-      insightTraps: [],
-      insightFilters: { scope: "", status: "all" },
+      trapHealthFilter: "all",
+      learningInsights: [],
+      insightId: null,
+      insightConsulting: false,
       embeddingStatus: null,
       embeddingSettings: null,
       embeddingProviderDraft: "ollama",
@@ -47,7 +49,7 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       detailActionInFlight: false,
       sidebarCollapsed: savedSidebarCollapsed,
       queueCollapsed: savedQueueCollapsed,
-      options: { categories: [], severities: [], scopes: [] },
+      options: { categories: [], severities: [], scopes: [], stale_after_days: 180 },
       conflicts: []
     };
 
@@ -126,7 +128,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       el("sessions-title").textContent = t("section.sessions");
       document.querySelector("[data-main-view='review']").textContent = t("nav.review");
       document.querySelector("[data-main-view='library']").textContent = t("nav.library");
-      document.querySelector("[data-main-view='insights']").textContent = t("nav.insights");
+      document.querySelector("[data-main-view='learning']").textContent = t("nav.learning");
       document.querySelector("[data-main-view='embeddings']").textContent = t("nav.embeddings");
       document.querySelectorAll("[data-locale]").forEach((button) => {
         button.classList.toggle("active", button.dataset.locale === state.locale);
@@ -210,7 +212,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.candidateReview = null;
         state.candidates = [];
         state.traps = [];
-        state.insightTraps = [];
+        state.learningInsights = [];
+        state.insightId = null;
         state.embeddingStatus = null;
         state.embeddingSettings = null;
         renderSessions();
@@ -224,8 +227,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       renderSessions();
       if (state.mainView === "library") {
         await loadTraps();
-      } else if (state.mainView === "insights") {
-        await loadInsightTraps();
+      } else if (state.mainView === "learning") {
+        await loadLearningInsights();
       } else if (state.mainView === "embeddings") {
         await loadEmbeddings();
       } else {
@@ -280,24 +283,24 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       }
     }
 
-    async function loadInsightTraps() {
+    async function loadLearningInsights() {
       if (!state.projectRoot) {
-        state.insightTraps = [];
-        if (state.mainView === "insights") {
-          renderInsightsView();
-          renderInsightDetail();
+        state.learningInsights = [];
+        state.insightId = null;
+        if (state.mainView === "learning") {
+          renderLearningShelf();
+          renderLearningDetail();
         }
         return;
       }
-      const params = new URLSearchParams({ project: state.projectRoot });
-      Object.entries(state.insightFilters).forEach(([key, value]) => {
-        if (value) params.set(key, value);
-      });
-      const data = await api("/api/traps?" + params.toString());
-      state.insightTraps = data.traps;
-      if (state.mainView === "insights") {
-        renderInsightsView();
-        renderInsightDetail();
+      const data = await api("/api/insights?project=" + encodeURIComponent(state.projectRoot));
+      state.learningInsights = data.insights;
+      if (!state.learningInsights.some((insight) => insight.id === state.insightId)) {
+        state.insightId = state.learningInsights[0]?.id || null;
+      }
+      if (state.mainView === "learning") {
+        renderLearningShelf();
+        renderLearningDetail();
       }
     }
 
@@ -336,13 +339,13 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         hideReviewSummary();
         renderLibrary();
         renderTrapDetail();
-      } else if (state.mainView === "insights") {
-        el("queue-title").textContent = t("title.growthInsights");
-        el("detail-title").textContent = t("title.insightDetail");
+      } else if (state.mainView === "learning") {
+        el("queue-title").textContent = t("title.learningInsights");
+        el("detail-title").textContent = t("title.learningDetail");
         el("candidate-tabs").classList.add("hidden");
         hideReviewSummary();
-        renderInsightsView();
-        renderInsightDetail();
+        renderLearningShelf();
+        renderLearningDetail();
       } else if (state.mainView === "embeddings") {
         el("queue-title").textContent = t("title.embeddings");
         el("detail-title").textContent = t("title.embeddingDetail");
@@ -373,7 +376,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           state.candidateId = null;
           state.trapKey = null;
           state.trapDetails = {};
-          state.insightTraps = [];
+          state.learningInsights = [];
+          state.insightId = null;
           state.embeddingStatus = null;
           state.embeddingSettings = null;
           renderProjects();
@@ -554,6 +558,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         clear.addEventListener("click", async () => {
           state.trapFilters = { scope: "", status: "", category: "", module: "", owner: "" };
           state.trapSearch = "";
+          state.trapHealthFilter = "all";
           state.trapKey = null;
           await loadTraps();
         });
@@ -586,7 +591,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       el("queue-meta").textContent = state.projectRoot
         ? t("meta.libraryCounts", { shown: visible.length, loaded: state.traps.length, sort: sortLabel(state.trapSort) })
         : t("meta.noProject");
-      insights.innerHTML = renderInsights(visible);
+      insights.innerHTML = renderLibraryHealth(state.traps);
       rows.innerHTML = visible.length ? visible.map((trap) => \`
         <button class="row \${trapKey(trap) === state.trapKey ? "active" : ""}" data-trap-key="\${escapeAttr(trapKey(trap))}">
           <span class="row-title">\${escapeHtml(trap.title)}</span>
@@ -608,136 +613,137 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           revealCompactDetail();
         });
       });
+      document.querySelectorAll("[data-trap-health]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.trapHealthFilter = button.dataset.trapHealth;
+          state.trapKey = null;
+          renderTrapResults();
+          renderTrapDetail();
+        });
+      });
     }
 
-    function renderInsights(traps) {
-      const serious = traps.filter((trap) => trap.severity === "error" || trap.severity === "critical").length;
-      const topCategory = topValue(traps.map((trap) => trap.category));
-      const topModule = topValue(traps.map((trap) => trap.module).filter(Boolean));
-      const topTag = topValue(traps.flatMap((trap) => trap.tags || []));
-      const mostViewed = [...traps].sort((a, b) => Number(b.hit_count || 0) - Number(a.hit_count || 0))[0];
-      return \`<div class="summary-grid">
-        \${metric(t("metric.loadedTraps"), traps.length || "0", t("metric.currentFilters"))}
-        \${metric(t("metric.highSeverity"), serious || "0", t("metric.errorCritical"))}
-        \${metric(t("metric.topCategory"), topCategory ? valueLabel(topCategory) : "-", t("metric.repeatedPattern"))}
-        \${metric(t("metric.focusArea"), topModule || topTag || "-", topModule ? t("metric.module") : t("metric.tag"))}
-        \${metric(t("metric.mostViewed"), mostViewed ? "#" + mostViewed.id : "-", mostViewed ? mostViewed.title : t("metric.noHits"))}
+    function renderLibraryHealth(traps) {
+      const needsValidation = traps.filter(trapNeedsValidation).length;
+      const neverUseful = traps.filter((trap) => Number(trap.useful_count || 0) === 0).length;
+      return \`<div class="summary-grid health-grid">
+        \${healthMetric("all", t("metric.visibleTraps"), traps.length, t("metric.healthAll"))}
+        \${healthMetric("needs-validation", t("metric.needsValidation"), needsValidation, t("metric.validationWindow", { days: state.options.stale_after_days }))}
+        \${healthMetric("never-useful", t("metric.neverUseful"), neverUseful, t("metric.neverUsefulDetail"))}
       </div>\`;
     }
 
-    function renderInsightsView() {
-      if (state.mainView !== "insights") return;
-      const traps = state.insightTraps;
-      const serious = traps.filter((trap) => trap.severity === "error" || trap.severity === "critical").length;
-      const topCategory = topValue(traps.map((trap) => trap.category));
-      const topModule = topValue(traps.map((trap) => trap.module).filter(Boolean));
-      const topTag = topValue(traps.flatMap((trap) => trap.tags || []));
-      const mostViewed = sortTraps(traps, "hits")[0];
-      el("queue-title").textContent = t("title.growthInsights");
+    function healthMetric(filter, label, value, detail) {
+      return \`<button type="button" class="metric health-metric \${state.trapHealthFilter === filter ? "active" : ""}" data-trap-health="\${escapeAttr(filter)}">
+        <span class="metric-label">\${escapeHtml(label)}</span>
+        <span class="metric-value">\${escapeHtml(value)}</span>
+        <span class="subtle">\${escapeHtml(detail)}</span>
+      </button>\`;
+    }
+
+    function trapNeedsValidation(trap) {
+      if (!trap.last_validated) return true;
+      const validatedAt = Date.parse(trap.last_validated);
+      return !Number.isFinite(validatedAt) || Date.now() - validatedAt > Number(state.options.stale_after_days || 180) * 24 * 60 * 60 * 1000;
+    }
+
+    function renderLearningShelf() {
+      if (state.mainView !== "learning") return;
+      const insights = state.learningInsights;
+      const consulted = insights.filter((insight) => Number(insight.consulted_count || 0) > 0).length;
+      el("queue-title").textContent = t("title.learningInsights");
       el("candidate-tabs").classList.add("hidden");
       el("queue-meta").textContent = state.projectRoot
-        ? t("meta.insightCounts", { count: traps.length, status: valueLabel(state.insightFilters.status || "all") })
+        ? t("meta.learningCounts", { count: insights.length, consulted })
         : t("meta.noProject");
-      el("candidates").innerHTML = \`
-        <div class="library-tools">
-          <div class="filter-grid">
-            \${filterSelect("insight-filter-scope", t("label.scope"), state.insightFilters.scope, [["", t("option.projectGlobal")], ...optionPairs(state.options.scopes)])}
-            \${filterSelect("insight-filter-status", t("label.status"), state.insightFilters.status, [["all", valueLabel("all")], ["active", valueLabel("active")], ["archived", valueLabel("archived")], ["superseded", valueLabel("superseded")]])}
-          </div>
-        </div>
-        <div class="summary-grid">
-          \${metric(t("metric.confirmedTraps"), traps.length || "0", t("metric.selectedScope"))}
-          \${metric(t("metric.highSeverity"), serious || "0", t("metric.errorCritical"))}
-          \${metric(t("metric.topCategory"), topCategory ? valueLabel(topCategory) : "-", t("metric.largestPattern"))}
-          \${metric(t("metric.focusArea"), topModule || topTag || "-", topModule ? t("metric.module") : t("metric.tag"))}
-          \${metric(t("metric.mostViewed"), mostViewed ? "#" + mostViewed.id : "-", mostViewed ? mostViewed.title : t("metric.noHits"))}
-        </div>
-        <div class="insight-grid">
-          \${renderInsightRankBlock(t("insight.categories"), topValues(traps.map((trap) => trap.category), 6, true), traps.length)}
-          \${renderInsightRankBlock(t("insight.modules"), topValues(traps.map((trap) => trap.module).filter(Boolean), 6), traps.length)}
-          \${renderInsightRankBlock(t("insight.tags"), topValues(traps.flatMap((trap) => trap.tags || []), 8), traps.length)}
-          \${renderInsightRankBlock(t("insight.severityMix"), topValues(traps.map((trap) => trap.severity), 5, true), traps.length)}
-        </div>
-      \`;
-      bindInsightControls();
+      if (!state.projectRoot) {
+        el("candidates").innerHTML = '<div class="empty">' + escapeHtml(t("meta.selectProject")) + '</div>';
+        return;
+      }
+      el("candidates").innerHTML = insights.length ? insights.map((insight) => \`
+        <button type="button" class="row \${insight.id === state.insightId ? "active" : ""}" data-learning-insight="\${escapeAttr(insight.id)}">
+          <span class="row-title">\${escapeHtml(insight.title)}</span>
+          <span class="subtle">\${escapeHtml(insight.summary)}</span>
+          <span class="meta">
+            \${(insight.tags || []).map((tag) => '<span class="pill">' + escapeHtml(tag) + '</span>').join("")}
+            <span class="pill \${Number(insight.consulted_count || 0) > 0 ? "accepted" : ""}">\${escapeHtml(t("pill.consulted", { count: Number(insight.consulted_count || 0) }))}</span>
+          </span>
+          <span class="subtle">\${escapeHtml(insight.shelved_at || "")}</span>
+        </button>
+      \`).join("") : '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span></div>';
+      document.querySelectorAll("[data-learning-insight]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.insightId = button.dataset.learningInsight;
+          renderLearningShelf();
+          renderLearningDetail();
+          revealCompactDetail();
+        });
+      });
     }
 
-    function renderInsightDetail() {
-      if (state.mainView !== "insights") return;
-      const traps = state.insightTraps;
-      const recent = sortTraps(traps, "updated").slice(0, 8);
-      const mostViewed = sortTraps(traps, "hits").filter((trap) => Number(trap.hit_count || 0) > 0).slice(0, 8);
-      const seriousRecent = sortTraps(traps.filter((trap) => trap.severity === "error" || trap.severity === "critical"), "updated").slice(0, 8);
-      el("detail-title").textContent = t("title.insightDetail");
-      el("detail-meta").textContent = state.projectRoot ? (state.insightFilters.scope ? valueLabel(state.insightFilters.scope) : t("option.projectGlobal")) : t("meta.selectProject");
+    function currentLearningInsight() {
+      return state.learningInsights.find((insight) => insight.id === state.insightId) || null;
+    }
+
+    function renderLearningDetail() {
+      if (state.mainView !== "learning") return;
+      const insight = currentLearningInsight();
+      el("detail-title").textContent = t("title.learningDetail");
+      el("detail-meta").textContent = insight ? insight.title : (state.projectRoot ? t("meta.selectInsight") : t("meta.selectProject"));
+      if (!state.projectRoot) {
+        el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("meta.selectProject")) + '</div>';
+        return;
+      }
+      if (!insight) {
+        el("detail").innerHTML = '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span></div>';
+        return;
+      }
       el("detail").innerHTML = \`
         <div class="scroll">
-          <div class="section">
-            <div class="title">\${escapeHtml(t("title.recentTraps"))}</div>
-            \${renderInsightTrapRows(recent)}
+          <div class="section learning-intro">
+            <div class="title learning-title">\${escapeHtml(insight.title)}</div>
+            <div class="learning-summary">\${escapeHtml(insight.summary)}</div>
+            <div class="meta">\${(insight.tags || []).map((tag) => '<span class="pill">' + escapeHtml(tag) + '</span>').join("")}</div>
           </div>
           <div class="section">
-            <div class="title">\${escapeHtml(t("title.mostViewed"))}</div>
-            \${renderInsightTrapRows(mostViewed)}
+            <div class="title">\${escapeHtml(t("label.body"))}</div>
+            <div class="learning-body">\${escapeHtml(insight.body)}</div>
           </div>
           <div class="section">
-            <div class="title">\${escapeHtml(t("title.recentHighSeverity"))}</div>
-            \${renderInsightTrapRows(seriousRecent)}
+            <div class="detail-kv">
+              \${kv(t("label.shelvedAt"), insight.shelved_at || "-")}
+              \${kv(t("label.consultedCount"), Number(insight.consulted_count || 0))}
+              \${kv(t("label.lastConsultedAt"), insight.last_consulted_at || t("value.never"))}
+            </div>
           </div>
+        </div>
+        <div class="actions">
+          <button type="button" id="consult-insight" class="primary" \${state.insightConsulting ? "disabled" : ""}>\${escapeHtml(t("action.markLearned"))}</button>
+          <span class="action-hint">\${escapeHtml(t("hint.markLearnedExplicit"))}</span>
         </div>
       \`;
-      bindTrapJumpButtons();
+      el("consult-insight").addEventListener("click", consultLearningInsight);
     }
 
-    function bindInsightControls() {
-      const scope = el("insight-filter-scope");
-      if (scope) {
-        scope.addEventListener("change", async () => {
-          state.insightFilters.scope = scope.value;
-          await loadInsightTraps();
+    async function consultLearningInsight() {
+      const insight = currentLearningInsight();
+      if (!insight || state.insightConsulting) return;
+      state.insightConsulting = true;
+      renderLearningDetail();
+      try {
+        const data = await api("/api/insight/consult", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: state.projectRoot, id: insight.id })
         });
+        state.learningInsights = state.learningInsights.map((item) => item.id === data.insight.id ? data.insight : item);
+        renderLearningShelf();
+        showStatus(t("status.insightConsulted"));
+      } catch (error) {
+        showStatus(error.message, true);
+      } finally {
+        state.insightConsulting = false;
+        renderLearningDetail();
       }
-      const status = el("insight-filter-status");
-      if (status) {
-        status.addEventListener("change", async () => {
-          state.insightFilters.status = status.value;
-          await loadInsightTraps();
-        });
-      }
-    }
-
-    function renderInsightRankBlock(label, items, total) {
-      return \`<div class="insight-block">
-        <div class="title">\${escapeHtml(label)}</div>
-        <div class="rank-list">
-          \${items.length ? items.map((item) => renderRankRow(item, total)).join("") : '<div class="empty">' + escapeHtml(t("empty.noData")) + '</div>'}
-        </div>
-      </div>\`;
-    }
-
-    function renderRankRow(item, total) {
-      const width = total > 0 ? Math.max(6, Math.round((item.count / total) * 100)) : 0;
-      return \`<div class="rank-row">
-        <div class="rank-label">\${escapeHtml(item.label)}</div>
-        <div class="rank-count">\${item.count}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:\${width}%"></div></div>
-      </div>\`;
-    }
-
-    function renderInsightTrapRows(traps) {
-      return traps.length ? traps.map((trap) => \`
-        <button type="button" class="row" data-view-trap-scope="\${escapeAttr(trap.scope)}" data-view-trap-id="\${escapeAttr(trap.id)}">
-            <span class="row-title">\${escapeHtml(trap.title)}</span>
-          <span class="meta">
-            <span class="pill \${escapeAttr(trap.severity)}">\${escapeHtml(valueLabel(trap.severity))}</span>
-            <span class="pill">\${escapeHtml(valueLabel(trap.category))}</span>
-            <span class="pill scope">\${escapeHtml(valueLabel(trap.scope))}</span>
-            <span class="pill \${escapeAttr(trap.status)}">\${escapeHtml(valueLabel(trap.status))}</span>
-            <span class="pill">\${escapeHtml(t("pill.hits", { count: Number(trap.hit_count || 0) }))}</span>
-          </span>
-          <span class="subtle">\${escapeHtml(trap.updated_at || trap.created_at || "")}</span>
-        </button>
-      \`).join("") : '<div class="empty">' + escapeHtml(t("empty.noTraps")) + '</div>';
     }
 
     function syncEmbeddingDraftFromStatus(status) {
@@ -1005,30 +1011,11 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       return \`<div class="metric"><div class="metric-label">\${escapeHtml(label)}</div><div class="metric-value">\${escapeHtml(value)}</div><div class="subtle">\${escapeHtml(detail)}</div></div>\`;
     }
 
-    function topValue(values) {
-      const counts = new Map();
-      values.forEach((value) => {
-        if (!value) return;
-        counts.set(value, (counts.get(value) || 0) + 1);
-      });
-      return [...counts.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0]?.[0] || "";
-    }
-
-    function topValues(values, limit, translateValues = false) {
-      const counts = new Map();
-      values.forEach((value) => {
-        if (!value) return;
-        counts.set(value, (counts.get(value) || 0) + 1);
-      });
-      return [...counts.entries()]
-        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
-        .slice(0, limit)
-        .map(([label, count]) => ({ label: translateValues ? valueLabel(label) : label, count }));
-    }
-
     function visibleTraps() {
       const query = state.trapSearch.trim().toLowerCase();
-      const traps = query ? state.traps.filter((trap) => trapSearchText(trap).includes(query)) : state.traps;
+      let traps = query ? state.traps.filter((trap) => trapSearchText(trap).includes(query)) : state.traps;
+      if (state.trapHealthFilter === "needs-validation") traps = traps.filter(trapNeedsValidation);
+      if (state.trapHealthFilter === "never-useful") traps = traps.filter((trap) => Number(trap.useful_count || 0) === 0);
       return sortTraps(traps, state.trapSort);
     }
 
@@ -1605,8 +1592,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         revealCompactDetail();
         if (state.mainView === "library") {
           await loadTraps();
-        } else if (state.mainView === "insights") {
-          await loadInsightTraps();
+        } else if (state.mainView === "learning") {
+          await loadLearningInsights();
         } else if (state.mainView === "embeddings") {
           await loadEmbeddings();
         } else {
@@ -1635,7 +1622,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.candidateId = null;
         state.trapKey = null;
         state.trapDetails = {};
-        state.insightTraps = [];
+        state.learningInsights = [];
+        state.insightId = null;
         state.embeddingStatus = null;
         state.embeddingSettings = null;
         el("project-path").value = "";

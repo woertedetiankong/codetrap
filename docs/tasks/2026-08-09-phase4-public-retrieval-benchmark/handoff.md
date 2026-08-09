@@ -18,17 +18,17 @@ reproduction, and privacy-safe longitudinal data.
 
 ## Current State
 
-The audit-hardening implementation is complete locally, committed on its
-temporary branch, and all quality gates listed below are green. It has not been
-merged, pushed, or run in remote CI.
+The audit-hardening implementation is commit `ac09710` on both local `main` and
+`origin/main`. The local gates listed below were green when the commit was
+produced. This task did not inspect the resulting GitHub runner records, so
+remote CI remains unverified evidence rather than assumed success.
 
 ## Git And Persistent State
 
-- Branch: `phase4-audit-hardening`, based on `767daf0` (`main` and
-  `origin/main` at the start of this work).
-- HEAD commit: `fix: harden phase 4 audit findings`.
-- All audit-hardening changes are committed locally; nothing was pushed,
-  merged, released, or published during this task.
+- Integrated commit: `ac09710 fix: harden phase 4 audit findings`.
+- Local `main` and `origin/main` both resolve to `ac09710` as of the 2026-08-09
+  Web Insight Shelf reconciliation.
+- No npm release or artifact publication is claimed.
 - User stores and external services were not modified.
 
 ## Key Decisions
@@ -67,18 +67,16 @@ merged, pushed, or run in remote CI.
 
 ## Next Steps
 
-1. Review the commit, then fast-forward it into `main` only when the user
-   requests that Git operation.
-2. Push only with explicit authorization, then inspect the Windows/Linux CI
-   results and retain benchmark artifacts.
-3. Obtain an independent reproduction before claiming external validation;
+1. Inspect the Windows/Linux GitHub CI results for `ac09710` and retain the
+   benchmark artifacts; do not infer remote evidence from the synchronized ref.
+2. Obtain an independent reproduction before claiming external validation;
    keep Phase 4B publication blocked until real privacy-safe evidence exists.
 
 ## Restart Verify
 
 ```bash
 git status --short --branch
-# expected: clean phase4-audit-hardening branch at the audit-hardening commit.
+# expected after returning to main: main and origin/main include ac09710.
 bun run typecheck
 # expected: exit 0 with no TypeScript diagnostics.
 bun test
@@ -87,10 +85,10 @@ bun run benchmark:retrieval -- --verify
 # expected: verification passed; hybrid MRR 0.9028, semantic proxy MRR 0.875.
 ```
 
-Expected state: clean branch `phase4-audit-hardening` at the audit-hardening
-commit, green typecheck, 395 pass/1 skip/0 fail, and benchmark verification
-passed. A mismatch means inspect the working tree or the failing gate before
-merging; do not update the recorded expectations to hide drift.
+Expected integrated baseline: `ac09710` is an ancestor of `main` and
+`origin/main`. The recorded local validation remains historical evidence; rerun
+the gates when changing the benchmark rather than editing expectations to hide
+drift.
 
 ## Red Lines
 

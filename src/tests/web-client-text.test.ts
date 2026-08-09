@@ -20,6 +20,11 @@ describe("web client text", () => {
     expect(WEB_INDEX_HTML).toContain('id="embedding-form"');
     expect(WEB_INDEX_HTML).toContain('id="embedding-reindex-project"');
     expect(WEB_INDEX_HTML).toContain("JINA_API_KEY");
+    expect(WEB_INDEX_HTML).toContain('data-main-view="learning"');
+    expect(WEB_INDEX_HTML).not.toContain('data-main-view="insights"');
+    expect(WEB_TEXT.zh["nav.learning"]).toBe("学习");
+    expect(WEB_TEXT.zh["empty.noLearningInsights"]).toContain("陷阱不会自动复制到这里");
+    expect(WEB_TEXT.zh["action.markLearned"]).toBe("标记已学习");
   });
 
   test("embeds desktop pane splitters in the web shell", () => {

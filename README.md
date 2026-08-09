@@ -213,7 +213,7 @@ codetrap/
 | `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, approve/accept/reject/roll back candidates, migrate candidate records between schema versions, inspect authorization receipts and suppressed lessons, and clean up session files |
 | `phase2` | Review-bound low-risk destinations: conventions/docs/eval patches, insight shelf, lesson validation/graduation, longitudinal metrics, and retrieve-vs-curate decisions |
 | `phase3` | High-side-effect skill candidates: generate a reviewed preset, preview exact Codex/Claude targets, install under path-bound approval, inspect commits, and roll back safely |
-| `web` | Start the local review, trap library, insights, and Embeddings console |
+| `web` | Start the local review, trap library health, learning-only Insight Shelf, and Embeddings console |
 | `serve` | Start MCP server |
 
 ### Session Mode
@@ -441,6 +441,14 @@ codetrap phase2 consult <insight-id> --json
 codetrap phase2 migrate-insights          # dry run for v2 insight hints
 codetrap phase2 migrate-insights --apply
 ```
+
+The Web console exposes the same project-local shelf under **Learning**. Merely
+opening a learning insight is read-only; **Mark learned** is the explicit action
+that increments its consultation count. If the shelf is empty, the page says so
+and explains that confirmed traps are never copied into it automatically. The
+Library keeps only actionable health filters (current, past the runtime's
+validation window, and never marked useful) rather than duplicating traps in a
+separate analytics dashboard.
 
 Validation refreshes `last_validated`; stale active lessons receive a visible
 `stale_currency` ranking penalty. Graduation archives a mechanized lesson from

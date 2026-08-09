@@ -44,4 +44,25 @@ describe("web client script", () => {
     const script = webClientScript();
     expect(WEB_INDEX_HTML).toContain(script);
   });
+
+  test("loads the learning shelf separately and records consultation only through the explicit action", () => {
+    const script = webClientScript();
+    expect(script).toContain('api("/api/insights?project="');
+    expect(script).toContain('api("/api/insight/consult"');
+    expect(script.match(/\/api\/insight\/consult/g)).toHaveLength(1);
+    expect(script).toContain('data-learning-insight');
+    expect(script).toContain('id="consult-insight"');
+    expect(script).not.toContain("loadInsightTraps");
+    expect(script).not.toContain("insightTraps");
+    expect(script).not.toContain("growthInsights");
+  });
+
+  test("keeps actionable trap health in the library instead of a duplicate analytics page", () => {
+    const script = webClientScript();
+    expect(script).toContain('data-trap-health');
+    expect(script).toContain('needs-validation');
+    expect(script).toContain('never-useful');
+    expect(script).not.toContain("renderInsightRankBlock");
+    expect(script).not.toContain("renderInsightTrapRows");
+  });
 });

@@ -1,19 +1,20 @@
 # Next Session
 
 Project: `D:\\llm\\codetrap\\codetrap`. Read
-`docs/tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md` first.
+`docs/tasks/2026-08-09-web-insight-shelf/handoff.md` first.
 
-Current state: confirmed Phase 4A audit findings are fixed and committed locally
-on `phase4-audit-hardening`, based on `767daf0`. Typecheck,
-benchmark verification, Windows build, npm dry-run, workflow parsing, and the
-full suite (395 pass, 1 configured browser-smoke skip, 0 fail) are green.
+Current state: `web-insight-shelf` contains the completed, uncommitted Web
+learning-shelf implementation based on `ac09710`. The former trap-derived
+Insights analytics is removed; the real Phase 2 shelf, explicit **Mark
+learned**, actionable Library health, bilingual empty states, and API/security
+regressions are implemented. Full validation is green: 398 pass, 1 configured
+browser-smoke skip, 0 fail.
 
-Now do: review the commit; fast-forward to `main` only when requested; push only
-with explicit authorization; then inspect both GitHub CI runner results.
-Independent reproduction and Phase 4B longitudinal evidence remain open.
+Now do: inspect the diff and commit only if the user explicitly requests it.
+Merge and push remain separately authorized actions.
 
-Red lines: do not publish the internal fixture, describe the deterministic
-proxy as real embedding quality, claim remote evidence before it exists, or
-push/publish/release without approval.
+Phase 4 reminder: `ac09710` is already on local and remote `main`, but this task
+did not inspect GitHub CI evidence. Independent reproduction and Phase 4B
+longitudinal evidence also remain open.
 
-First verify: `git status --short --branch; bun run typecheck; bun run benchmark:retrieval -- --verify`.
+First verify: `git status --short --branch; git diff --check; bun run typecheck`.

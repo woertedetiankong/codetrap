@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { buildTrapInput } from "../domain/trap";
 import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
@@ -73,6 +74,16 @@ describe("web browser smoke", () => {
 
       await page.getByRole("button", { name: "Library" }).click();
       await page.waitForSelector("text=Browser smoke confirmed trap");
+      await expectText(page.locator("#candidates"), "Needs validation");
+
+      await page.getByRole("button", { name: "Learning" }).click();
+      await page.waitForSelector("text=Browser smoke learning insight");
+      await expectText(page.locator("#candidates"), "learned 0 times");
+      await page.getByRole("button", { name: /Browser smoke learning insight/ }).click();
+      await expectText(page.locator("#detail"), "Times learned");
+      await expectText(page.locator("#detail"), "0");
+      await page.getByRole("button", { name: "Mark learned" }).click();
+      await expectText(page.locator("#candidates"), "learned 1 times");
 
       expect(errors).toEqual([]);
     } finally {
@@ -121,6 +132,23 @@ function seedBrowserSmokeData(project: string, home: string): void {
     ].join("\n"),
   });
   sessions.closeSession(session.id, true);
+
+  const insightDir = join(project, ".codetrap", "phase2");
+  mkdirSync(insightDir, { recursive: true });
+  writeFileSync(join(insightDir, "insights.json"), `${JSON.stringify({
+    version: 1,
+    insights: [{
+      id: "ins-browser-smoke",
+      title: "Browser smoke learning insight",
+      summary: "This note is intentionally kept out of trap retrieval.",
+      body: "Open it without mutation, then use Mark learned to record deliberate study.",
+      tags: ["learning", "smoke"],
+      source_refs: ["session:browser-smoke"],
+      shelved_at: "2026-08-09T12:00:00.000Z",
+      consulted_count: 0,
+      last_consulted_at: null,
+    }],
+  }, null, 2)}\n`);
 }
 
 function chromeExecutablePath(): string | null {
