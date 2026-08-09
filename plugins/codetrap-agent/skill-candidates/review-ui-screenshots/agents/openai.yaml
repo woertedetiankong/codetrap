@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review UI Screenshots"
+  short_description: "Rank screenshot findings and guide approved fixes"
+  default_prompt: "Use $review-ui-screenshots to review these UI screenshots before making changes."

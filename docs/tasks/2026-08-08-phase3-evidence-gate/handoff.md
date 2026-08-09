@@ -13,8 +13,9 @@ implementation destination. Custom agents and automations remain no-go.
 
 ## Current State
 
-The audit is complete; Phase 3 implementation awaits candidate-specific user
-approval for the recommended screenshot-review workflow.
+The audit is complete and its recommended screenshot-review candidate was later
+approved. The lifecycle implementation is tracked in
+[`../2026-08-08-phase3-skill-candidate-lifecycle/handoff.md`](../2026-08-08-phase3-skill-candidate-lifecycle/handoff.md).
 
 ## Git And Persistent State
 
@@ -64,9 +65,9 @@ git status --short --branch
 
 ## Next Steps
 
-1. Get individual approval to use screenshot-first UI critique as acceptance candidate.
-2. Implement only `skill_candidate`: draft, preview, approve, dual-client install,
-   receipt, disable/remove rollback, and acceptance evidence.
+1. Continue from the Phase 3 skill-lifecycle handoff.
+2. Keep custom-agent and automation destinations closed until new organic
+   evidence changes the gate.
 
 ## Implementation Log
 

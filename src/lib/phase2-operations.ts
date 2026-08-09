@@ -20,7 +20,7 @@ export class Phase2Operations {
 
   propose(input: Record<string, unknown>) {
     const kind = parseCandidateKind(requiredText(input.kind, "kind"));
-    if (kind === "pitfall_trap" || kind === "unclassified") {
+    if (!isPhase2Kind(kind)) {
       throw new Error("phase2 propose requires project_convention, docs_guidance, search_eval_case, or insight.");
     }
     const title = requiredText(input.title, "title");
@@ -174,9 +174,15 @@ export class Phase2Operations {
   }
 }
 
-function phase2Kind(candidate: CandidateTrap): Exclude<CandidateKind, "pitfall_trap" | "unclassified"> {
+type Phase2Kind = Extract<CandidateKind, "project_convention" | "docs_guidance" | "search_eval_case" | "insight">;
+
+function isPhase2Kind(kind: CandidateKind | undefined): kind is Phase2Kind {
+  return kind === "project_convention" || kind === "docs_guidance" || kind === "search_eval_case" || kind === "insight";
+}
+
+function phase2Kind(candidate: CandidateTrap): Phase2Kind {
   const kind = candidate.candidate_kind;
-  if (!kind || kind === "pitfall_trap" || kind === "unclassified") {
+  if (!isPhase2Kind(kind)) {
     throw new Error(`Candidate ${candidate.id} is not a committable Phase 2 destination.`);
   }
   return kind;

@@ -69,15 +69,21 @@ export function migrateCandidate(
   if (!isLegacyCandidate(candidate)) return candidate;
 
   const version = candidate.schema_version ?? LEGACY_CANDIDATE_SCHEMA_VERSION;
-  if (version === PHASE1_CANDIDATE_SCHEMA_VERSION) {
+  if (version >= PHASE1_CANDIDATE_SCHEMA_VERSION) {
     const hintedInsight = candidate.candidate_kind === "unclassified"
+      && version === PHASE1_CANDIDATE_SCHEMA_VERSION
       && candidate.destination_hint?.trim().toLowerCase() === "insight";
     const migrated = {
       ...candidate,
       schema_version: CANDIDATE_SCHEMA_VERSION,
       candidate_kind: hintedInsight ? "insight" as const : candidate.candidate_kind ?? "pitfall_trap",
     };
-    return { ...migrated, content_hash: candidateContentHash(migrated) };
+    return {
+      ...migrated,
+      content_hash: hintedInsight
+        ? candidateContentHash(migrated)
+        : candidate.content_hash ?? candidateContentHash(migrated),
+    };
   }
 
   const mapped = mapLegacyState(candidate, options);

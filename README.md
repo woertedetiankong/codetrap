@@ -209,6 +209,7 @@ codetrap/
 | `pack` | Export a user-curated context pack of committed lessons for planning time (`pack export --traps 1,2,3`) |
 | `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, approve/accept/reject/roll back candidates, migrate candidate records between schema versions, inspect authorization receipts and suppressed lessons, and clean up session files |
 | `phase2` | Review-bound low-risk destinations: conventions/docs/eval patches, insight shelf, lesson validation/graduation, longitudinal metrics, and retrieve-vs-curate decisions |
+| `phase3` | High-side-effect skill candidates: generate a reviewed preset, preview exact Codex/Claude targets, install under path-bound approval, inspect commits, and roll back safely |
 | `web` | Start the local review, trap library, insights, and Embeddings console |
 | `serve` | Start MCP server |
 
@@ -449,6 +450,34 @@ codetrap phase2 metrics --json
 codetrap phase2 outcome 42 --channel preflight --useful --scope project
 codetrap phase2 decision --json
 ```
+
+### Phase 3 Skill Candidates
+
+Phase 3 currently supports only the evidence-approved `skill_candidate`; custom
+agents and automations remain intentionally absent. Both client homes are
+required, and preview is read-only. Its `required_authorized_scope` binds the
+approval to the candidate revision and both exact install paths.
+
+```bash
+codetrap phase3 propose --preset review-ui-screenshots --json
+codetrap phase3 preview cand-001 --session <session-id> \
+  --codex-home <codex-home> --claude-home <claude-home> --json
+
+# Copy required_authorized_scope exactly from preview:
+codetrap session approve cand-001 --session <session-id> \
+  --authorized-scope "<required_authorized_scope>"
+codetrap phase3 install cand-001 --session <session-id> \
+  --codex-home <codex-home> --claude-home <claude-home> --executor agent --json
+
+codetrap phase3 commits --json
+codetrap phase3 rollback <phase3-commit-id> --executor user --json
+```
+
+Install writes the same `SKILL.md` and `agents/openai.yaml` bytes to each
+client. It snapshots both existing skill directories before replacing either,
+restores all touched targets after a partial failure, records a trust receipt,
+and refuses rollback if either installed directory changed later. An install
+approval never authorizes an agent to remove the skill.
 
 ### Did it actually help?
 

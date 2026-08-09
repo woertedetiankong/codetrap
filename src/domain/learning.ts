@@ -27,6 +27,7 @@ export const RECEIPT_DESTINATIONS = [
   "docs_guidance",
   "search_eval_case",
   "insight",
+  "skill_candidate",
 ] as const;
 export type ReceiptDestination = (typeof RECEIPT_DESTINATIONS)[number];
 

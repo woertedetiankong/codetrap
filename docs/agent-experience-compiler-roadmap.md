@@ -1,7 +1,7 @@
 # codetrap Mature Product Roadmap v2.3: Agent Experience Compiler
 
 Date: 2026-06-22 (v1)
-Updated: 2026-08-08 (v2.3 implementation status)
+Updated: 2026-08-09 (v2.3 implementation status)
 Status: Product direction / long-term roadmap — authoritative parent plan
 Scope: Parent plan for codetrap mature product evolution
 Clients served: **Codex and Claude Code, symmetrically** (Cursor and others: future)
@@ -13,25 +13,29 @@ handoff) — see §19.
 
 ## Status Dashboard
 
-> Updated: 2026-08-08
+> Updated: 2026-08-09
 
 | Milestone | Status | Updated | Evidence | Note |
 |---|---|---|---|---|
 | Phase 0 — proof point | Closed with waived gate | 2026-07-25 | [proof-point handoff](tasks/2026-07-25-phase0-claude-code-proof-point/handoff.md) | Candidate-quality gate was waived, not passed; later wide-lens review measured 20% at n=5. |
 | Phase 1 — MVP compiler loop | **Done** | 2026-08-08 | [closeout handoff](tasks/2026-08-08-phase1-closeout/handoff.md) | All five slices pass; trap #5 travelled from Claude Code mining to useful Codex recall. |
 | Phase 2 – low-risk destinations | **Done** | 2026-08-08 | [handoff](tasks/2026-08-08-phase2-low-risk-destinations/handoff.md) | Four review-bound destinations, insight study, currency/graduation, metrics, and decision rule pass end to end. |
-| Phase 3 — high-side-effect destinations | **In progress** | 2026-08-08 | [gate audit](tasks/2026-08-08-phase3-evidence-gate/handoff.md) | Evidence supports `skill_candidate` only; custom agents and automations remain no-go. |
+| Phase 3 — high-side-effect destinations | **Done** | 2026-08-09 | [skill lifecycle handoff](tasks/2026-08-08-phase3-skill-candidate-lifecycle/handoff.md) | Cross-client install is current; a later Codex screenshot-review task changed the implemented UI workflow. |
 | Phase 4 — external validation | Not started | 2026-08-08 | [Phase 4 plan](#phase-4--external-validation-and-legibility) | Requires reproducible and privacy-safe longitudinal evidence. |
 
-### Needs your judgment
+### Closed decisions by date
 
-- Approve or reject the screenshot-first UI critique workflow as Phase 3's
-  individually reviewed `skill_candidate`. Without that decision the lifecycle
-  can be designed, but its install/rollback acceptance path must not run
-  ([evidence gate](tasks/2026-08-08-phase3-evidence-gate/handoff.md)).
-
-### Recently closed decisions
-
+- 2026-08-09 Phase 3 closed after the installed skill governed a later organic
+  codetrap console review: screenshot and real-page inspection preceded edits,
+  the user approved exact findings F1-F4, and those findings became verified UI
+  changes. This is Codex behavior proof; it does not claim a Claude exercise.
+- 2026-08-09 The exact live targets were approved and `review-ui-screenshots`
+  was installed byte-identically into Codex and Claude homes under Phase 3
+  commit `p3-20260809044652-b3sa2k`; rollback remains available.
+- 2026-08-08 The user individually approved `review-ui-screenshots` as Phase 3's
+  acceptance candidate. Its revision-bound preview/install/receipt/rollback
+  lifecycle now passes against isolated Codex and Claude homes
+  ([detail](tasks/2026-08-08-phase3-skill-candidate-lifecycle/handoff.md)).
 - 2026-08-08 Phase 3 evidence gate selected `skill_candidate` only; custom-agent
   and automation destinations remain no-go until organic evidence appears
   ([detail](tasks/2026-08-08-phase3-evidence-gate/handoff.md)).
@@ -1491,6 +1495,28 @@ visibly leaves default recall.
 > names a bounded custom-agent role or periodic automation, so
 > `custom_agent_candidate` and `automation_idea` remain no-go. See
 > `docs/tasks/2026-08-08-phase3-evidence-gate/`.
+
+> **Phase 3 status: PASSED, 2026-08-09.**
+> Candidate schema v4 preserves v1-v3 reads and adds only
+> `skill_candidate`. The `review-ui-screenshots` artifact passes the skill
+> validator. Real CLI-process tests prove read-only preview, authorization bound
+> to both exact client targets, edit invalidation, byte-identical Codex/Claude
+> install, append-only receipts, partial-failure recovery semantics, conflict-safe
+> rollback, and byte-exact restoration. The full Windows suite passes 379 tests
+> with one intentional browser smoke skip, and release compilation is green.
+> On 2026-08-09, exact path-bound authorization installed the artifact into
+> `C:\Users\EDY\.codex\skills\review-ui-screenshots` and
+> `C:\Users\EDY\.claude\skills\review-ui-screenshots`. Independent SHA-256
+> checks and a post-install preview prove both targets are byte-identical and
+> current. A later organic codetrap-console task then used the installed Codex
+> skill end to end: evidence-first screenshot and live-page review produced an
+> exact F1-F4 approval gate, and the approved findings changed the responsive
+> layout, localization, and destructive-action design. OpenCLI desktop/compact
+> checks found zero console errors; the full suite passes 380 tests with one
+> intentional browser-smoke skip. This satisfies the acceptance sentence below
+> while keeping the honest boundary that Claude behavior was not exercised.
+> Evidence: `docs/tasks/2026-08-08-phase3-skill-candidate-lifecycle/` and
+> `src/tests/phase3.test.ts`.
 
 - `skill_candidate`, `custom_agent_candidate`, `automation_idea` workflows
   only where Phase 0-2 evidence shows real demand, with explicit authorization,

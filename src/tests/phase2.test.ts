@@ -115,7 +115,7 @@ describe("Phase 2 low-risk destinations", () => {
     legacy.content_hash = "legacy-hash";
     const migrated = migrateCandidate(legacy);
     expect(migrated.candidate_kind).toBe("insight");
-    expect(migrated.schema_version).toBe(3);
+    expect(migrated.schema_version).toBe(4);
     expect(migrated.content_hash).not.toBe("legacy-hash");
 
     const cwd = tempProjectDir("codetrap-p2-insight-");

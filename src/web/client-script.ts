@@ -66,6 +66,51 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       return label === key ? String(value ?? "") : label;
     }
 
+    function sessionStatusLabel(status) {
+      const key = "session.status." + status;
+      const label = t(key);
+      return label === key ? valueLabel(status) : label;
+    }
+
+    function qualityWarningLabel(warning) {
+      const keys = {
+        "context does not clearly describe when the trap applies": "qualityWarning.clearTrigger",
+        "mistake is not specific enough": "qualityWarning.specificMistake",
+        "fix is not actionable enough": "qualityWarning.actionableFix",
+        "future reuse is unclear": "qualityWarning.futureReuse",
+        "scope is too loose for a project trap": "qualityWarning.projectScope",
+        "candidate reads like a broad reminder rather than a durable trap": "qualityWarning.durableTrap",
+        "candidate has no evidence": "qualityWarning.evidence"
+      };
+      return keys[warning] ? t(keys[warning]) : warning;
+    }
+
+    function isCompactShell() {
+      return window.matchMedia("(max-width: 1060px)").matches;
+    }
+
+    function renderCompactWorkspaceToggle() {
+      const rail = el("workspace-rail");
+      const button = el("compact-workspace-toggle");
+      if (!rail || !button) return;
+      const expanded = rail.classList.contains("compact-open");
+      button.textContent = t(expanded ? "action.hideWorkspace" : "action.showWorkspace");
+      button.setAttribute("aria-expanded", String(expanded));
+    }
+
+    function setCompactWorkspaceOpen(expanded) {
+      const rail = el("workspace-rail");
+      if (!rail) return;
+      rail.classList.toggle("compact-open", expanded);
+      renderCompactWorkspaceToggle();
+    }
+
+    function revealCompactDetail() {
+      if (!isCompactShell()) return;
+      setCompactWorkspaceOpen(false);
+      requestAnimationFrame(() => document.querySelector(".detail")?.scrollIntoView({ block: "start" }));
+    }
+
     function optionPairs(values) {
       return values.map((value) => [value, valueLabel(value)]);
     }
@@ -87,6 +132,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         button.classList.toggle("active", button.dataset.locale === state.locale);
       });
       renderSidebarToggle();
+      renderCompactWorkspaceToggle();
     }
 
     function setLocale(locale) {
@@ -342,26 +388,26 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           <button type="button" class="row-main" data-session="\${escapeAttr(session.id)}">
             <span class="row-title">\${escapeHtml(session.goal)}</span>
             <span class="meta">
-              <span class="pill">\${escapeHtml(valueLabel(session.status))}</span>
+              <span class="pill">\${escapeHtml(sessionStatusLabel(session.status))}</span>
               <span class="pill \${session.pending_count ? "warn" : ""}">\${escapeHtml(t("pill.pending", { count: session.pending_count || 0 }))}</span>
               <span class="pill">\${escapeHtml(t("pill.candidates", { count: session.candidate_count || 0 }))}</span>
               <span class="pill accepted">\${escapeHtml(t("pill.accepted", { count: session.accepted_count || 0 }))}</span>
             </span>
           </button>
-          <button type="button" class="row-action danger" data-delete-session="\${escapeAttr(session.id)}">\${escapeHtml(t("action.deleteSession"))}</button>
         </div>
       \`).join("") : '<div class="empty">' + escapeHtml(t("empty.noSessions")) + '</div>';
+      const selectedSession = state.sessions.find((session) => session.id === state.sessionId);
+      const deleteButton = el("delete-session");
+      deleteButton.textContent = t("action.deleteSession");
+      deleteButton.classList.toggle("hidden", !selectedSession);
+      deleteButton.dataset.sessionId = selectedSession?.id || "";
       document.querySelectorAll("[data-session]").forEach((button) => {
         button.addEventListener("click", async () => {
           state.sessionId = button.dataset.session;
           state.candidateId = null;
           renderSessions();
           await loadCandidates();
-        });
-      });
-      document.querySelectorAll("[data-delete-session]").forEach((button) => {
-        button.addEventListener("click", async () => {
-          await deleteSession(button.dataset.deleteSession);
+          revealCompactDetail();
         });
       });
     }
@@ -439,6 +485,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           state.conflicts = [];
           renderCandidates();
           renderDetail();
+          revealCompactDetail();
         });
       });
       bindTrapJumpButtons();
@@ -558,6 +605,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           state.trapKey = button.dataset.trapKey;
           renderTrapResults();
           renderTrapDetail();
+          revealCompactDetail();
         });
       });
     }
@@ -1077,6 +1125,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.trapKey = key;
         renderTrapResults();
         renderTrapDetail();
+        revealCompactDetail();
         showStatus(t("status.openedTrap", { id }));
       } else {
         showStatus(t("status.trapNotInLibrary", { id }), true);
@@ -1247,7 +1296,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
               <span class="pill">\${escapeHtml(t("pill.conflict", { status: valueLabel(candidate.quality.conflict_status) }))}</span>
               <span class="pill">\${escapeHtml(t("pill.action", { action: valueLabel(candidate.quality.suggested_action) }))}</span>
             </div>
-            \${candidate.quality.warnings.map((warning) => '<div class="warning">' + escapeHtml(warning) + '</div>').join("")}
+            \${candidate.quality.warnings.map((warning) => '<div class="warning">' + escapeHtml(qualityWarningLabel(warning)) + '</div>').join("")}
           </div>
           <div class="section">
             <div class="title">\${escapeHtml(t("title.evidence"))}</div>
@@ -1532,6 +1581,12 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     }
 
     el("refresh").addEventListener("click", refreshAll);
+    el("compact-workspace-toggle").addEventListener("click", () => {
+      setCompactWorkspaceOpen(!el("workspace-rail").classList.contains("compact-open"));
+    });
+    el("delete-session").addEventListener("click", async () => {
+      await deleteSession(el("delete-session").dataset.sessionId);
+    });
     el("sidebar-toggle").addEventListener("click", () => {
       setSidebarCollapsed(!state.sidebarCollapsed);
     });
@@ -1547,6 +1602,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.candidateId = null;
         state.trapKey = null;
         renderActiveView();
+        revealCompactDetail();
         if (state.mainView === "library") {
           await loadTraps();
         } else if (state.mainView === "insights") {

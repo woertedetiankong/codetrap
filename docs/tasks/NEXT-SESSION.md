@@ -1,16 +1,19 @@
 # Next Session
 
 Project `D:\llm\codetrap\codetrap` (codetrap). Read
-`docs/tasks/2026-08-08-phase3-evidence-gate/handoff.md` first.
-Previous session: Phase 2 committed as `c294eb1`; Phase 3 gate selected only
-`skill_candidate` and found no custom-agent or automation evidence.
-Errata: the global PATH installation was removed; use `bun run src/index.ts`.
-Current state: Phase 3 implementation awaits individual acceptance-candidate approval.
-Environment: `question.txt` is absent; treat it as user-owned if it reappears.
-Now do: 1. confirm screenshot-first UI critique as the acceptance candidate
-2. implement the skill lifecycle only after confirmation.
-Red lines: do not manufacture custom-agent/automation demand; do not install a
-skill without exact approval; do not touch `question.txt` if it reappears; do not push.
-First verify: `git log --oneline -3; git status --short --branch` (expected
-`978984b` above `c294eb1` above `34ad8fb`, branch `phase3-skill-candidate`, and
-a clean tree).
+`docs/tasks/2026-08-08-phase3-skill-candidate-lifecycle/handoff.md` first.
+Previous session: Phase 3 closed after its byte-identical dual-client install
+changed a later Codex screenshot-review task; 380 tests passed, one intentional
+browser-smoke test skipped, and the Windows build passed.
+Errata: the global PATH installation remains removed; use `bun run src/index.ts`.
+Current state: Phase 3 and the F1-F4 UI proof are complete but uncommitted and
+unpushed on `phase3-skill-candidate`.
+Environment: live skill commit `p3-20260809044652-b3sa2k` is current in both
+approved client homes; `question.txt` is user-owned if it reappears.
+Now do: 1. inspect and commit the complete diff only when requested 2. begin
+Phase 4 only after an explicit scope decision.
+Red lines: do not push without explicit user request; do not manually remove the
+live skill; do not claim Claude behavior proof; do not touch `question.txt`.
+First verify: `git status --short --branch; bun test src/tests/phase3.test.ts src/tests/web-client-text.test.ts src/tests/web-client-script.test.ts`
+(expected branch `phase3-skill-candidate` and 12 tests passed, 0 failed; a
+mismatch means inspect repository or lifecycle drift before editing).

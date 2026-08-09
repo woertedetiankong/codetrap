@@ -9,14 +9,17 @@ import type { Executor } from "./learning";
  * v2 — the §8.2 envelope: three orthogonal state axes, revision, content hash,
  *      and a revision-bound authorization.
  * v3 — Phase 2 low-risk destinations and destination-specific payloads.
+ * v4 - Phase 3 skill candidates; agent and automation kinds remain absent.
  */
-export const CANDIDATE_SCHEMA_VERSION = 3;
+export const CANDIDATE_SCHEMA_VERSION = 4;
 export const LEGACY_CANDIDATE_SCHEMA_VERSION = 1;
 export const PHASE1_CANDIDATE_SCHEMA_VERSION = 2;
+export const PHASE2_CANDIDATE_SCHEMA_VERSION = 3;
 
 /**
  * Phase 1 stabilized the first two (§8.1); Phase 2 adds only destinations that
- * now have a complete apply/revert lifecycle. Phase 3 kinds remain absent.
+ * now have a complete apply/revert lifecycle. Phase 3 adds only the
+ * evidence-approved skill destination.
  */
 export const CANDIDATE_KINDS = [
   "pitfall_trap",
@@ -25,6 +28,7 @@ export const CANDIDATE_KINDS = [
   "docs_guidance",
   "search_eval_case",
   "insight",
+  "skill_candidate",
 ] as const;
 export type CandidateKind = (typeof CANDIDATE_KINDS)[number];
 

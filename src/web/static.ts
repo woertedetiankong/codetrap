@@ -388,6 +388,30 @@ export const WEB_INDEX_HTML = `<!doctype html>
       width: 100%;
     }
 
+    .compact-workspace-toggle { display: none; }
+
+    .section-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .session-delete-action {
+      min-height: 28px;
+      padding: 4px 8px;
+      color: var(--muted);
+      border-color: transparent;
+      box-shadow: none;
+      font-size: 12px;
+    }
+
+    .session-delete-action:hover {
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger), var(--line) 62%);
+      background: color-mix(in srgb, var(--danger), transparent 94%);
+    }
+
     .title {
       font-weight: 650;
       text-transform: none;
@@ -783,12 +807,54 @@ export const WEB_INDEX_HTML = `<!doctype html>
       .splitter { display: none; }
       .sidebar-toggle { display: none; }
       .rail { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .rail > .bar {
+        min-height: auto;
+        padding: 10px 12px;
+        flex-direction: row;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .rail-actions {
+        width: auto;
+        flex: 1 1 520px;
+        flex-wrap: nowrap;
+      }
+      .main-nav {
+        grid-template-columns: repeat(4, minmax(68px, 1fr));
+        width: auto;
+        flex: 1;
+      }
+      .compact-workspace-toggle { display: inline-flex; }
+      .rail .project-form,
+      .rail > .scroll { display: none; }
+      .rail.compact-open .project-form { display: grid; }
+      .rail.compact-open > .scroll {
+        display: block;
+        max-height: min(48vh, 430px);
+        border-bottom: 1px solid var(--line-soft);
+      }
       .queue, .detail { min-height: 520px; border-right: 0; border-bottom: 1px solid var(--line); }
+    }
+
+    @media (max-width: 700px) {
+      .rail > .bar > :first-child { width: 100%; }
+      .rail-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        flex-basis: 100%;
+        width: 100%;
+      }
+      .main-nav {
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        width: 100%;
+      }
     }
 
     @media (max-width: 520px) {
       .bar { align-items: flex-start; flex-direction: column; }
-      .rail-actions { justify-content: flex-start; }
+      .rail > .bar { align-items: stretch; }
+      .rail-actions { justify-content: stretch; }
       .filter-grid, .summary-grid, .detail-kv, .provider-fields { grid-template-columns: 1fr; }
       .project-form { grid-template-columns: 1fr auto; }
     }
@@ -804,7 +870,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     </button>
     <div class="edge-reveal edge-reveal-left" aria-hidden="true"></div>
     <div class="edge-reveal edge-reveal-right" aria-hidden="true"></div>
-    <aside class="rail">
+    <aside class="rail" id="workspace-rail">
       <div class="bar">
         <div>
           <div class="title">codetrap</div>
@@ -822,16 +888,20 @@ export const WEB_INDEX_HTML = `<!doctype html>
             <button type="button" data-locale="zh">中文</button>
           </div>
           <button class="ghost" id="refresh" title="Refresh">Refresh</button>
+          <button type="button" class="ghost compact-workspace-toggle" id="compact-workspace-toggle" aria-expanded="false" aria-controls="project-form workspace-list">Projects &amp; sessions</button>
         </div>
       </div>
       <form class="project-form" id="project-form">
         <input id="project-path" placeholder="/path/to/project">
         <button type="submit" id="project-add">Add</button>
       </form>
-      <div class="scroll">
+      <div class="scroll" id="workspace-list">
         <div class="stack" id="projects"></div>
         <div class="section">
-          <div class="title" id="sessions-title">sessions</div>
+          <div class="section-heading">
+            <div class="title" id="sessions-title">sessions</div>
+            <button type="button" class="ghost session-delete-action hidden" id="delete-session">Delete selected</button>
+          </div>
           <div id="sessions" class="stack" style="padding:0"></div>
         </div>
       </div>
