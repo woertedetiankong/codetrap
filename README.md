@@ -133,6 +133,7 @@ codetrap/
 │   │   ├── embedding-management.ts Embedding profile command output
 │   │   ├── search-service.ts FTS/semantic/hybrid candidate retrieval
 │   │   ├── search-policy.ts  Applicability filtering, rerank, fusion signals
+│   │   ├── public-retrieval-benchmark.ts Public benchmark runner + drift gate
 │   │   ├── search-result-card.ts Compact agent-facing result cards
 │   │   ├── search-normalizer.ts  CJK bigram, synonyms, search_text
 │   │   ├── fts-query.ts      Safe FTS5 literal query compiler
@@ -166,6 +167,7 @@ codetrap/
 │   │   └── client-text.ts    Localized UI strings
 │   └── tests/
 │       ├── search-*.test.ts
+│       ├── public-retrieval-benchmark.test.ts
 │       ├── trap-*.test.ts
 │       ├── session-cli.test.ts
 │       ├── mcp-tools.test.ts
@@ -174,7 +176,8 @@ codetrap/
 │       ├── import-export-cli.test.ts
 │       └── fixtures/search-eval.json
 ├── plugins/codetrap-agent/   Codex plugin bundle with skills, MCP config, hooks, and templates
-├── scripts/                  Release asset and preflight scripts
+├── benchmarks/retrieval-v1/  Released synthetic retrieval dataset + expected results
+├── scripts/                  Release, evaluation, benchmark, and preflight scripts
 ├── docs/                     Architecture + reference docs
 ├── package.json
 └── tsconfig.json
@@ -774,6 +777,41 @@ If no embedding provider is configured:
 - `codetrap search "<query>" --mode hybrid` works, but falls back to FTS.
 - `codetrap search "<query>" --mode semantic` and `codetrap embed` require an embedding provider.
 
+## Reproducible Retrieval Benchmark
+
+The released `codetrap-retrieval-v1` benchmark runs offline against 12 synthetic
+traps and 12 authored queries. The dataset is MIT-licensed, identified by
+SHA-256, and contains no copied user sessions, private trap-store records, or
+project source. Run the checked-in drift gate from a clean checkout:
+
+```bash
+bun install --frozen-lockfile
+bun run benchmark:retrieval -- --verify
+bun run benchmark:retrieval -- --verify --output artifacts/retrieval-benchmark.json
+```
+
+The retrieval-benchmark workflow runs the same drift gate on clean Windows and
+Linux GitHub-hosted runners with Bun 1.3.14, then uploads each runner's complete
+JSON report. The workflow becomes evidence only after it runs remotely; its
+presence in the repository is not itself an external reproduction.
+
+Current checked-in results:
+
+| Configuration | Recall@3 | Recall@5 | MRR | Failed gates |
+|---|---:|---:|---:|---:|
+| Default hybrid + deterministic proxy | 1.0000 | 1.0000 | 0.9028 | 0 |
+| FTS only | 0.8333 | 0.8333 | 0.8333 | 2 |
+| Deterministic semantic proxy only | 1.0000 | 1.0000 | 0.7083 | 0 |
+| Hybrid with semantic unavailable | 0.8333 | 0.8333 | 0.8333 | 2 |
+
+The weaker rows are intentional and remain visible. This benchmark measures
+retrieval on a released synthetic dataset. Its semantic provider is a
+deterministic category proxy used for reproducibility, not a production
+embedding model. It does not measure candidate quality, human approval quality,
+longitudinal usefulness, or later agent behavior. See
+[`benchmarks/retrieval-v1/README.md`](benchmarks/retrieval-v1/README.md) for the
+method and claim boundary.
+
 ## Build
 
 ```bash
@@ -789,6 +827,7 @@ bun run release:preflight  # tests, builds, release assets, smoke test, npm dry-
 ```bash
 bun test src/tests/                    # All tests
 bun test src/tests/search-eval.test.ts # Recall@5 evaluation
+bun run benchmark:retrieval -- --verify # Public synthetic benchmark + drift gate
 bun run eval:dogfood -- report         # Maintainer dogfood eval report
 bun run eval:dogfood -- report --live  # Dogfood eval with configured embedding provider
 ```

@@ -21,10 +21,21 @@ handoff) — see §19.
 | Phase 1 — MVP compiler loop | **Done** | 2026-08-08 | [closeout handoff](tasks/2026-08-08-phase1-closeout/handoff.md) | All five slices pass; trap #5 travelled from Claude Code mining to useful Codex recall. |
 | Phase 2 – low-risk destinations | **Done** | 2026-08-08 | [handoff](tasks/2026-08-08-phase2-low-risk-destinations/handoff.md) | Four review-bound destinations, insight study, currency/graduation, metrics, and decision rule pass end to end. |
 | Phase 3 — high-side-effect destinations | **Done** | 2026-08-09 | [skill lifecycle handoff](tasks/2026-08-08-phase3-skill-candidate-lifecycle/handoff.md) | Cross-client install is current; a later Codex screenshot-review task changed the implemented UI workflow. |
-| Phase 4 — external validation | Not started | 2026-08-08 | [Phase 4 plan](#phase-4--external-validation-and-legibility) | Requires reproducible and privacy-safe longitudinal evidence. |
+| Phase 4 — external validation | **In progress (4A + CI gate implemented)** | 2026-08-09 | [Phase 4A handoff](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md) | Package-ready benchmark and Windows/Linux clean-runner gate are implemented; first remote run, independent reproduction, and longitudinal publication remain open. |
 
 ### Closed decisions by date
 
+- 2026-08-09 Phase 4A now includes a pinned-Bun Windows/Linux CI matrix and
+  machine-readable artifacts. This automates clean-runner reproduction after a
+  push; it is not labeled third-party independent validation before or after
+  the first run.
+- 2026-08-09 Phase 4A implementation passed with a synthetic MIT dataset,
+  offline runner, stable drift gate, and public weak configurations. This is not
+  yet an external reproduction or a longitudinal claim
+  ([detail](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md)).
+- 2026-08-09 Phase 4 starts with a privacy-safe synthetic retrieval benchmark;
+  the internal dogfood fixture remains unpublished, and longitudinal flywheel
+  claims remain gated ([detail](tasks/2026-08-09-phase4-public-retrieval-benchmark/implementation-log.md)).
 - 2026-08-09 Phase 3 closed after the installed skill governed a later organic
   codetrap console review: screenshot and real-page inspection preceded edits,
   the user approved exact findings F1-F4, and those findings became verified UI
@@ -1530,6 +1541,19 @@ end-to-end and later changes real work. Do not manufacture one candidate per
 type merely to satisfy the roadmap; unsupported types remain unshipped.
 
 ### Phase 4 — External validation and legibility
+
+> **Phase 4A implementation status: PASSED locally, 2026-08-09; overall Phase 4
+> remains open.** `codetrap-retrieval-v1` provides a synthetic MIT dataset,
+> one-command offline runner, dataset SHA-256, checked-in expected metrics, and
+> four visible configurations. Default hybrid proxy reaches R@3=1, R@5=1,
+> MRR=0.9028; weaker FTS/fallback rows remain published in the report. The
+> deterministic semantic proxy is explicitly not a production embedding score.
+> Packaging and Phase 4A checks pass. A pinned-Bun Windows/Linux clean-runner
+> workflow and JSON artifacts are implemented but have not run remotely yet.
+> Independent reproduction and privacy-safe longitudinal flywheel evidence are
+> still required.
+> Evidence: `docs/tasks/2026-08-09-phase4-public-retrieval-benchmark/` and
+> `benchmarks/retrieval-v1/`.
 
 - Publish the reproducible retrieval benchmark and honest weak configurations.
 - Publish aggregated flywheel methodology and metrics only when privacy-safe

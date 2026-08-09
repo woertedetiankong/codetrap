@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "codetrap-retrieval-v1",
+  "dataset_sha256": "2f180e092a4e7dcf77818955f36e5d42e984d271fdd539a5c66cf7530fcefc8e",
+  "claims": {
+    "retrieval_quality": "measured_on_released_synthetic_dataset",
+    "candidate_quality": "not_measured",
+    "behavior_change": "not_measured",
+    "real_embedding_quality": "not_measured_deterministic_proxy_only"
+  },
+  "configurations": [
+    {
+      "name": "default-hybrid-proxy",
+      "metrics": {
+        "recall_at_3": 1,
+        "recall_at_5": 1,
+        "mrr": 0.9028,
+        "hybrid_fallback_count": 0,
+        "semantic_error_count": 0
+      },
+      "failures": []
+    },
+    {
+      "name": "fts-only",
+      "metrics": {
+        "recall_at_3": 0.8333,
+        "recall_at_5": 0.8333,
+        "mrr": 0.8333,
+        "hybrid_fallback_count": 0,
+        "semantic_error_count": 0
+      },
+      "failures": [
+        "remote network resilience",
+        "login session authority"
+      ]
+    },
+    {
+      "name": "semantic-proxy-only",
+      "metrics": {
+        "recall_at_3": 1,
+        "recall_at_5": 1,
+        "mrr": 0.7083,
+        "hybrid_fallback_count": 0,
+        "semantic_error_count": 0
+      },
+      "failures": []
+    },
+    {
+      "name": "hybrid-fts-fallback",
+      "metrics": {
+        "recall_at_3": 0.8333,
+        "recall_at_5": 0.8333,
+        "mrr": 0.8333,
+        "hybrid_fallback_count": 12,
+        "semantic_error_count": 0
+      },
+      "failures": [
+        "remote network resilience",
+        "login session authority"
+      ]
+    }
+  ]
+}

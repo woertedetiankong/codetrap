@@ -1,19 +1,26 @@
 # Next Session
 
 Project `D:\llm\codetrap\codetrap` (codetrap). Read
-`docs/tasks/2026-08-08-phase3-skill-candidate-lifecycle/handoff.md` first.
-Previous session: Phase 3 closed after its byte-identical dual-client install
-changed a later Codex screenshot-review task; 380 tests passed, one intentional
-browser-smoke test skipped, and the Windows build passed.
-Errata: the global PATH installation remains removed; use `bun run src/index.ts`.
-Current state: Phase 3 and the F1-F4 UI proof are in implementation commit
-`d834eb4` plus its handoff follow-up; both remain unpushed.
-Environment: live skill commit `p3-20260809044652-b3sa2k` is current in both
-approved client homes; `question.txt` is user-owned if it reappears.
-Now do: 1. push the branch only when explicitly requested 2. begin Phase 4
-only after an explicit scope decision.
-Red lines: do not push without explicit user request; do not manually remove the
-live skill; do not claim Claude behavior proof; do not touch `question.txt`.
-First verify: `git status --short --branch; git log -2 --oneline; bun test src/tests/phase3.test.ts src/tests/web-client-text.test.ts src/tests/web-client-script.test.ts`
-(expected a clean `phase3-skill-candidate`, a handoff commit above `d834eb4`, and 12 tests passed, 0 failed; a
-mismatch means inspect repository or lifecycle drift before editing).
+`docs/tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md` first.
+Previous session: Phase 4A implemented a package-ready synthetic retrieval
+benchmark plus a pinned-Bun Windows/Linux clean-runner workflow and JSON report
+artifacts. Six focused tests, benchmark verification, npm dry-run, and Windows
+builds pass.
+Errata: full `bunx tsc --noEmit` still reports three pre-existing Phase 2 type
+errors named in the handoff; benchmark tests and builds are green.
+Current state: Phase 4A is committed on local `main`, the temporary branch has
+been deleted locally, and `main` remains unpushed. Overall Phase 4 remains open
+for the first remote workflow run, independent reproduction, and longitudinal
+evidence. The final full suite is green at 386 passed, one intentional
+browser-smoke skip, and zero failures.
+Environment: the benchmark is offline and did not change any user store;
+`question.txt` remains user-owned if it reappears.
+Now do: 1. push local `main` only when explicitly requested and GitHub
+authentication is available 2. verify both GitHub-hosted runner artifacts
+3. obtain independent reproduction 4. do not publish Phase 4B metrics without
+evidence.
+Red lines: do not publish the internal fixture; do not call the proxy a real
+embedding score; do not push, npm publish, or create a release without approval.
+First verify: `git status --short --branch; bun run benchmark:retrieval -- --verify; bun test src/tests/public-retrieval-benchmark.test.ts`
+(expected clean local `main` ahead of `origin/main`, verification passed, and 6 tests passed; a
+mismatch means inspect dataset, package, or retrieval drift before continuing).

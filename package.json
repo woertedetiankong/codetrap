@@ -34,6 +34,7 @@
     "src/index.ts",
     "src/mcp-server.ts",
     "plugins",
+    "benchmarks",
     ".agents/plugins/marketplace.json",
     "scripts",
     "docs/installation.md",
@@ -53,6 +54,7 @@
     "check:release-version": "bun run scripts/check-release-version.ts",
     "eval:dogfood": "bun run scripts/dogfood-eval.ts",
     "eval:search-policy": "bun run scripts/search-policy-sweep.ts",
+    "benchmark:retrieval": "bun run scripts/public-retrieval-benchmark.ts",
     "build": "bun build ./src/index.ts --compile --outfile dist/codetrap && bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve",
     "build:cli": "bun build ./src/index.ts --compile --outfile dist/codetrap",
     "build:serve": "bun build ./src/mcp-server.ts --compile --outfile dist/codetrap-serve"

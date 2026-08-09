@@ -1,0 +1,228 @@
+{
+  "benchmark": {
+    "id": "codetrap-retrieval-v1",
+    "schema_version": 1,
+    "license": "MIT",
+    "provenance": "synthetic_authored_for_codetrap"
+  },
+  "traps": [
+    {
+      "title": "Route outbound calls through resilientClient",
+      "category": "api",
+      "tags": ["http", "resilientClient", "retry"],
+      "scope": "global",
+      "context": "When code performs an outbound call that may fail transiently.",
+      "mistake": "Calling a transport primitive directly skips the shared retry policy.",
+      "fix": "Use resilientClient so retry and backoff behavior stays centralized.",
+      "severity": "critical"
+    },
+    {
+      "title": "Attach requestIdempotencyKey before retrying writes",
+      "category": "api",
+      "tags": ["http", "requestIdempotencyKey", "write"],
+      "scope": "global",
+      "context": "When a write request can be retried after a transient failure.",
+      "mistake": "Retrying a non-idempotent write can create duplicate records.",
+      "fix": "Generate requestIdempotencyKey once and reuse it for every attempt.",
+      "severity": "critical"
+    },
+    {
+      "title": "Enforce httpResponseByteLimit before parsing",
+      "category": "api",
+      "tags": ["http", "httpResponseByteLimit", "memory"],
+      "scope": "global",
+      "context": "When a response body comes from an untrusted endpoint.",
+      "mistake": "Parsing an unbounded body can exhaust process memory.",
+      "fix": "Reject bodies larger than httpResponseByteLimit before decoding them.",
+      "severity": "critical"
+    },
+    {
+      "title": "Set requestDeadlineMs at the client boundary",
+      "category": "api",
+      "tags": ["http", "requestDeadlineMs", "timeout"],
+      "scope": "global",
+      "context": "When an outbound request must not wait indefinitely.",
+      "mistake": "Scattered timers create inconsistent cancellation behavior.",
+      "fix": "Pass requestDeadlineMs through the shared client boundary.",
+      "severity": "error"
+    },
+    {
+      "title": "Resolve callers through principalProvider",
+      "category": "auth",
+      "tags": ["auth", "principalProvider", "identity"],
+      "scope": "global",
+      "context": "When application code needs the current caller.",
+      "mistake": "Reading transport headers directly duplicates trust decisions.",
+      "fix": "Ask principalProvider for the validated caller.",
+      "severity": "critical"
+    },
+    {
+      "title": "Decode cookies with sessionCookieCodec",
+      "category": "auth",
+      "tags": ["auth", "sessionCookieCodec", "cookie"],
+      "scope": "global",
+      "context": "When a session cookie enters the application boundary.",
+      "mistake": "Hand parsing bypasses signature and expiry validation.",
+      "fix": "Use sessionCookieCodec and reject invalid payloads.",
+      "severity": "critical"
+    },
+    {
+      "title": "Validate destinations with loginRedirectGuard",
+      "category": "auth",
+      "tags": ["auth", "loginRedirectGuard", "redirect"],
+      "scope": "global",
+      "context": "When login completion redirects to a caller-provided location.",
+      "mistake": "Trusting the destination enables an open redirect.",
+      "fix": "Require loginRedirectGuard to approve the destination.",
+      "severity": "critical"
+    },
+    {
+      "title": "Increment authenticationEpoch after credential reset",
+      "category": "auth",
+      "tags": ["auth", "authenticationEpoch", "credentials"],
+      "scope": "global",
+      "context": "When a user resets a credential or revokes every active grant.",
+      "mistake": "Old grants remain valid when revocation state is unchanged.",
+      "fix": "Increment authenticationEpoch and reject grants from older epochs.",
+      "severity": "error"
+    },
+    {
+      "title": "Apply persistent shape changes through schemaPlan",
+      "category": "database",
+      "tags": ["db", "migration", "schemaPlan"],
+      "scope": "global",
+      "context": "When stored record structure changes across releases.",
+      "mistake": "Changing only current queries leaves prior installations incompatible.",
+      "fix": "Add an idempotent step to schemaPlan and verify upgrade behavior.",
+      "severity": "critical"
+    },
+    {
+      "title": "Wrap related writes in dbWriteTransaction",
+      "category": "database",
+      "tags": ["db", "dbWriteTransaction", "atomicity"],
+      "scope": "global",
+      "context": "When multiple database records represent one logical update.",
+      "mistake": "Independent writes can persist a partial state.",
+      "fix": "Run every related write inside dbWriteTransaction.",
+      "severity": "error"
+    },
+    {
+      "title": "Bind values through sqlParameterBinder",
+      "category": "database",
+      "tags": ["sql", "sqlParameterBinder", "injection"],
+      "scope": "global",
+      "context": "When user-controlled values enter a database statement.",
+      "mistake": "String interpolation changes statement structure.",
+      "fix": "Send every value through sqlParameterBinder.",
+      "severity": "critical"
+    },
+    {
+      "title": "Reject records from a newer schemaEpoch",
+      "category": "database",
+      "tags": ["schema", "schemaEpoch", "compatibility"],
+      "scope": "global",
+      "context": "When opening persisted data written by another application version.",
+      "mistake": "Reading an unknown newer shape can silently discard fields.",
+      "fix": "Refuse schemaEpoch values newer than the reader supports.",
+      "severity": "error"
+    }
+  ],
+  "queries": [
+    {
+      "query": "remote network resilience",
+      "mode": "hybrid",
+      "goldTrapIds": [1],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "requestIdempotencyKey duplicate write",
+      "mode": "hybrid",
+      "goldTrapIds": [2],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "httpResponseByteLimit parser memory",
+      "mode": "hybrid",
+      "goldTrapIds": [3],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "requestDeadlineMs cancellation",
+      "mode": "hybrid",
+      "goldTrapIds": [4],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "login session authority",
+      "mode": "hybrid",
+      "goldTrapIds": [5],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "sessionCookieCodec expiry",
+      "mode": "hybrid",
+      "goldTrapIds": [6],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "loginRedirectGuard destination",
+      "mode": "hybrid",
+      "goldTrapIds": [7],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "authenticationEpoch revoke grants",
+      "mode": "hybrid",
+      "goldTrapIds": [8],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "table evolution for existing installations",
+      "mode": "hybrid",
+      "goldTrapIds": [9],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "dbWriteTransaction partial state",
+      "mode": "hybrid",
+      "goldTrapIds": [10],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "sqlParameterBinder injection",
+      "mode": "hybrid",
+      "goldTrapIds": [11],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    },
+    {
+      "query": "schemaEpoch newer reader",
+      "mode": "hybrid",
+      "goldTrapIds": [12],
+      "phaseGate": "phase4",
+      "minRecallAt3": 1,
+      "minRecallAt5": 1
+    }
+  ]
+}
