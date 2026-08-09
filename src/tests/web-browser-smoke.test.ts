@@ -74,7 +74,7 @@ describe("web browser smoke", () => {
 
       await page.getByRole("button", { name: "Library" }).click();
       await page.waitForSelector("text=Browser smoke confirmed trap");
-      await expectText(page.locator("#candidates"), "Needs validation");
+      await expectTextContent(page.locator('[data-trap-health="needs-validation"]'), "Needs validation");
 
       await page.getByRole("button", { name: "Learning" }).click();
       await page.waitForSelector("text=Browser smoke learning insight");
@@ -95,6 +95,10 @@ describe("web browser smoke", () => {
 
 async function expectText(locator: { innerText: () => Promise<string> }, expected: string): Promise<void> {
   expect(await locator.innerText()).toContain(expected);
+}
+
+async function expectTextContent(locator: { textContent: () => Promise<string | null> }, expected: string): Promise<void> {
+  expect(await locator.textContent()).toContain(expected);
 }
 
 function seedBrowserSmokeData(project: string, home: string): void {

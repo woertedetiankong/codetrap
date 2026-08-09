@@ -1,6 +1,6 @@
-import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, sep } from "node:path";
+import { dirname, join } from "node:path";
 import type { TrapInput } from "../domain/trap";
 
 // On Windows, os.tmpdir() (e.g. C:\Users\<me>\AppData\Local\Temp) lives INSIDE
@@ -19,9 +19,9 @@ function testTmpRoot(): string {
   if (override) return override;
   const tmp = realpathish(tmpdir());
   const home = realpathish(homedir());
-  if (home && tmp !== home && isWithin(tmp, home)) {
+  if (home && tmp !== home && isWithinFilesystem(tmp, home)) {
     // tmp is under home — climb out to the real home's parent (a sibling root).
-    const parent = home.slice(0, home.lastIndexOf(sep));
+    const parent = dirname(home);
     return parent && parent !== home ? parent : tmp;
   }
   return tmp;
@@ -35,10 +35,28 @@ function realpathish(p: string): string {
   }
 }
 
-function isWithin(child: string, parent: string): boolean {
-  const c = child.toLowerCase();
-  const p = parent.toLowerCase();
-  return c === p || c.startsWith(p.endsWith(sep) ? p : p + sep);
+export function isWithinFilesystem(child: string, parent: string): boolean {
+  let current = child;
+  while (true) {
+    if (sameFilesystemEntry(current, parent)) return true;
+    const next = dirname(current);
+    if (next === current) return false;
+    current = next;
+  }
+}
+
+function sameFilesystemEntry(left: string, right: string): boolean {
+  if (left.toLowerCase() === right.toLowerCase()) return true;
+  try {
+    const leftStat = statSync(left);
+    const rightStat = statSync(right);
+    // Windows may expose the same directory through a long user name and an
+    // 8.3 alias such as runneradmin/RUNNER~1. File identity stays stable even
+    // when the path strings and realpath output do not.
+    return leftStat.ino !== 0 && leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
+  } catch {
+    return false;
+  }
 }
 
 export type CliResult = {
