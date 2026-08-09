@@ -93,3 +93,5 @@ first high-side-effect candidate lifecycle.
   green. This satisfies the roadmap acceptance sentence without claiming that
   Claude behavior was exercised: installation is cross-client, while the later
   real-work behavior proof is from Codex.
+- The complete lifecycle, skill artifact, organic UI proof, tests, and reconciled
+  docs landed together as repository commit `d834eb4`.

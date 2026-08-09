@@ -27,8 +27,10 @@ an evidence-first review and explicit F1-F4 approval gate.
 ## Git And Persistent State
 
 - Branch: `phase3-skill-candidate`.
+- Implementation commit: `d834eb4` (`feat: complete phase 3 skill lifecycle and UI proof`);
+  the handoff state is reconciled in its immediate documentation follow-up.
 - Baselines: gate audit `978984b`, gate handoff `8ced8f6`, Phase 2 `c294eb1`.
-- Repository Phase 3 and UI proof changes are not yet committed or pushed.
+- The commit is local and has not been pushed.
 - Candidate `cand-001` is in session
   `2026-08-08-phase-3-skill-candidate-screenshot-first-ui-review`.
 - Live targets are `C:\Users\EDY\.codex\skills\review-ui-screenshots` and
@@ -68,8 +70,7 @@ an evidence-first review and explicit F1-F4 approval gate.
 
 ## Next Steps
 
-1. Review and commit the complete Phase 3/UI diff when the user asks; do not
-   split away the proof docs from the behavior they document.
+1. Push the current branch commits only after an explicit user request.
 2. Begin Phase 4 only after an explicit scope decision; Phase 3 creates no
    obligation to manufacture additional high-side-effect destinations.
 
@@ -77,7 +78,9 @@ an evidence-first review and explicit F1-F4 approval gate.
 
 ```bash
 git status --short --branch
-# expected: phase3-skill-candidate with uncommitted Phase 3/UI files; mismatch means inspect scope before editing.
+# expected: phase3-skill-candidate with a clean tree; mismatch means inspect new work before editing.
+git log -2 --oneline
+# expected: the handoff follow-up followed by d834eb4 feat: complete phase 3 skill lifecycle and UI proof.
 bun test src/tests/phase3.test.ts src/tests/web-client-text.test.ts src/tests/web-client-script.test.ts
 # expected: 12 passed, 0 failed; mismatch means lifecycle or UI proof regressed.
 ```
