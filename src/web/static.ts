@@ -373,7 +373,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
       justify-content: flex-end;
       gap: 8px;
       flex-wrap: wrap;
-      flex: 1;
+      flex: 0 0 auto;
       min-width: 0;
       width: 100%;
     }

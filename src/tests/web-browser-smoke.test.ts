@@ -70,6 +70,11 @@ describe("web browser smoke", () => {
         waitUntil: "domcontentloaded",
       });
       await page.waitForSelector("text=Browser smoke candidate");
+      const navigationBox = await page.locator(".main-nav").boundingBox();
+      const projectFormBox = await page.locator(".project-form").boundingBox();
+      expect(navigationBox).not.toBeNull();
+      expect(projectFormBox).not.toBeNull();
+      expect(navigationBox!.y + navigationBox!.height).toBeLessThanOrEqual(projectFormBox!.y);
       await expectText(page.locator("#review-summary"), "1 pending");
 
       await page.getByRole("button", { name: "Library" }).click();
