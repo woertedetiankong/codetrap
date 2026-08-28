@@ -17,9 +17,10 @@ browser opening.
 
 ## Current State
 
-The requested hardening slices, including the follow-up learning-workflow fixes
-and CSS-safe browser assertion, are implemented, validated, and pushed to
-`origin/main`. Install, version, release, and merge state remain unchanged.
+The requested hardening slices, including the follow-up learning-workflow fixes,
+CSS-safe browser assertion, and bounded CI integration-test budgets, are
+implemented, validated, and pushed to `origin/main`. Install, version, release,
+and merge state remain unchanged.
 
 ## Git And Persistent State
 
@@ -92,9 +93,9 @@ and CSS-safe browser assertion, are implemented, validated, and pushed to
 ## Validation
 
 - `bun run typecheck`: pass.
-- Latest `bun test`: 413 pass, 1 configured Windows browser-smoke skip, and 2
-  unrelated CLI-heavy tests exceeded the shared 5-second timeout under full
-  suite load. Isolated rerun of those two files: 28 pass, 0 fail.
+- Latest full local `bun test src/tests`: 415 pass, 1 configured Windows
+  browser-smoke skip, 0 fail after adding bounded budgets to the two CI-heavy
+  integration cases.
 - Focused learning/Web suite: 40 pass, 0 fail.
 - Browser-assertion follow-up: 14 pass, 1 configured Windows browser-smoke skip,
   0 fail across the browser smoke and Web client tests.

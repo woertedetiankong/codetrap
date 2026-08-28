@@ -56,7 +56,10 @@
 - Made the Learning-status browser assertion inspect DOM `textContent` instead
   of rendered `innerText`, so CSS `text-transform: uppercase` cannot make the
   Ubuntu-only browser path disagree with the source-cased localization string.
-- Kept existing five-second test budgets unchanged after the final full-suite
-  run timed out in two unrelated CLI-heavy cases by 0.16 and 0.53 seconds. Both
-  files passed 28/28 in isolation, so increasing the timeout here would hide a
-  suite-load signal without improving the learning workflow under test.
+- Superseded the earlier decision to keep every default test budget after the
+  pushed follow-up reproduced bounded-timeout failures on both CI platforms.
+  The multi-transition Web API test passed three isolated Windows runs in
+  1.9-2.1 seconds but reached 5.216 seconds under full-suite load, so it now has
+  a 15-second local budget. The real Ubuntu browser flow exhausted its 20-second
+  budget and now has 40 seconds. The suite-wide default remains unchanged, and
+  the Ubuntu browser path remains enabled rather than being skipped.

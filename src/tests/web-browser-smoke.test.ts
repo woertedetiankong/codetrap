@@ -97,7 +97,7 @@ describe("web browser smoke", () => {
       await browser.close();
       server.stop(true);
     }
-  }, 20_000);
+  }, 40_000);
 });
 
 async function expectWorkspaceHeaderLayout(

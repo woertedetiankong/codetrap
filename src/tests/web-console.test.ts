@@ -651,7 +651,7 @@ describe("web API", () => {
       status: "rejected",
       rejection_reason: "Too broad.",
     });
-  });
+  }, 15_000);
 
   test("accepts candidate draft edits through the API", async () => {
     const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });

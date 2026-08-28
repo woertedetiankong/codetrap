@@ -6,13 +6,13 @@ Previous session: agent/user hardening and its learning-workflow follow-up,
 including first-class insight review, one-action approval/shelving, safe fenced
 code/source rendering, idempotent learned state, Windows-safe stdin JSON, and
 the shared ASCII-flow/example format. The focused learning/Web suite completed
-with 40 tests passing. The latest full run had 413 passes, one configured
-Windows browser-smoke skip, and two unrelated 5-second timeout flakes; both
-files passed 28/28 when rerun in isolation.
+with 40 tests passing. After adding bounded budgets to the two CI-heavy
+integration cases, the latest full local run completed with 415 passes, one
+configured Windows browser-smoke skip, and zero failures.
 Errata: None known.
-Current state: task code and docs, including the CSS-safe browser assertion
-follow-up, are committed and pushed to `origin/main`; nothing has been
-published, released, or installed globally.
+Current state: task code and docs, including the CSS-safe browser assertion and
+bounded CI integration-test budgets, are committed and pushed to `origin/main`;
+nothing has been published, released, or installed globally.
 Environment: the updated Web console was restarted with `--open` and left
 running on `127.0.0.1:4737`;
 the authenticated token is intentionally not stored in docs.
