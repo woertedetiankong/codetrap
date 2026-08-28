@@ -150,6 +150,29 @@ describe("Phase 3 skill candidate lifecycle", () => {
     expect(existsSync(join(otherClaudeHome, "skills", "review-ui-screenshots"))).toBe(false);
   });
 
+  test("authorization is bound to exact target content, not only install paths", () => {
+    const cwd = tempProjectDir("codetrap-p3-content-scope-");
+    const home = tempHome();
+    const codexHome = tempDir("codetrap-p3-content-scope-codex-");
+    const claudeHome = tempDir("codetrap-p3-content-scope-claude-");
+    const captured = propose(cwd, home);
+    const plan = preview(cwd, home, captured.session.id, captured.candidate.id, codexHome, claudeHome);
+    runJson([
+      "session", "approve", captured.candidate.id, "--session", captured.session.id,
+      "--authorized-scope", plan.required_authorized_scope,
+    ], cwd, home);
+    const target = join(codexHome, "skills", "review-ui-screenshots");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "local.txt"), "created after preview\n");
+
+    const refused = runCli([
+      ...installArgs(captured.session.id, captured.candidate.id, codexHome, claudeHome), "--json",
+    ], cwd, home);
+    expect(refused.exitCode).toBe(1);
+    expect(JSON.parse(refused.stdout).error).toContain("does not match these exact install targets");
+    expect(readFileSync(join(target, "local.txt"), "utf-8")).toBe("created after preview\n");
+  });
+
   test("rollback refuses to overwrite a post-install edit", () => {
     const cwd = tempProjectDir("codetrap-p3-conflict-");
     const home = tempHome();

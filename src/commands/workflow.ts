@@ -22,6 +22,7 @@ import { cmdSession } from "./session-commands";
 import { cmdLearn } from "./learn-commands";
 import { cmdPhase2 } from "./phase2-commands";
 import { cmdPhase3 } from "./phase3-commands";
+import { cmdImprover } from "./improver-commands";
 import {
   cmdDoctor,
   cmdEmbed,
@@ -99,10 +100,12 @@ async function dispatchCommand(sub: string, args: string[], store: TrapStore): P
       return cmdPhase2(args, store, operations);
     case "phase3":
       return cmdPhase3(args, store, operations);
+    case "improver":
+      return cmdImprover(args, store, operations);
     default:
       return errorResult([
         `Unknown command: ${sub}`,
-        "Commands: init, add, search, list, show, useful, pack, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, setup, repair-scope, migrate-project, embed, embeddings, session, learn, phase2, phase3",
+        "Commands: init, add, search, list, show, useful, pack, edit, delete, add_trap_evidence, archive_trap, supersede_trap, export, import, stats, doctor, setup, repair-scope, migrate-project, embed, embeddings, session, learn, phase2, phase3, improver",
       ].join("\n"));
   }
 }

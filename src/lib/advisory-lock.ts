@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const LOCK_TIMEOUT_MS = 10_000;
@@ -19,6 +19,14 @@ export type LockOutcome<T> = {
   stole_stale_lock: boolean;
 };
 
+export type AdvisoryLockOptions = {
+  timeoutMs?: number;
+  staleMs?: number;
+  now?: () => number;
+  /** Injectable only so owner-liveness edge cases remain deterministic in tests. */
+  isProcessAlive?: (pid: number) => boolean;
+};
+
 /**
  * A per-resource advisory lock around a read-modify-write critical section.
  *
@@ -36,11 +44,12 @@ export type LockOutcome<T> = {
 export function withAdvisoryLock<T>(
   lockDir: string,
   fn: () => T,
-  options: { timeoutMs?: number; staleMs?: number; now?: () => number } = {}
+  options: AdvisoryLockOptions = {}
 ): LockOutcome<T> {
   const timeoutMs = options.timeoutMs ?? LOCK_TIMEOUT_MS;
   const staleMs = options.staleMs ?? LOCK_STALE_MS;
   const now = options.now ?? (() => Date.now());
+  const isProcessAlive = options.isProcessAlive ?? processIsAlive;
 
   const started = now();
   const deadline = started + timeoutMs;
@@ -57,7 +66,7 @@ export function withAdvisoryLock<T>(
       // failures: retrying them spins at 100% CPU and never reports the cause.
       if (!isLockHeldError(error)) throw error;
 
-      if (stealStaleLock(lockDir, staleMs, now)) {
+      if (stealStaleLock(lockDir, staleMs, now, isProcessAlive)) {
         stoleStale = true;
         continue;
       }
@@ -71,10 +80,8 @@ export function withAdvisoryLock<T>(
     }
   }
 
-  // Claim ownership immediately. Two processes can both judge a lock stale and
-  // both remove it; without a token the second `rmSync` deletes the *live* lock
-  // the first just created and both run the critical section — reintroducing
-  // exactly the interleaving the lock exists to prevent.
+  // Claim ownership immediately. Release verifies this token so a process can
+  // never remove a directory it no longer owns.
   writeFileSync(join(lockDir, OWNER_FILE), token);
 
   const waited = now() - started;
@@ -107,16 +114,63 @@ function releaseIfOwned(lockDir: string, token: string): void {
   rmSync(lockDir, { recursive: true, force: true });
 }
 
-function stealStaleLock(lockDir: string, staleMs: number, now: () => number): boolean {
+function stealStaleLock(
+  lockDir: string,
+  staleMs: number,
+  now: () => number,
+  isProcessAlive: (pid: number) => boolean
+): boolean {
+  let age: number;
   try {
-    if (now() - statSync(lockDir).mtimeMs > staleMs) {
-      rmSync(lockDir, { recursive: true, force: true });
-      return true;
-    }
-  } catch {
-    // The lock vanished between attempts. This is ordinary contention, not a
-    // reclaim, so it must not be reported as one — retry immediately.
-    return false;
+    age = now() - statSync(lockDir).mtimeMs;
+  } catch (error) {
+    if ((error as { code?: string } | null)?.code === "ENOENT") return false;
+    throw error;
   }
-  return false;
+  if (age <= staleMs) return false;
+
+  const ownerPid = readOwnerPid(lockDir);
+  // A synchronous holder may legitimately exceed the lease duration while
+  // JSON serialization or filesystem writes block timers. Age alone therefore
+  // never authorizes stealing a lock from a process that is still alive.
+  if (ownerPid !== null && isProcessAlive(ownerPid)) return false;
+
+  // Renaming the abandoned directory is the atomic winner election. If two
+  // waiters race to reclaim it, only one can move the original path; the other
+  // observes ENOENT and retries normal acquisition instead of deleting the
+  // winner's newly-created live lock.
+  const quarantine = `${lockDir}.reclaim-${process.pid}-${Math.random().toString(36).slice(2)}`;
+  try {
+    renameSync(lockDir, quarantine);
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code === "ENOENT" || code === "EEXIST") return false;
+    throw error;
+  }
+  rmSync(quarantine, { recursive: true, force: true });
+  return true;
+}
+
+function readOwnerPid(lockDir: string): number | null {
+  try {
+    const match = readFileSync(join(lockDir, OWNER_FILE), "utf-8").match(/^(\d+)\./);
+    if (!match) return null;
+    const pid = Number(match[1]);
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    // A process that crashed between mkdir and owner write leaves no pid. The
+    // age threshold still protects a live claimant during that short window.
+    return null;
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but this user cannot signal it. Only ESRCH
+    // proves absence; every other result is treated conservatively as alive.
+    return (error as { code?: string } | null)?.code !== "ESRCH";
+  }
 }

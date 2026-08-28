@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { LearningStore } from "../lib/learning-store";
 import { withAdvisoryLock } from "../lib/advisory-lock";
@@ -192,6 +192,19 @@ describe("Phase 1D — the advisory lock itself", () => {
     const outcome = withAdvisoryLock(lock, () => "reclaimed", { staleMs: 0 });
     expect(outcome.value).toBe("reclaimed");
     expect(outcome.stole_stale_lock).toBe(true);
+  });
+
+  test("never steals an old lock from a live synchronous owner", () => {
+    const dir = tempProjectDir("codetrap-1d-lock-live-");
+    const lock = join(dir, ".lock");
+    mkdirSync(lock);
+    writeFileSync(join(lock, "owner"), `${process.pid}.live-holder`);
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(lock, old, old);
+
+    expect(() => withAdvisoryLock(lock, () => "never", { timeoutMs: 60, staleMs: 0 }))
+      .toThrow(/Timed out after 60ms waiting for the lock/);
+    expect(readFileSync(join(lock, "owner"), "utf-8")).toBe(`${process.pid}.live-holder`);
   });
 });
 

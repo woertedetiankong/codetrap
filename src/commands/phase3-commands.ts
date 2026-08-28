@@ -16,6 +16,9 @@ export function cmdPhase3(args: string[], store: TrapStore, traps: TrapOperation
     case "propose":
       result = operations.proposePreset(requiredOpt(opts, "preset"));
       break;
+    case "improve":
+      result = operations.improve(jsonObjectInput(opts), homes(opts));
+      break;
     case "edit":
       result = operations.edit(requiredOpt(opts, "session"), requiredPosition(positionals, 0, "candidate id"), jsonObjectInput(opts));
       break;
@@ -32,7 +35,7 @@ export function cmdPhase3(args: string[], store: TrapStore, traps: TrapOperation
       result = operations.commits();
       break;
     default:
-      return errorResult("Usage: codetrap phase3 <propose|edit|preview|install|rollback|commits>");
+      return errorResult("Usage: codetrap phase3 <propose|improve|edit|preview|install|rollback|commits>");
   }
 
   if (wantsJson(opts)) return jsonResult(result);

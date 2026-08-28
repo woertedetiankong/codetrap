@@ -1,7 +1,7 @@
 # codetrap Mature Product Roadmap v2.3: Agent Experience Compiler
 
 Date: 2026-06-22 (v1)
-Updated: 2026-08-27 (v2.3 implementation status)
+Updated: 2026-08-28 (v2.3 implementation status)
 Status: Product direction / long-term roadmap — authoritative parent plan
 Scope: Parent plan for codetrap mature product evolution
 Clients served: **Codex and Claude Code, symmetrically** (Cursor and others: future)
@@ -13,7 +13,7 @@ handoff) — see §19.
 
 ## Status Dashboard
 
-> Updated: 2026-08-27
+> Updated: 2026-08-28
 
 | Milestone | Status | Updated | Evidence | Note |
 |---|---|---|---|---|
@@ -23,9 +23,28 @@ handoff) — see §19.
 | Phase 3 — high-side-effect destinations | **Done** | 2026-08-09 | [skill lifecycle handoff](tasks/2026-08-08-phase3-skill-candidate-lifecycle/handoff.md) | Cross-client install is current; a later Codex screenshot-review task changed the implemented UI workflow. |
 | Phase 4 — external validation | **In progress (4A merged and synced)** | 2026-08-09 | [Phase 4A handoff](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md) | Benchmark and audit hardening are on `origin/main`; remote CI evidence has not been inspected in this task, while independent reproduction and longitudinal publication remain open. |
 | Agent/user experience hardening | **Done** | 2026-08-27 | [handoff](tasks/2026-08-27-agent-user-experience-hardening/handoff.md) | Atomic editing, multilingual scoring, suppression undo, draft-safe refresh, purpose-specific insight review, idempotent study tracking, Windows-safe structured input, `web --open`, and token hygiene pass without changing install or release state. |
+| Feedback improver loop | **Done** | 2026-08-28 | [handoff](tasks/2026-08-28-feedback-improver-loop/handoff.md) | Generic redacted feedback ingress, evidence weighting, destination routing, concurrent/idempotent candidate staging, and directional behavior outcomes pass; remote adapters and scheduling remain future permissioned slices. |
+| Existing Skill improvement loop | **Done** | 2026-08-28 | [handoff](tasks/2026-08-28-existing-skill-improvement/handoff.md) | Resource-preserving, exact-base Skill patches now pass through static validation, file-level preview, content-bound approval, symmetric install, behavior outcomes, and rollback. |
+| Improvement-loop review hardening | **Done** | 2026-08-28 | [handoff](tasks/2026-08-28-review-hardening/handoff.md) | Independent-review findings in retention, strict inputs, provenance, live-owner locking, portable metadata, bounded snapshot history, and partial-failure recovery are closed with 437 passing tests. |
 
 ### Closed decisions by date
 
+- 2026-08-28 Improvement-loop persistence is bounded and owner-aware: deleted
+  feedback cannot resurrect, JSON metrics stay type-strict, source refs share
+  redaction, stale locks check live PIDs and reclaim atomically, and Phase 3 v2
+  commits reference bounded content-addressed snapshots with POSIX permission
+  identity. Legacy v1 rollback state migrates only on a later mutation
+  ([detail](tasks/2026-08-28-review-hardening/handoff.md)).
+- 2026-08-28 Existing Skill improvements use explicit file operations bound to
+  one identical Codex/Claude base hash. Unchanged resources survive, scripts are
+  never executed, and authorization covers both before/after hashes as well as
+  exact target paths
+  ([detail](tasks/2026-08-28-existing-skill-improvement/handoff.md)).
+- 2026-08-28 Feedback improvement is a generic, proposal-only core contract:
+  adapters submit correlated redacted events, `improver run` dry-runs by
+  default, workflow Skill candidates need repeated distinct evidence, and all
+  destination approval/install actions remain separate
+  ([detail](tasks/2026-08-28-feedback-improver-loop/handoff.md)).
 - 2026-08-27 Learning insights are reviewed through their own destination
   fields and can be approved and shelved in one explicit user action. Fenced
   ASCII/code blocks render safely, sources stay visible, and **Mark learned** is
@@ -90,6 +109,10 @@ handoff) — see §19.
 
 ### Top risks
 
+- Feedback Improver and Existing Skill improvement validation are
+  synthetic/local. No organic work-surface adapter corpus or longitudinal Skill
+  behavior outcome exists yet, so this is not evidence of an autonomous or
+  continuously improving production loop.
 - Candidate quality has one genuine five-item review at 20%, from an unusually
   tool-heavy self-development corpus; Phase 2 did not make it stable, so Phase 3
   remains evidence-gated.
@@ -617,6 +640,17 @@ Slack, Jira, Linear, Notion). Principles:
   hash, date, and source type instead of the full text.
 - Discovery-only breadth tools are for finding leads; important facts get
   confirmed in the source system.
+
+As of 2026-08-28, `codetrap improver capture` is the stable project-local
+ingress contract for correlated work-surface feedback. It stores redacted,
+bounded event evidence and an adapter-supplied normalized lesson hypothesis;
+it does not authenticate to, crawl, or schedule any source system. `improver
+run` is dry-run by default and may only stage existing destination kinds into
+the Candidate Inbox. Approval and destination writes remain separate. Stored
+feedback excerpts have an explicit dry-run-first `improver delete` path that
+retains only a non-sensitive audit tombstone. A retry cannot resurrect deleted
+content, and resolution skips concurrently tombstoned ids while settling every
+surviving event in the batch atomically.
 
 ---
 

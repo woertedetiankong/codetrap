@@ -5,6 +5,8 @@ import type { TrapOperations } from "./trap-operations";
 import { resolveClientHome } from "./client-setup";
 import { LearningStore } from "./learning-store";
 import { Phase3Store, skillArtifact } from "./phase3-store";
+import { parseSkillPayload } from "./skill-artifact";
+import { sanitizeSourceRef } from "./source-ref";
 import { SessionOperations } from "./session-operations";
 import { SessionStore } from "./session-store";
 import skillMd from "../../plugins/codetrap-agent/skill-candidates/review-ui-screenshots/SKILL.md" with { type: "text" };
@@ -53,6 +55,49 @@ export class Phase3Operations {
     });
   }
 
+  improve(input: Record<string, unknown>, homesInput: ExplicitHomes) {
+    const homes = explicitHomes(homesInput);
+    const name = requiredInputText(input.name, "name", 64);
+    const title = requiredInputText(input.title, "title", 200);
+    const trigger = requiredInputText(input.trigger, "trigger", 2_000);
+    const mistake = requiredInputText(input.mistake, "mistake", 2_000);
+    const fix = requiredInputText(input.fix, "fix", 4_000);
+    const why = requiredInputText(input.why, "why", 4_000);
+    const sourceRefs = [...new Set(requiredStringArray(input.source_refs, "source_refs", 50, 1_000)
+      .map((sourceRef) => sanitizeSourceRef(sourceRef).text))];
+    const tags = optionalStringArray(input.tags, "tags", 30, 100);
+    const prepared = this.phase3.prepareImprovement(name, input.operations, homes);
+    const proposal = parseSkillPayload(prepared.payload);
+    if (proposal.mode !== "patch") throw new Error("Existing Skill improvement must produce a patch candidate.");
+    const relatedFiles = proposal.operations.map((operation) => operation.path);
+    const captured = this.sessions.captureCandidate({
+      goal: `Improve existing Skill ${name}`,
+      trap: {
+        title,
+        category: optionalInputText(input.category, "category", 100) ?? "other",
+        scope: "project",
+        context: trigger,
+        mistake,
+        fix,
+        severity: optionalInputText(input.severity, "severity", 100) ?? "warning",
+        tags: [...new Set([...tags, "skill", "skill-improvement"])],
+      },
+      kind: "review",
+      relatedFiles,
+      sourceRef: sourceRefs[0],
+      evidenceNote: `Existing Skill improvement proposed from ${sourceRefs.length} source reference(s).`,
+      candidateKind: "skill_candidate",
+      sourceAgent: optionalInputText(input.source_agent, "source_agent", 100) ?? "unknown",
+      destinationHint: "skill_candidate",
+      rationale: `${why} Exact base: ${prepared.base_sha256}.`,
+      sourceManifestRefs: sourceRefs,
+      destinationPayload: prepared.payload,
+    });
+    if (captured.suppressed) return { ...captured, improvement_plan: null };
+    const plan = this.preview(captured.session.id, captured.candidate.id, homesInput);
+    return { ...captured, improvement_plan: plan };
+  }
+
   edit(sessionId: string, candidateId: string, payload: Record<string, unknown>) {
     const before = this.sessions.getCandidate(candidateId, sessionId).candidate;
     skillArtifact({ ...before, destination_payload: payload });
@@ -81,7 +126,7 @@ export class Phase3Operations {
     const requiredScope = installScope(candidateId, targets);
     assertSkillInstallAuthorized(candidate, requiredScope);
 
-    const commit = this.phase3.apply(sessionId, candidate, homes);
+    const commit = this.phase3.apply(sessionId, candidate, homes, targets);
     let committed: CandidateTrap;
     try {
       committed = this.sessions.commitDestinationCandidate(sessionId, candidateId, commit.id, executor);
@@ -143,8 +188,13 @@ function explicitHomes(input: ExplicitHomes) {
   };
 }
 
-function installScope(candidateId: string, targets: Array<{ client: string; path: string }>): string {
-  return `candidate ${candidateId} install only: ${targets.map((target) => `${target.client}=${target.path}`).join("; ")}`;
+function installScope(
+  candidateId: string,
+  targets: Array<{ client: string; path: string; before_sha256: string | null; after_sha256: string }>
+): string {
+  return `candidate ${candidateId} install only: ${targets.map((target) =>
+    `${target.client}=${target.path}@${target.before_sha256 ?? "absent"}->${target.after_sha256}`
+  ).join("; ")}`;
 }
 
 function assertSkillInstallAuthorized(candidate: CandidateTrap, requiredScope: string): void {
@@ -164,4 +214,36 @@ function assertSkillInstallAuthorized(candidate: CandidateTrap, requiredScope: s
       `Authorization scope does not match these exact install targets. Required: ${requiredScope}`
     );
   }
+}
+
+function requiredInputText(value: unknown, field: string, max: number): string {
+  const text = optionalInputText(value, field, max);
+  if (text === undefined) throw new Error(`${field} is required.`);
+  return text;
+}
+
+function optionalInputText(value: unknown, field: string, max: number): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${field} must be a non-empty string.`);
+  const text = value.trim();
+  if (text.length > max) throw new Error(`${field} must be ${max} characters or fewer.`);
+  return text;
+}
+
+function requiredStringArray(value: unknown, field: string, maxItems: number, maxLength: number): string[] {
+  const values = optionalStringArray(value, field, maxItems, maxLength);
+  if (values.length === 0) throw new Error(`${field} must contain at least one item.`);
+  return values;
+}
+
+function optionalStringArray(value: unknown, field: string, maxItems: number, maxLength: number): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array.`);
+  if (value.length > maxItems) throw new Error(`${field} may contain at most ${maxItems} items.`);
+  const result: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const text = optionalInputText(value[index], `${field}[${index}]`, maxLength);
+    if (text) result.push(text);
+  }
+  return [...new Set(result)];
 }

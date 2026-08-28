@@ -84,6 +84,8 @@ For a quick manual check, agents can run `codetrap search "<task keywords>" --mo
 
 - **Structured trap recording** — title, category, context, mistake, fix, severity, tags, lifecycle, evidence, before/after code
 - **Session mode capture** — record implementation notes, promote explicit structured trap notes into candidates, and save only user-accepted lessons
+- **Feedback Improver loop** — ingest correlated work-surface feedback, redact and weight its evidence, dry-run destination routing, and stage only reviewable candidates; no automatic approval or destination write
+- **Existing Skill improvement** — stage exact-base file patches that preserve unrelated references, examples, scripts, assets, binaries, and empty directories; preview, approve, install, and roll back through the Phase 3 trust boundary
 - **Dual scope** — project-scoped (`.codetrap/traps.db`) and global (`~/.codetrap/traps.db`)
 - **CLI-first agent API** — `search/show/list/stats/doctor --json` and stdin query support for shell-friendly automation; `search --json` returns `{ results, diagnostics }` so degraded coverage (semantic fallback, partial embedding index) is visible even when results are empty
 - **Three search modes** — FTS (SQLite FTS5), semantic (local Ollama or Jina embeddings), hybrid (RRF fusion)
@@ -213,11 +215,12 @@ quotes.
 | `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
 | `embeddings` | Manage embedding profiles (`status`, `list`, `use ollama|jina`, `reindex`) |
 | `learn` | Review your own Codex or Claude Code history for reusable lessons (`sources`, `review`, `evidence-pack`, `reviews`, `stage`, `delete`); read-only against history, writes only a review directory |
+| `improver` | Capture correlated human feedback, inspect or delete stored events, dry-run or stage evidence-weighted candidates, record behavior outcomes, and summarize loop metrics |
 | `useful` | Record that a recalled trap actually helped — the signal that separates lessons that work from lessons that merely exist |
 | `pack` | Export a user-curated context pack of committed lessons for planning time (`pack export --traps 1,2,3`) |
 | `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, approve/accept/reject/roll back candidates, migrate candidate records between schema versions, inspect authorization receipts and suppressed lessons, and clean up session files |
 | `phase2` | Review-bound low-risk destinations: conventions/docs/eval patches, insight shelf, lesson validation/graduation, longitudinal metrics, and retrieve-vs-curate decisions |
-| `phase3` | High-side-effect skill candidates: generate a reviewed preset, preview exact Codex/Claude targets, install under path-bound approval, inspect commits, and roll back safely |
+| `phase3` | High-side-effect Skill candidates: propose a preset or an exact-base improvement, preview file changes for exact Codex/Claude targets, install under content-and-path-bound approval, inspect commits, and roll back safely |
 | `web` | Start the local review, trap library health, learning-only Insight Shelf, and Embeddings console |
 | `serve` | Start MCP server |
 
@@ -416,6 +419,127 @@ provenance to resolve.
 The `codetrap-learning-review` skill drives this flow and installs for both
 clients.
 
+### Feedback Improver loop
+
+`codetrap improver` is the proposal-only bridge between feedback where work
+happens and Codetrap's governed Candidate Inbox. It does not connect to GitHub,
+run a scheduler, approve a candidate, write a trap or patch, or install a skill.
+An adapter or agent supplies one correlated event containing the original agent
+output, the human response, the final change when known, and a normalized lesson
+hypothesis:
+
+```json
+{
+  "external_id": "github-review-17",
+  "source": "github_pr",
+  "source_ref": "https://example.com/org/repo/pull/17",
+  "run_id": "agent-run-123",
+  "source_agent": "codex",
+  "reviewer_role": "maintainer",
+  "feedback_detail": "reasoned",
+  "outcome": "corrected",
+  "agent_output": "const response = await fetch(url);",
+  "human_feedback": "External requests need a timeout because the dependency can hang.",
+  "final_change": "Added AbortSignal.timeout(5000).",
+  "lesson": {
+    "shape": "pitfall",
+    "key": "external-http-timeout",
+    "title": "Set an explicit timeout on external HTTP requests",
+    "trigger": "Calling an external HTTP service from Node or Bun.",
+    "mistake": "Using bare fetch leaves the request able to hang indefinitely.",
+    "fix": "Apply the project's request-specific timeout policy.",
+    "why": "External dependencies can stall independently of this process.",
+    "tags": ["http", "timeout"],
+    "related_files": ["src/api/client.ts"]
+  }
+}
+```
+
+Pipe that object through standard input for shell-safe capture, then inspect the
+plan before staging anything:
+
+```bash
+codetrap improver capture --input-json - --json < feedback.json
+codetrap improver events --status pending --json
+codetrap improver run --json                              # dry-run; default
+codetrap improver run --min-signal-weight 3 --apply --json # Candidate Inbox only
+codetrap improver delete fb-0123456789abcdef               # dry-run
+codetrap improver delete fb-0123456789abcdef --apply       # remove excerpts
+```
+
+PowerShell can use:
+
+```powershell
+Get-Content feedback.json -Raw | codetrap improver capture --input-json - --json
+```
+
+Feedback state lives in
+`.codetrap/improver/state.json` under an advisory lock. Agent output, human
+feedback, and final changes are best-effort secret-redacted and capped at 500
+characters before storage. Source references also remove URL credentials,
+secret-like query parameters, and known token shapes before entering evidence
+or candidate provenance. `external_id` makes adapter retries idempotent; two
+concurrent apply runs converge on the same candidate. `improver delete` is also
+dry-run by default; `--apply` removes the stored excerpts and lesson body while
+keeping only a non-sensitive tombstone (event/content ids, pattern key, source,
+dates, and candidate resolution) so an existing destination remains auditable.
+A retry of the deleted event acknowledges that tombstone and never recreates
+the excerpts. If deletion races with candidate staging, tombstoned ids are
+reported while surviving events in the same resolution batch still settle
+atomically.
+
+Signal weight deliberately values explanation over volume: binary feedback is
+worth 1, reasoned feedback 2, a maintainer/domain expert adds 1, and a concrete
+final change adds 1. The default threshold is 3. Workflow-to-skill proposals
+also require at least two events, two distinct source refs, total weight 4,
+`lesson.why`, and concrete `lesson.steps`.
+
+| Feedback shape | Candidate destination | Generated carrier |
+|---|---|---|
+| `pitfall` | `pitfall_trap` | Structured trigger/mistake/fix |
+| `convention` | `project_convention` | Principle + applicability + why |
+| `workflow` | `skill_candidate` | Reviewable `SKILL.md` and `agents/openai.yaml` |
+| `evaluation` | `search_eval_case` | Caller-supplied deterministic case |
+| `docs` | `docs_guidance` | Managed docs section |
+| `insight` | `insight` | Learning-shelf explanation and example |
+
+Groups use an explicit lowercase `lesson.key`. Incompatible shapes, or
+different docs/evaluation payloads under one key, remain pending with blockers
+instead of being guessed together. `--apply` writes no durable destination: the
+result still needs the normal review, revision-bound approval, and destination
+apply/install flow.
+
+For a new reusable workflow, the generated full-artifact `skill_candidate` is
+the starting point. To improve a Skill that is already installed, an agent or
+model translates the reviewed principle into the structured `phase3 improve`
+patch contract described below. Codetrap then owns deterministic base matching,
+path safety, final-artifact validation, review, installation, and rollback; it
+does not ask that proposer to authorize its own patch.
+
+Record later behavior separately from search hits or subjective usefulness:
+
+```json
+{
+  "pattern_key":"external-http-timeout",
+  "metric":"manual_edit_rate",
+  "direction":"lower_is_better",
+  "before_value":0.40,
+  "after_value":0.08,
+  "before_samples":50,
+  "after_samples":50,
+  "source_ref":"eval:pull-requests-2026-08"
+}
+```
+
+```bash
+codetrap improver outcome --input-json - --json < outcome.json
+codetrap improver metrics --json
+```
+
+Outcome values must be finite JSON numbers and sample counts must be positive
+JSON integers. Strings, booleans, `null`, and decimal sample counts are rejected
+instead of being coerced into metrics.
+
 ### Low-risk destinations and insight shelf
 
 Phase 2 widens the candidate envelope without weakening approval. A proposal's
@@ -482,10 +606,97 @@ codetrap phase2 decision --json
 
 ### Phase 3 Skill Candidates
 
-Phase 3 currently supports only the evidence-approved `skill_candidate`; custom
-agents and automations remain intentionally absent. Both client homes are
-required, and preview is read-only. Its `required_authorized_scope` binds the
-approval to the candidate revision and both exact install paths.
+Phase 3 supports the evidence-approved `skill_candidate`; custom agents and
+automations remain intentionally absent. A candidate can come from the built-in
+review preset or from a feedback group that passed the Improver's stricter
+workflow evidence gate. It can also improve an existing resource-rich Skill
+through an exact-base file patch. Both client homes are required, preview is
+read-only, and `required_authorized_scope` binds approval to the candidate
+revision, both exact install paths, and the complete before/after directory
+hashes.
+
+The local improvement loop is:
+
+```text
+reviewed feedback / principle
+          |
+          v
+structured file operations
+          |
+          v
+same existing Skill in Codex + Claude
+          |
+          v
+exact base hash + static final-Skill validation
+          |
+          v
+Candidate Inbox -> preview -> approval -> install
+          |
+          v
+behavior outcome record or conflict-safe rollback
+```
+
+Create `skill-improvement.json` as the output of a human, agent, or optional
+external reasoning layer. Codetrap itself makes no model call:
+
+```json
+{
+  "name": "http-review",
+  "title": "Require bounded external HTTP requests",
+  "trigger": "When the Skill reviews code that calls an external HTTP service.",
+  "mistake": "The existing workflow can approve an unbounded request.",
+  "fix": "Require the project timeout policy and load the focused reference when HTTP appears.",
+  "why": "External dependencies can stall independently of the agent process.",
+  "source_agent": "codex",
+  "source_refs": ["pr:17#review", "pr:29#review"],
+  "tags": ["http", "timeout"],
+  "operations": [
+    {
+      "op": "replace_text",
+      "path": "SKILL.md",
+      "old_text": "## HTTP review\n\nCheck the response.",
+      "new_text": "## HTTP review\n\nRequire a timeout and read `references/http-timeout.md`."
+    },
+    {
+      "op": "write_text",
+      "path": "references/http-timeout.md",
+      "content": "# HTTP timeout review\n\nApply the project's bounded-request policy.\n"
+    }
+  ]
+}
+```
+
+Stage and inspect it without changing either live Skill:
+
+```bash
+codetrap phase3 improve --input-json - \
+  --codex-home <codex-home> --claude-home <claude-home> --json < skill-improvement.json
+```
+
+`improve` requires the named Skill to have identical paths and bytes in both
+client homes; on POSIX it also requires identical recorded permission modes. It
+records the shared directory hash in the candidate and returns an initial
+`improvement_plan` with every file classified as `added`, `modified`, `deleted`,
+or `unchanged`. A later base or permission change invalidates the patch instead
+of silently rebasing it.
+
+Supported operations are:
+
+| Operation | Meaning |
+|---|---|
+| `write_text` | Add or replace one UTF-8 file. |
+| `write_base64` | Add or replace one bounded binary file using canonical base64. |
+| `replace_text` | Replace text that must occur exactly once in an existing UTF-8 file. |
+| `append_text` | Append to an existing UTF-8 file. |
+| `delete` | Delete one existing file explicitly. |
+
+Each relative forward-slash path may appear once in a patch. Traversal,
+Windows-unsafe paths and reserved Skill names, case-colliding paths, symlinks,
+invalid final frontmatter, an incorrect `agents/openai.yaml` prompt, ambiguous
+replacements, and deletion of required `SKILL.md` are rejected. Plain, single-
+quoted, and double-quoted simple `name` scalars are accepted in valid
+frontmatter. Candidate scripts are copied as inert data; this workflow never
+executes them.
 
 ```bash
 codetrap phase3 propose --preset review-ui-screenshots --json
@@ -502,11 +713,47 @@ codetrap phase3 commits --json
 codetrap phase3 rollback <phase3-commit-id> --executor user --json
 ```
 
-Install writes the same `SKILL.md` and `agents/openai.yaml` bytes to each
-client. It snapshots both existing skill directories before replacing either,
-restores all touched targets after a partial failure, records a trust receipt,
-and refuses rollback if either installed directory changed later. An install
-approval never authorizes an agent to remove the skill.
+Legacy full-artifact candidates still replace the reviewed artifact as before.
+Patch candidates construct the final directory from the reviewed base plus only
+the declared operations, preserving unrelated references, examples, scripts,
+assets, binary files, and empty directories. Install writes byte-identical final
+directories to both clients, snapshots both existing directories before
+changing either, restores all touched targets after a partial failure, records
+a trust receipt, and refuses rollback if either installed directory changed
+later. On POSIX, regular-file, directory, and root permission modes are included
+in new snapshot identity and restored across install/rollback; ACLs, ownership,
+timestamps, and extended attributes are not preserved. An install approval
+never authorizes an agent to remove the Skill.
+
+Phase 3 commit metadata is lightweight. Version 2 commits reference deduplicated
+content-addressed objects under `.codetrap/phase3/snapshots/` rather than
+embedding Codex/Claude before/after base64 copies in
+`skill-commits.json`. Legacy version 1 commits migrate lazily inside the Phase 3
+lock and remain rollback-compatible. New history is bounded to 1,000 commits,
+512 snapshot objects, 256 MB total snapshot JSON, and 30 MB per snapshot object;
+an install that would cross a bound is refused before either live Skill changes.
+
+After organic use, attach the installed candidate to a directional outcome; a
+search hit alone is not improvement evidence:
+
+```json
+{
+  "pattern_key": "external-http-timeout",
+  "candidate_id": "cand-002",
+  "metric": "manual_edit_rate",
+  "direction": "lower_is_better",
+  "before_value": 0.40,
+  "after_value": 0.08,
+  "before_samples": 50,
+  "after_samples": 50,
+  "source_ref": "eval:http-review-2026-08"
+}
+```
+
+```bash
+codetrap improver outcome --input-json - --json < outcome.json
+codetrap improver metrics --json
+```
 
 ### Did it actually help?
 

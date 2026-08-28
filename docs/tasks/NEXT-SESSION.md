@@ -1,29 +1,19 @@
 # Next Session
 
 Project `D:\\llm\\codetrap\\codetrap` (codetrap). Read
-`docs/tasks/2026-08-27-agent-user-experience-hardening/handoff.md` first.
-Previous session: agent/user hardening and its learning-workflow follow-up,
-including first-class insight review, one-action approval/shelving, safe fenced
-code/source rendering, idempotent learned state, Windows-safe stdin JSON, and
-the shared ASCII-flow/example format. The focused learning/Web suite completed
-with 40 tests passing. After adding bounded budgets to the two CI-heavy
-integration cases, the latest full local run completed with 415 passes, one
-configured Windows browser-smoke skip, and zero failures.
+`docs/tasks/2026-08-28-review-hardening/handoff.md` first.
+Previous session: closed the independent-review findings across Feedback
+Improver, advisory locking, and Phase 3; 437 tests passed, one configured browser
+smoke skipped, and zero failed.
 Errata: None known.
-Current state: task code and docs, including CSS-safe and race-safe browser
-assertions plus a bounded Web API integration-test budget, are committed and
-pushed to `origin/main`; nothing has been published, released, or installed
-globally.
-Environment: the updated Web console was restarted with `--open` and left
-running on `127.0.0.1:4737`;
-the authenticated token is intentionally not stored in docs.
-Pending review: `cand-001` in session
-`2026-08-27-capture-windows-bun-json` records the Windows inline-JSON quoting
-pitfall; it is staged only, not confirmed memory.
-Now do: 1. Review the pending pitfall candidates. 2. Begin release work only if
-the user explicitly requests it.
-Red lines: do not push, publish, release, install globally, or change the version
-without explicit user authorization; preserve unrelated working-tree changes.
-First verify: `bun run typecheck; git status --short` (expected typecheck exit 0
-and a clean task worktree; mismatch means the committed task state drifted).
-Focused learning/Web expectation: 40 tests pass.
+Current state: all 2026-08-28 improvement-loop work is complete but uncommitted;
+live Phase 3 state remains v1 and no Skill was installed or migrated.
+Environment: ignored `dist/` binaries were rebuilt; session status is 37
+candidates with 7 pending across 16 sessions.
+Now do: 1. Review candidate `cand-001` in session
+`2026-08-28-capture-do-not-pair-unbounded-synchronous-persistence-with-age-o`.
+2. Review the combined uncommitted diff and commit only with user authorization.
+Red lines: do not accept candidates, migrate live Phase 3 state, push, publish,
+release, install globally, change the package version, install a Skill, or
+execute candidate scripts without explicit user authorization.
+First verify: `bun run typecheck; bun test --timeout 30000 src/tests/phase3-hardening.test.ts src/tests/improver.test.ts` (expected typecheck exit 0 and 16 tests passing; mismatch means review hardening drifted).
