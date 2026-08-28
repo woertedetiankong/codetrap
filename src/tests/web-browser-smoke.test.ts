@@ -90,14 +90,16 @@ describe("web browser smoke", () => {
       expect(await page.locator("a.source-link").getAttribute("href")).toBe("https://example.com/learning-source");
       await page.getByRole("button", { name: "Mark learned" }).click();
       await expectText(page.locator("#candidates"), "learned");
-      expect(await page.getByRole("button", { name: "Learned" }).isDisabled()).toBe(true);
+      const learnedButton = page.getByRole("button", { name: "Learned", exact: true });
+      await learnedButton.waitFor({ state: "visible" });
+      expect(await learnedButton.isDisabled()).toBe(true);
 
       expect(errors).toEqual([]);
     } finally {
       await browser.close();
       server.stop(true);
     }
-  }, 40_000);
+  }, 20_000);
 });
 
 async function expectWorkspaceHeaderLayout(

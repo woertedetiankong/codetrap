@@ -57,9 +57,12 @@
   of rendered `innerText`, so CSS `text-transform: uppercase` cannot make the
   Ubuntu-only browser path disagree with the source-cased localization string.
 - Superseded the earlier decision to keep every default test budget after the
-  pushed follow-up reproduced bounded-timeout failures on both CI platforms.
-  The multi-transition Web API test passed three isolated Windows runs in
-  1.9-2.1 seconds but reached 5.216 seconds under full-suite load, so it now has
-  a 15-second local budget. The real Ubuntu browser flow exhausted its 20-second
-  budget and now has 40 seconds. The suite-wide default remains unchanged, and
-  the Ubuntu browser path remains enabled rather than being skipped.
+  pushed follow-up reproduced a Windows full-suite timeout. The
+  multi-transition Web API test passed three isolated runs in 1.9-2.1 seconds
+  but reached 5.216 seconds under full-suite load, so it now has a 15-second
+  local budget; the suite-wide default remains unchanged.
+- A longer diagnostic run showed that the Ubuntu browser failure was not a slow
+  browser: a fuzzy `Learned` role query matched both the action and its learning
+  card during the consult transition. The smoke test now waits for the exact
+  final action name before checking its disabled state, and keeps the original
+  20-second budget and real Ubuntu browser path.

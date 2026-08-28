@@ -18,9 +18,9 @@ browser opening.
 ## Current State
 
 The requested hardening slices, including the follow-up learning-workflow fixes,
-CSS-safe browser assertion, and bounded CI integration-test budgets, are
-implemented, validated, and pushed to `origin/main`. Install, version, release,
-and merge state remain unchanged.
+CSS-safe and race-safe browser assertions, and bounded Web API integration-test
+budget, are implemented, validated, and pushed to `origin/main`. Install,
+version, release, and merge state remain unchanged.
 
 ## Git And Persistent State
 
