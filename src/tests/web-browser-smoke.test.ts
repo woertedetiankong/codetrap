@@ -85,7 +85,7 @@ describe("web browser smoke", () => {
       await page.waitForSelector("text=Browser smoke learning insight");
       await expectText(page.locator("#candidates"), "not learned");
       await page.getByRole("button", { name: /Browser smoke learning insight/ }).click();
-      await expectText(page.locator("#detail"), "Learning status");
+      await expectTextContent(page.locator("#detail"), "Learning status");
       await expectText(page.locator("pre.learning-code"), "[source] -> [agent] -> [insight]");
       expect(await page.locator("a.source-link").getAttribute("href")).toBe("https://example.com/learning-source");
       await page.getByRole("button", { name: "Mark learned" }).click();

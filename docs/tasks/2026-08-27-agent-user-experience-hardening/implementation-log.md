@@ -18,7 +18,8 @@
   intentionally skipped on Windows, while a separate real Chrome run verified
   token cleanup, Chinese localization, the rename control, the native dialog
   state, suppression copy, layout geometry, and a clean browser console. The
-  user authorized a local commit on 2026-08-28; no PR, push, or release followed.
+  user authorized the local commit and later the CSS-safe browser-assertion
+  follow-up push on 2026-08-28; no PR or release followed.
 - Extended the shared Codex/Claude skill bundle rather than adding a Web crawler.
   Agents continue to read external sources; Codetrap receives normalized,
   user-reviewed content and source references. This preserves the local-memory
@@ -52,6 +53,9 @@
   Restarting the local server necessarily rotates the ephemeral launch token;
   the old tab now tells the user to use the newly opened tab instead of leaking
   the transport-level `Unauthorized` message into the product UI.
+- Made the Learning-status browser assertion inspect DOM `textContent` instead
+  of rendered `innerText`, so CSS `text-transform: uppercase` cannot make the
+  Ubuntu-only browser path disagree with the source-cased localization string.
 - Kept existing five-second test budgets unchanged after the final full-suite
   run timed out in two unrelated CLI-heavy cases by 0.16 and 0.53 seconds. Both
   files passed 28/28 in isolation, so increasing the timeout here would hide a

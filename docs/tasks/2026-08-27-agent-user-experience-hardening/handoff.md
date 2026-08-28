@@ -17,14 +17,14 @@ browser opening.
 
 ## Current State
 
-The requested hardening slices, including the follow-up learning-workflow fixes,
-are implemented, validated, and committed locally on `main`. Install, version,
-release, merge, and push state remain unchanged.
+The requested hardening slices, including the follow-up learning-workflow fixes
+and CSS-safe browser assertion, are implemented, validated, and pushed to
+`origin/main`. Install, version, release, and merge state remain unchanged.
 
 ## Git And Persistent State
 
-- Branch: `main`; the task is committed locally. The commit hash is reported in
-  the session handoff response and available from `git log`.
+- Branch: `main`; the task and browser-assertion follow-up are committed and
+  pushed to `origin/main`. Commit hashes are available from `git log`.
 - Persistent state: ignored `.codetrap/sessions` content localized earlier in
   this interaction remains local to this checkout. A post-flight Windows CLI
   quoting lesson is staged as `cand-001` in session
@@ -96,6 +96,8 @@ release, merge, and push state remain unchanged.
   unrelated CLI-heavy tests exceeded the shared 5-second timeout under full
   suite load. Isolated rerun of those two files: 28 pass, 0 fail.
 - Focused learning/Web suite: 40 pass, 0 fail.
+- Browser-assertion follow-up: 14 pass, 1 configured Windows browser-smoke skip,
+  0 fail across the browser smoke and Web client tests.
 - `python -X utf8 .../skill-creator/scripts/quick_validate.py` for all six
   changed bundled skills: valid.
 - Direct headless Chrome at 1500x900: the restarted local console loaded with
