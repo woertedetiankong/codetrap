@@ -6,6 +6,11 @@ description: Look back over recent sessions and stage reusable lessons for codet
 Run this **only when the user explicitly invokes it**. Do not scan history during
 ordinary coding tasks, and do not trigger implicitly from a search or capture.
 
+Use `codetrap` when it is available on `PATH`. In a Codetrap source checkout
+where the global command is intentionally absent, run the same arguments with
+`bun run src/index.ts` from the repository root. Outside that checkout, report
+the missing CLI; do not install or update it without user approval.
+
 ## 1. Confirm scope, once
 
 If the user already gave a scope ("review the last 30 days"), do not re-ask.
@@ -54,6 +59,16 @@ action cannot enter runtime; both are rejected. A lesson that carries real
 understanding but no agent action is still worth keeping — mark it
 `"candidate_kind": "unclassified"` with `"destination_hint": "insight"`.
 
+For every user-study insight, generate the study body with this instruction:
+
+> 用ASCII流程图结合通俗易懂的例子讲解
+
+Put the compact ASCII flow diagram and the concrete, plain-language example in
+`recommended_action`, because that field becomes the insight body after Phase 2
+migration. Explain what the reader should notice, and do not imply that saving
+or marking the insight trains the model. Keep ordinary pitfall candidates
+concise; this teaching format applies only to user-study insights.
+
 ## 5. Stage, then stop
 
 ```bash
@@ -68,7 +83,10 @@ Staging fills the review inbox. It is **not** a commit. Report to the user:
 - what was skipped because they had already suppressed it
 - confirmation that no durable destination was modified
 
-Then stop. The user reviews with `codetrap web` or `codetrap session candidates`,
-approves with `codetrap session approve <id>`, and only then may you commit with
-`codetrap session accept <id> --executor agent`. You cannot approve on their
-behalf: an agent-executed commit without a recorded approval is refused.
+Then stop. The user reviews with `codetrap web` or `codetrap session candidates`.
+For a `pitfall_trap`, approval is followed by `codetrap session accept <id>
+--executor agent`. For an insight-hinted lesson, first run `codetrap phase2
+migrate-insights --session <session-id> --apply --json`; after user approval,
+commit it with `codetrap phase2 apply <id> --session <session-id> --executor
+agent --json`. The Web console can also let the user approve and add an insight
+to Learning in one explicit action. You cannot approve on their behalf.

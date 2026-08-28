@@ -49,6 +49,15 @@ codetrap add --input-json '{
 }'
 ```
 
+For multiline structured input on Windows PowerShell, use standard input so the
+shell cannot rewrite JSON quotes:
+
+```powershell
+@'
+{"kind":"insight","title":"Cache prefixes","payload":{"title":"Cache prefixes","summary":"Exact prefixes are reusable.","body":"[same prefix] -> [cache hit]"}}
+'@ | codetrap phase2 propose --input-json - --json
+```
+
 If you move the codetrap repository after source installation, run this again from the new path:
 
 ```bash
@@ -295,7 +304,7 @@ codetrap embeddings reindex --scope global
 
 `codetrap embed` remains as a short alias for reindexing. codetrap stores embeddings by profile, so switching between Jina and Ollama does not overwrite existing vectors; it creates or refreshes the selected profile.
 
-You can also run `codetrap web` and open the `Embeddings` view to inspect the active provider/profile, see project and global fresh/stale/missing counts, switch between Ollama and Jina, and reindex project or global embeddings from the web console. The web console does not save Jina API keys; Jina still reads `JINA_API_KEY` from the environment.
+You can also run `codetrap web --open` to start the authenticated local console and open it in your default browser. The launch token is removed from the visible URL after it is copied into session storage. If the server restarts, an old tab explains that its credential expired and directs the user to the newly opened tab instead of showing a bare `Unauthorized` error. The console notices session and candidate updates made by agents or other terminals, while preserving any unsaved candidate draft. Learning candidates have their own editor and can be approved and added to the shelf in one explicit action. The Learning view renders fenced ASCII/code blocks safely, keeps source links visible, localizes dates, and treats **Mark learned** as an idempotent state instead of an incrementing score. Its empty state shows a ready-to-send Agent request for study material explained with an ASCII flow diagram and a plain-language example; the bundled external-capture and learning-review skills use the same format for user-study insights. This is local memory and study tracking, not model training. Open the `Embeddings` view to inspect the active provider/profile, see project and global fresh/stale/missing counts, switch between Ollama and Jina, and reindex project or global embeddings. The web console does not save Jina API keys; Jina still reads `JINA_API_KEY` from the environment.
 
 Then search:
 

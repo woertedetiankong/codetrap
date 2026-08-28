@@ -70,11 +70,11 @@ describe("web browser smoke", () => {
         waitUntil: "domcontentloaded",
       });
       await page.waitForSelector("text=Browser smoke candidate");
-      const navigationBox = await page.locator(".main-nav").boundingBox();
-      const projectFormBox = await page.locator(".project-form").boundingBox();
-      expect(navigationBox).not.toBeNull();
-      expect(projectFormBox).not.toBeNull();
-      expect(navigationBox!.y + navigationBox!.height).toBeLessThanOrEqual(projectFormBox!.y);
+      await expectWorkspaceHeaderLayout(page, 2);
+
+      await page.setViewportSize({ width: 1920, height: 800 });
+      await page.waitForFunction(() => document.querySelector(".rail")!.classList.contains("wide-header"));
+      await expectWorkspaceHeaderLayout(page, 1);
       await expectText(page.locator("#review-summary"), "1 pending");
 
       await page.getByRole("button", { name: "Library" }).click();
@@ -83,12 +83,14 @@ describe("web browser smoke", () => {
 
       await page.getByRole("button", { name: "Learning" }).click();
       await page.waitForSelector("text=Browser smoke learning insight");
-      await expectText(page.locator("#candidates"), "learned 0 times");
+      await expectText(page.locator("#candidates"), "not learned");
       await page.getByRole("button", { name: /Browser smoke learning insight/ }).click();
-      await expectText(page.locator("#detail"), "Times learned");
-      await expectText(page.locator("#detail"), "0");
+      await expectText(page.locator("#detail"), "Learning status");
+      await expectText(page.locator("pre.learning-code"), "[source] -> [agent] -> [insight]");
+      expect(await page.locator("a.source-link").getAttribute("href")).toBe("https://example.com/learning-source");
       await page.getByRole("button", { name: "Mark learned" }).click();
-      await expectText(page.locator("#candidates"), "learned 1 times");
+      await expectText(page.locator("#candidates"), "learned");
+      expect(await page.getByRole("button", { name: "Learned" }).isDisabled()).toBe(true);
 
       expect(errors).toEqual([]);
     } finally {
@@ -97,6 +99,38 @@ describe("web browser smoke", () => {
     }
   }, 20_000);
 });
+
+async function expectWorkspaceHeaderLayout(
+  page: { evaluate: <T>(fn: () => T) => Promise<T> },
+  expectedNavigationRows: number
+): Promise<void> {
+  const layout = await page.evaluate(() => {
+    const rect = (selector: string) => {
+      const box = document.querySelector(selector)!.getBoundingClientRect();
+      return { x: box.x, y: box.y, width: box.width, bottom: box.bottom };
+    };
+    const navigationRows = new Set(
+      [...document.querySelectorAll(".main-nav button")]
+        .map((button) => Math.round(button.getBoundingClientRect().y))
+    ).size;
+
+    return {
+      navigationRows,
+      actions: rect(".rail-actions"),
+      navigation: rect(".main-nav"),
+      locale: rect(".locale-switcher"),
+      refresh: rect("#refresh"),
+      projectForm: rect(".project-form"),
+    };
+  });
+
+  expect(layout.navigationRows).toBe(expectedNavigationRows);
+  expect(Math.abs(layout.navigation.x - layout.actions.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(layout.navigation.width - layout.actions.width)).toBeLessThanOrEqual(2);
+  expect(layout.navigation.bottom).toBeLessThanOrEqual(layout.locale.y);
+  expect(layout.navigation.bottom).toBeLessThanOrEqual(layout.refresh.y);
+  expect(Math.max(layout.locale.bottom, layout.refresh.bottom)).toBeLessThanOrEqual(layout.projectForm.y);
+}
 
 async function expectText(locator: { innerText: () => Promise<string> }, expected: string): Promise<void> {
   expect(await locator.innerText()).toContain(expected);
@@ -150,9 +184,9 @@ function seedBrowserSmokeData(project: string, home: string): void {
       id: "ins-browser-smoke",
       title: "Browser smoke learning insight",
       summary: "This note is intentionally kept out of trap retrieval.",
-      body: "Open it without mutation, then use Mark learned to record deliberate study.",
+      body: "```text\n[source] -> [agent] -> [insight]\n```\n\nExample: review the note before shelving it.",
       tags: ["learning", "smoke"],
-      source_refs: ["session:browser-smoke"],
+      source_refs: ["https://example.com/learning-source"],
       shelved_at: "2026-08-09T12:00:00.000Z",
       consulted_count: 0,
       last_consulted_at: null,

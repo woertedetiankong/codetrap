@@ -6,6 +6,11 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
   return `    const qs = new URLSearchParams(location.search);
     const token = qs.get("token") || sessionStorage.getItem("codetrap-token") || "";
     if (token) sessionStorage.setItem("codetrap-token", token);
+    if (qs.has("token")) {
+      qs.delete("token");
+      const cleanQuery = qs.toString();
+      history.replaceState(null, "", location.pathname + (cleanQuery ? "?" + cleanQuery : "") + location.hash);
+    }
     const savedLocale = localStorage.getItem("codetrap-locale");
     const initialLocale = savedLocale === "zh" ? "zh" : "en";
     const savedSidebarCollapsed = localStorage.getItem("codetrap-sidebar-collapsed") === "true";
@@ -47,6 +52,10 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       candidateView: "inbox",
       candidateDirty: false,
       detailActionInFlight: false,
+      sessionsSignature: "",
+      candidatesSignature: "",
+      externalRefreshInFlight: false,
+      externalDeferredSignature: "",
       sidebarCollapsed: savedSidebarCollapsed,
       queueCollapsed: savedQueueCollapsed,
       options: { categories: [], severities: [], scopes: [], stale_after_days: 180 },
@@ -85,6 +94,86 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         "candidate has no evidence": "qualityWarning.evidence"
       };
       return keys[warning] ? t(keys[warning]) : warning;
+    }
+
+    function isInsightCandidate(candidate) {
+      return candidate?.candidate_kind === "insight";
+    }
+
+    function candidateKindLabel(candidate) {
+      return valueLabel(candidate?.candidate_kind || "pitfall_trap");
+    }
+
+    function candidateTitle(candidate) {
+      return String(candidate?.destination_payload?.title || candidate?.trap?.title || "");
+    }
+
+    function candidateSummary(candidate) {
+      return isInsightCandidate(candidate) ? String(candidate.destination_payload?.summary || "") : "";
+    }
+
+    function formatDisplayDate(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return new Intl.DateTimeFormat(state.locale === "zh" ? "zh-CN" : "en", {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(date);
+    }
+
+    function safeExternalHref(value) {
+      try {
+        const url = new URL(String(value));
+        return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function renderSourceReferences(sourceRefs) {
+      const refs = Array.isArray(sourceRefs) ? sourceRefs : [];
+      if (!refs.length) return '<span class="subtle">' + escapeHtml(t("value.noSource")) + '</span>';
+      return refs.map((ref) => {
+        const href = safeExternalHref(ref);
+        return href
+          ? \`<a class="source-link" href="\${escapeAttr(href)}" target="_blank" rel="noreferrer noopener">\${escapeHtml(ref)}</a>\`
+          : \`<span class="source-ref">\${escapeHtml(ref)}</span>\`;
+      }).join("");
+    }
+
+    function renderLearningMarkup(value) {
+      const fence = String.fromCharCode(96).repeat(3);
+      const lines = String(value || "").replace(/\\r\\n?/g, "\\n").split("\\n");
+      const blocks = [];
+      let prose = [];
+      let code = [];
+      let inCode = false;
+
+      const flushProse = () => {
+        if (!prose.length) return;
+        const text = prose.join("\\n").replace(/^\\n+|\\n+$/g, "");
+        if (text) blocks.push('<div class="learning-prose">' + escapeHtml(text) + '</div>');
+        prose = [];
+      };
+      const flushCode = () => {
+        blocks.push('<pre class="code-block learning-code"><code>' + escapeHtml(code.join("\\n")) + '</code></pre>');
+        code = [];
+      };
+
+      for (const line of lines) {
+        if (line.trimStart().startsWith(fence)) {
+          if (inCode) flushCode(); else flushProse();
+          inCode = !inCode;
+          continue;
+        }
+        (inCode ? code : prose).push(line);
+      }
+      if (inCode) flushCode(); else flushProse();
+      return blocks.join("");
     }
 
     function isCompactShell() {
@@ -126,6 +215,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       el("project-add").textContent = t("action.add");
       el("project-path").placeholder = t("placeholder.projectPath");
       el("sessions-title").textContent = t("section.sessions");
+      el("rename-session").textContent = t("action.renameSession");
+      el("delete-session").textContent = t("action.deleteSession");
       document.querySelector("[data-main-view='review']").textContent = t("nav.review");
       document.querySelector("[data-main-view='library']").textContent = t("nav.library");
       document.querySelector("[data-main-view='learning']").textContent = t("nav.learning");
@@ -154,7 +245,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       const text = await res.text();
       const data = text ? JSON.parse(text) : null;
       if (!res.ok) {
-        const err = new Error(data?.error || res.statusText);
+        const err = new Error(res.status === 401 ? t("error.sessionExpired") : (data?.error || res.statusText));
+        err.status = res.status;
         err.payload = data;
         throw err;
       }
@@ -167,7 +259,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
      * them, every time." The receipt states the declared executor rather than
      * implying codetrap verified who acted.
      */
-    function showReceipt(receipt) {
+    function showReceipt(receipt, options = {}) {
       if (!receipt) return;
       const box = el("receipt");
       if (!box) return;
@@ -180,11 +272,35 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         + \`<div class="receipt-line">\${escapeHtml(t("receipt.scope", { scope: receipt.authorized_scope }))}</div>\`
         + \`<div class="receipt-line subtle">\${escapeHtml(receipt.recorded_at)}</div>\`;
       box.className = "receipt show";
+      if (options.undoSuppression) {
+        const actions = document.createElement("div");
+        actions.className = "receipt-actions";
+        const undo = document.createElement("button");
+        undo.type = "button";
+        undo.className = "ghost";
+        undo.textContent = t("action.undoSuppression");
+        undo.addEventListener("click", () => undoSuppression(options.undoSuppression));
+        actions.append(undo);
+        box.append(actions);
+      }
     }
 
     function hideReceipt() {
       const box = el("receipt");
       if (box) box.className = "receipt";
+    }
+
+    async function undoSuppression(fingerprint) {
+      try {
+        const data = await api("/api/suppression/undo", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: state.projectRoot, fingerprint })
+        });
+        showReceipt(data.receipt);
+        showStatus(t("status.suppressionUndone"));
+      } catch (error) {
+        showStatus(error.message, true);
+      }
     }
 
     function showStatus(message, isError = false) {
@@ -206,6 +322,17 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       renderActiveView();
     }
 
+    function sessionsSignature(data) {
+      return JSON.stringify({
+        candidateReview: data.candidate_review || null,
+        sessions: data.sessions || []
+      });
+    }
+
+    function candidatesSignature(candidates) {
+      return JSON.stringify(candidates || []);
+    }
+
     async function loadSessions() {
       if (!state.projectRoot) {
         state.sessions = [];
@@ -216,6 +343,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.insightId = null;
         state.embeddingStatus = null;
         state.embeddingSettings = null;
+        state.sessionsSignature = "";
+        state.candidatesSignature = "";
         renderSessions();
         renderActiveView();
         return;
@@ -223,6 +352,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       const data = await api("/api/sessions?project=" + encodeURIComponent(state.projectRoot));
       state.sessions = data.sessions;
       state.candidateReview = data.candidate_review || null;
+      state.sessionsSignature = sessionsSignature(data);
       state.sessionId = selectedReviewSessionId(state.sessions, state.sessionId);
       renderSessions();
       if (state.mainView === "library") {
@@ -239,6 +369,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     async function loadCandidates() {
       if (!state.projectRoot || !state.sessionId) {
         state.candidates = [];
+        state.candidatesSignature = "[]";
         if (state.mainView === "review") {
           renderCandidates();
           renderDetail();
@@ -247,6 +378,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       }
       const data = await api("/api/candidates?project=" + encodeURIComponent(state.projectRoot) + "&session=" + encodeURIComponent(state.sessionId));
       state.candidates = data.candidates;
+      state.candidatesSignature = candidatesSignature(data.candidates);
       state.candidateId = reviewQueueModel({
         candidates: state.candidates,
         candidateView: state.candidateView,
@@ -401,7 +533,11 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         </div>
       \`).join("") : '<div class="empty">' + escapeHtml(t("empty.noSessions")) + '</div>';
       const selectedSession = state.sessions.find((session) => session.id === state.sessionId);
+      const renameButton = el("rename-session");
       const deleteButton = el("delete-session");
+      renameButton.textContent = t("action.renameSession");
+      renameButton.classList.toggle("hidden", !selectedSession);
+      renameButton.dataset.sessionId = selectedSession?.id || "";
       deleteButton.textContent = t("action.deleteSession");
       deleteButton.classList.toggle("hidden", !selectedSession);
       deleteButton.dataset.sessionId = selectedSession?.id || "";
@@ -430,6 +566,23 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         }
         await loadSessions();
         showStatus(t("status.sessionDeleted"));
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    }
+
+    async function renameSession(sessionId) {
+      const session = state.sessions.find((item) => item.id === sessionId);
+      if (!session) return;
+      const goal = prompt(t("prompt.renameSession"), session.goal);
+      if (goal === null || !goal.trim() || goal.trim() === session.goal) return;
+      try {
+        await api("/api/session/rename", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: state.projectRoot, sessionId, goal: goal.trim() })
+        });
+        await loadSessions();
+        showStatus(t("status.sessionRenamed"));
       } catch (error) {
         showStatus(error.message, true);
       }
@@ -473,11 +626,13 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       el("candidates").innerHTML = sorted.length ? sorted.map((candidate) => \`
         <div class="row \${candidate.id === state.candidateId ? "active" : ""} \${candidate.status} \${reviewCssClass(candidate)}">
           <button type="button" class="row-main" data-candidate="\${escapeAttr(candidate.id)}">
-            <span class="row-title">\${escapeHtml(candidate.trap.title)}</span>
+            <span class="row-title">\${escapeHtml(candidateTitle(candidate))}</span>
+            \${candidateSummary(candidate) ? '<span class="subtle">' + escapeHtml(candidateSummary(candidate)) + '</span>' : ''}
             <span class="meta">
               <span class="pill \${candidate.status} \${reviewCssClass(candidate)}">\${escapeHtml(reviewLabel(candidate))}</span>
-              <span class="pill">\${escapeHtml(t("pill.quality", { score: Number(candidate.quality_score).toFixed(2) }))}</span>
-              \${candidate.quality.warnings.length ? '<span class="pill warn">' + escapeHtml(t("pill.warnings", { count: candidate.quality.warnings.length })) + '</span>' : ''}
+              <span class="pill scope">\${escapeHtml(candidateKindLabel(candidate))}</span>
+              \${isInsightCandidate(candidate) ? "" : '<span class="pill">' + escapeHtml(t("pill.quality", { score: Number(candidate.quality_score).toFixed(2) })) + '</span>'}
+              \${!isInsightCandidate(candidate) && candidate.quality.warnings.length ? '<span class="pill warn">' + escapeHtml(t("pill.warnings", { count: candidate.quality.warnings.length })) + '</span>' : ''}
             </span>
           </button>
           \${renderCandidateRowAction(candidate)}
@@ -666,9 +821,9 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           <span class="subtle">\${escapeHtml(insight.summary)}</span>
           <span class="meta">
             \${(insight.tags || []).map((tag) => '<span class="pill">' + escapeHtml(tag) + '</span>').join("")}
-            <span class="pill \${Number(insight.consulted_count || 0) > 0 ? "accepted" : ""}">\${escapeHtml(t("pill.consulted", { count: Number(insight.consulted_count || 0) }))}</span>
+            <span class="pill \${Number(insight.consulted_count || 0) > 0 ? "accepted" : ""}">\${escapeHtml(t(Number(insight.consulted_count || 0) > 0 ? "pill.learned" : "pill.notLearned"))}</span>
           </span>
-          <span class="subtle">\${escapeHtml(insight.shelved_at || "")}</span>
+          <span class="subtle">\${escapeHtml(formatDisplayDate(insight.shelved_at))}</span>
         </button>
       \`).join("") : '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span></div>';
       document.querySelectorAll("[data-learning-insight]").forEach((button) => {
@@ -695,9 +850,10 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         return;
       }
       if (!insight) {
-        el("detail").innerHTML = '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span></div>';
+        el("detail").innerHTML = '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span><div class="learning-prompt-card"><span>' + escapeHtml(t("label.learningGenerationPrompt")) + '</span><code>' + escapeHtml(t("prompt.learningGeneration")) + '</code></div></div>';
         return;
       }
+      const learned = Number(insight.consulted_count || 0) > 0;
       el("detail").innerHTML = \`
         <div class="scroll">
           <div class="section learning-intro">
@@ -707,27 +863,31 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           </div>
           <div class="section">
             <div class="title">\${escapeHtml(t("label.body"))}</div>
-            <div class="learning-body">\${escapeHtml(insight.body)}</div>
+            <div class="learning-body">\${renderLearningMarkup(insight.body)}</div>
+          </div>
+          <div class="section">
+            <div class="title">\${escapeHtml(t("label.sourceRefs"))}</div>
+            <div class="source-list">\${renderSourceReferences(insight.source_refs)}</div>
           </div>
           <div class="section">
             <div class="detail-kv">
-              \${kv(t("label.shelvedAt"), insight.shelved_at || "-")}
-              \${kv(t("label.consultedCount"), Number(insight.consulted_count || 0))}
-              \${kv(t("label.lastConsultedAt"), insight.last_consulted_at || t("value.never"))}
+              \${kv(t("label.shelvedAt"), formatDisplayDate(insight.shelved_at))}
+              \${kv(t("label.learningStatus"), t(learned ? "value.learned" : "value.notLearned"))}
+              \${kv(t("label.lastConsultedAt"), learned ? formatDisplayDate(insight.last_consulted_at) : t("value.never"))}
             </div>
           </div>
         </div>
         <div class="actions">
-          <button type="button" id="consult-insight" class="primary" \${state.insightConsulting ? "disabled" : ""}>\${escapeHtml(t("action.markLearned"))}</button>
-          <span class="action-hint">\${escapeHtml(t("hint.markLearnedExplicit"))}</span>
+          <button type="button" id="consult-insight" class="primary" \${state.insightConsulting || learned ? "disabled" : ""}>\${escapeHtml(t(learned ? "action.learned" : "action.markLearned"))}</button>
+          <span class="action-hint">\${escapeHtml(t(learned ? "hint.learnedRecorded" : "hint.markLearnedExplicit"))}</span>
         </div>
       \`;
-      el("consult-insight").addEventListener("click", consultLearningInsight);
+      if (!learned) el("consult-insight").addEventListener("click", consultLearningInsight);
     }
 
     async function consultLearningInsight() {
       const insight = currentLearningInsight();
-      if (!insight || state.insightConsulting) return;
+      if (!insight || state.insightConsulting || Number(insight.consulted_count || 0) > 0) return;
       state.insightConsulting = true;
       renderLearningDetail();
       try {
@@ -1257,6 +1417,10 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("empty.noCandidateSelected")) + '</div>';
         return;
       }
+      if (isInsightCandidate(candidate)) {
+        renderInsightCandidateDetail(candidate);
+        return;
+      }
       state.candidateDirty = false;
       const disabled = candidate.status !== "proposed" ? "disabled" : "";
       el("detail").innerHTML = \`
@@ -1298,6 +1462,53 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       bindTrapJumpButtons();
     }
 
+    function renderInsightCandidateDetail(candidate) {
+      state.candidateDirty = false;
+      const payload = candidate.destination_payload || {};
+      const disabled = candidate.status !== "proposed" ? "disabled" : "";
+      const committed = candidate.delivery_state === "committed";
+      el("detail").innerHTML = \`
+        <div class="scroll insight-candidate-detail">
+          <div class="section insight-review-header">
+            <div class="meta">
+              <span class="pill scope">\${escapeHtml(t("value.insight"))}</span>
+              <span class="pill \${reviewCssClass(candidate)}">\${escapeHtml(reviewLabel(candidate))}</span>
+            </div>
+            <div class="title learning-title">\${escapeHtml(String(payload.title || candidate.trap.title || ""))}</div>
+            <div class="learning-summary">\${escapeHtml(String(payload.summary || ""))}</div>
+            \${candidate.rationale ? '<div class="insight-rationale">' + escapeHtml(candidate.rationale) + '</div>' : ''}
+          </div>
+          \${committed ? \`
+            <div class="section">
+              <div class="title">\${escapeHtml(t("label.body"))}</div>
+              <div class="learning-body">\${renderLearningMarkup(payload.body)}</div>
+            </div>
+            <div class="section">
+              <div class="title">\${escapeHtml(t("label.sourceRefs"))}</div>
+              <div class="source-list">\${renderSourceReferences(payload.source_refs)}</div>
+            </div>
+          \` : \`
+            <form class="section" id="candidate-form">
+              <div class="form-grid insight-form-grid">
+                \${field("insight_title", t("label.title"), payload.title || candidate.trap.title, disabled)}
+                \${field("insight_tags", t("label.tags"), (payload.tags || []).join(", "), disabled)}
+                \${textarea("insight_summary", t("label.summary"), payload.summary || "", disabled)}
+                \${textarea("insight_body", t("label.body"), payload.body || "", disabled, "learning-editor")}
+                \${textarea("insight_source_refs", t("label.sourceRefs"), (payload.source_refs || []).join("\\n"), disabled)}
+              </div>
+            </form>
+          \`}
+          <div class="section">
+            <div class="title">\${escapeHtml(t("title.evidence"))}</div>
+            \${candidate.evidence.length ? candidate.evidence.map(renderEvidence).join("") : '<div class="empty">' + escapeHtml(t("empty.noEvidence")) + '</div>'}
+          </div>
+        </div>
+        \${renderDetailActions(candidate, disabled)}
+      \`;
+      bindDetailActions(candidate);
+      bindCandidateFormDirty(candidate);
+    }
+
     function renderReviewNotice(candidate) {
       const review = candidate.review;
       if (!review || review.status === "pending") return "";
@@ -1329,6 +1540,22 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     }
 
     function renderDetailActions(candidate, disabled) {
+      if (isInsightCandidate(candidate)) {
+        if (candidate.status !== "proposed") {
+          const rollback = candidate.delivery_state === "committed"
+            ? \`<button id="rollback" class="danger">\${escapeHtml(t("action.removeFromLearning"))}</button>\`
+            : "";
+          return \`<div class="actions"><span class="pill \${reviewCssClass(candidate)}">\${escapeHtml(reviewLabel(candidate))}</span>\${rollback}</div>\`;
+        }
+        const approved = candidate.review?.status === "approved";
+        return \`<div class="actions insight-actions">
+          <button id="save" \${disabled}>\${escapeHtml(t("action.saveDraft"))}</button>
+          <button id="approve" \${disabled}>\${escapeHtml(t(approved ? "action.reapprove" : "action.approveForAgent"))}</button>
+          <button id="apply-insight" class="primary" \${disabled}>\${escapeHtml(t(approved ? "action.addToLearning" : "action.approveAndAddLearning"))}</button>
+          <button id="reject" class="danger" \${disabled}>\${escapeHtml(t("action.reject"))}</button>
+          <span id="candidate-draft-state" class="action-hint">\${escapeHtml(t("hint.insightReviewActions"))}</span>
+        </div>\`;
+      }
       if (candidate.status !== "proposed") {
         const review = candidate.review;
         const viewTrap = review?.status === "accepted"
@@ -1377,7 +1604,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     }
 
     function setDetailActionsDisabled(disabled) {
-      ["save", "accept", "reject", "accept-anyway", "supersede", "supersedes"].forEach((id) => {
+      ["save", "approve", "apply-insight", "accept", "reject", "accept-anyway", "supersede", "supersedes", "rollback"].forEach((id) => {
         const control = el(id);
         if (control) control.disabled = disabled;
       });
@@ -1395,6 +1622,22 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       }
     }
 
+    function openRejectDialog(candidate) {
+      const dialog = el("reject-dialog");
+      dialog.dataset.candidateId = candidate.id;
+      dialog.dataset.sessionId = state.sessionId || "";
+      el("reject-dialog-title").textContent = t("dialog.rejectTitle");
+      el("reject-dialog-candidate").textContent = t("dialog.rejectCandidate", { title: candidateTitle(candidate) });
+      el("reject-dialog-scope").textContent = t("dialog.rejectScope");
+      el("reject-dialog-undo").textContent = t("dialog.rejectUndo");
+      el("reject-reason-label").textContent = t("label.rejectReason");
+      el("reject-cancel").textContent = t("action.cancel");
+      el("reject-confirm").textContent = t("action.confirmReject");
+      el("reject-reason").value = "";
+      dialog.showModal();
+      requestAnimationFrame(() => el("reject-reason").focus());
+    }
+
     function bindDetailActions(candidate) {
       document.querySelectorAll("[data-clean-deleted-candidates]").forEach((button) => {
         button.addEventListener("click", cleanupDeletedCandidates);
@@ -1405,7 +1648,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       const rollbackButton = el("rollback");
       if (rollbackButton) {
         rollbackButton.addEventListener("click", () => runDetailAction(async () => {
-          if (!confirm(t("confirm.rollback"))) return;
+          if (!confirm(t(isInsightCandidate(candidate) ? "confirm.removeFromLearning" : "confirm.rollback"))) return;
           try {
             const data = await api("/api/candidate/rollback", {
               method: "POST",
@@ -1417,7 +1660,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
             });
             await syncAfterMutation(data.candidate.id);
             showReceipt(data.receipt);
-            showStatus(t("status.candidateRolledBack"));
+            showStatus(t(isInsightCandidate(candidate) ? "status.insightRemoved" : "status.candidateRolledBack"));
           } catch (error) {
             showStatus(error.message, true);
           }
@@ -1425,20 +1668,21 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       }
 
       const save = el("save");
-      if (!save) return;
-      save.addEventListener("click", () => runDetailAction(async () => {
-        try {
-          const data = await api("/api/candidate/save", {
-            method: "POST",
-            body: JSON.stringify(candidatePayload(candidate.id))
-          });
-          state.candidateDirty = false;
-          await syncAfterMutation(data.candidate.id);
-          showStatus(t("status.candidateSaved"));
-        } catch (error) {
-          showStatus(error.message, true);
-        }
-      }));
+      if (save) {
+        save.addEventListener("click", () => runDetailAction(async () => {
+          try {
+            const data = await api("/api/candidate/save", {
+              method: "POST",
+              body: JSON.stringify(candidatePayload(candidate.id))
+            });
+            state.candidateDirty = false;
+            await syncAfterMutation(data.candidate.id);
+            showStatus(t("status.candidateSaved"));
+          } catch (error) {
+            showStatus(error.message, true);
+          }
+        }));
+      }
       const approveButton = el("approve");
       if (approveButton) {
         approveButton.addEventListener("click", () => runDetailAction(async () => {
@@ -1460,28 +1704,36 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         }));
       }
 
-      el("accept").addEventListener("click", () => acceptCandidate({}));
-      el("accept-anyway").addEventListener("click", () => acceptCandidate({ acceptAnyway: true }));
-      el("supersede").addEventListener("click", () => {
+      const applyInsightButton = el("apply-insight");
+      if (applyInsightButton) {
+        applyInsightButton.addEventListener("click", () => runDetailAction(async () => {
+          try {
+            const data = await api("/api/candidate/apply-insight", {
+              method: "POST",
+              body: JSON.stringify(candidatePayload(candidate.id))
+            });
+            state.candidateDirty = false;
+            await syncAfterMutation(data.candidate.id);
+            showReceipt(data.receipt);
+            showStatus(t("status.insightAdded"));
+          } catch (error) {
+            showStatus(error.message, true);
+          }
+        }));
+      }
+
+      const accept = el("accept");
+      if (accept) accept.addEventListener("click", () => acceptCandidate({}));
+      const acceptAnyway = el("accept-anyway");
+      if (acceptAnyway) acceptAnyway.addEventListener("click", () => acceptCandidate({ acceptAnyway: true }));
+      const supersede = el("supersede");
+      if (supersede) supersede.addEventListener("click", () => {
         const value = Number.parseInt(el("supersedes").value, 10);
         if (Number.isNaN(value)) return showStatus(t("status.supersedesRequired"), true);
         acceptCandidate({ supersedesId: value });
       });
-      el("reject").addEventListener("click", () => runDetailAction(async () => {
-        const reason = prompt(t("prompt.rejectReason"));
-        if (reason === null) return;
-        try {
-          const data = await api("/api/candidate/reject", {
-            method: "POST",
-            body: JSON.stringify({ projectRoot: state.projectRoot, sessionId: state.sessionId, candidateId: candidate.id, reason })
-          });
-          await syncAfterMutation(data.candidate.id);
-          showReceipt(data.receipt);
-          showStatus(t("status.candidateRejected"));
-        } catch (error) {
-          showStatus(error.message, true);
-        }
-      }));
+      const reject = el("reject");
+      if (reject) reject.addEventListener("click", () => openRejectDialog(candidate));
     }
 
     function acceptCandidate(extra) {
@@ -1521,6 +1773,16 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     }
 
     function candidatePayload(candidateId, extra = {}) {
+      const candidate = state.candidates.find((item) => item.id === candidateId);
+      if (isInsightCandidate(candidate)) {
+        return {
+          projectRoot: state.projectRoot,
+          sessionId: state.sessionId,
+          candidateId,
+          destinationPayload: insightCandidateFormPayload(candidate),
+          ...extra
+        };
+      }
       return reviewCandidateMutationPayload({
         projectRoot: state.projectRoot,
         sessionId: state.sessionId,
@@ -1528,6 +1790,23 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         trap: reviewCandidateTrapDraft(candidateFormFields()),
         extra
       });
+    }
+
+    function insightCandidateFormPayload(candidate) {
+      const formElement = el("candidate-form");
+      if (!formElement) return candidate?.destination_payload || {};
+      const form = new FormData(formElement);
+      return {
+        title: String(form.get("insight_title") || "").trim(),
+        summary: String(form.get("insight_summary") || "").trim(),
+        body: String(form.get("insight_body") || "").trim(),
+        tags: splitReviewInput(form.get("insight_tags")),
+        source_refs: splitReviewInput(form.get("insight_source_refs"))
+      };
+    }
+
+    function splitReviewInput(value) {
+      return [...new Set(String(value || "").split(/[,\\n]/).map((item) => item.trim()).filter(Boolean))];
     }
 
     function candidateFormFields() {
@@ -1558,7 +1837,69 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       await loadSessions();
     }
 
+    async function refreshExternalChanges() {
+      if (!state.projectRoot || document.visibilityState !== "visible" || state.externalRefreshInFlight || state.detailActionInFlight) return;
+      state.externalRefreshInFlight = true;
+      try {
+        const sessionData = await api("/api/sessions?project=" + encodeURIComponent(state.projectRoot));
+        const nextSessionsSignature = sessionsSignature(sessionData);
+        const nextSessionId = selectedReviewSessionId(sessionData.sessions, state.sessionId);
+        let candidateData = null;
+        let nextCandidatesSignature = "[]";
+        if (state.mainView === "review" && nextSessionId) {
+          candidateData = await api("/api/candidates?project=" + encodeURIComponent(state.projectRoot) + "&session=" + encodeURIComponent(nextSessionId));
+          nextCandidatesSignature = candidatesSignature(candidateData.candidates);
+        }
+
+        const combinedSignature = nextSessionsSignature + "\\n" + nextSessionId + "\\n" + nextCandidatesSignature;
+        const changed = nextSessionsSignature !== state.sessionsSignature
+          || nextSessionId !== state.sessionId
+          || (state.mainView === "review" && nextCandidatesSignature !== state.candidatesSignature);
+        if (!changed) {
+          state.externalDeferredSignature = "";
+          return;
+        }
+        if (state.candidateDirty) {
+          if (state.externalDeferredSignature !== combinedSignature) {
+            state.externalDeferredSignature = combinedSignature;
+            showStatus(t("status.externalChangesDeferred"));
+          }
+          return;
+        }
+
+        state.sessions = sessionData.sessions;
+        state.candidateReview = sessionData.candidate_review || null;
+        state.sessionId = nextSessionId;
+        state.sessionsSignature = nextSessionsSignature;
+        if (state.mainView === "review") {
+          state.candidates = candidateData?.candidates || [];
+          state.candidatesSignature = nextCandidatesSignature;
+          state.candidateId = reviewQueueModel({
+            candidates: state.candidates,
+            candidateView: state.candidateView,
+            candidateId: state.candidateId,
+            candidateReview: state.candidateReview
+          }).selectedCandidateId;
+        }
+        state.externalDeferredSignature = "";
+        renderSessions();
+        if (state.mainView === "review") {
+          renderCandidates();
+          renderDetail();
+        }
+        showStatus(t("status.externalChanges"));
+      } catch {
+        // Background freshness is best-effort; explicit Refresh still reports errors.
+      } finally {
+        state.externalRefreshInFlight = false;
+      }
+    }
+
     async function refreshAll() {
+      if (state.candidateDirty) {
+        showStatus(t("status.refreshDeferred"));
+        return;
+      }
       try {
         await bootstrap();
         showStatus(t("status.refreshed"));
@@ -1568,11 +1909,36 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     }
 
     el("refresh").addEventListener("click", refreshAll);
+    el("reject-cancel").addEventListener("click", () => el("reject-dialog").close());
+    el("reject-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const dialog = el("reject-dialog");
+      const candidateId = dialog.dataset.candidateId;
+      const sessionId = dialog.dataset.sessionId;
+      const reason = el("reject-reason").value.trim();
+      dialog.close();
+      runDetailAction(async () => {
+        try {
+          const data = await api("/api/candidate/reject", {
+            method: "POST",
+            body: JSON.stringify({ projectRoot: state.projectRoot, sessionId, candidateId, reason })
+          });
+          await syncAfterMutation(data.candidate.id);
+          showReceipt(data.receipt, { undoSuppression: data.suppression.fingerprint });
+          showStatus(t("status.candidateRejected"));
+        } catch (error) {
+          showStatus(error.message, true);
+        }
+      });
+    });
     el("compact-workspace-toggle").addEventListener("click", () => {
       setCompactWorkspaceOpen(!el("workspace-rail").classList.contains("compact-open"));
     });
     el("delete-session").addEventListener("click", async () => {
       await deleteSession(el("delete-session").dataset.sessionId);
+    });
+    el("rename-session").addEventListener("click", async () => {
+      await renameSession(el("rename-session").dataset.sessionId);
     });
     el("sidebar-toggle").addEventListener("click", () => {
       setSidebarCollapsed(!state.sidebarCollapsed);
@@ -1638,8 +2004,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       return \`<div class="field"><label for="\${name}">\${label}</label><input id="\${name}" name="\${name}" value="\${escapeAttr(value || "")}" \${disabled}></div>\`;
     }
 
-    function textarea(name, label, value, disabled) {
-      return \`<div class="field full"><label for="\${name}">\${label}</label><textarea id="\${name}" name="\${name}" \${disabled}>\${escapeHtml(value || "")}</textarea></div>\`;
+    function textarea(name, label, value, disabled, className = "") {
+      return \`<div class="field full"><label for="\${name}">\${label}</label><textarea id="\${name}" name="\${name}" class="\${escapeAttr(className)}" \${disabled}>\${escapeHtml(value || "")}</textarea></div>\`;
     }
 
     function selectField(name, label, value, options, disabled) {
@@ -1675,6 +2041,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       if (review.status === "accepted_missing") {
         return review.trap_id === undefined ? t("review.acceptedLinkMissing") : t("review.acceptedDeleted", { id: review.trap_id });
       }
+      if (review.status === "destination_committed") return t("review.destinationCommitted", { destination: valueLabel(review.destination) });
       if (review.status === "rejected") return t("review.rejected");
       if (review.status === "approved") return t("review.approved");
       return valueLabel(candidate.status);
@@ -1693,5 +2060,9 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     }
 
     initShellResizers();
+    setInterval(refreshExternalChanges, 5000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshExternalChanges();
+    });
     refreshAll();`;
 }

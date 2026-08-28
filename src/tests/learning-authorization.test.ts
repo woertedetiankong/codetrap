@@ -516,6 +516,14 @@ describe("Phase 1A — Web review surface", () => {
 
     // And the suppression takes effect for the next capture.
     expect(sessions.captureCandidate(trackingDocLesson()).suppressed).toBe(true);
+
+    const unsuppressed = await webApi(handler, "/api/suppression/undo", {
+      projectRoot: project,
+      fingerprint: payload.suppression.fingerprint,
+    });
+    expect(unsuppressed.status).toBe(200);
+    expect((await unsuppressed.json()).receipt).toMatchObject({ action: "unsuppress", executor: "user" });
+    expect(sessions.captureCandidate(trackingDocLesson()).suppressed).toBe(false);
   });
 
   test("C6: an agent posting to the Web route must declare itself", async () => {

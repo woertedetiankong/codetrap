@@ -7,9 +7,20 @@ export const WEB_SHELL_CLIENT_SCRIPT = `    const SHELL_LAYOUT_KEY = "codetrap-s
     const SHELL_COLLAPSE_THRESHOLD = { rail: 180, queue: 230 };
     const SHELL_REVEAL_EDGE_WIDTH = 18;
     const SHELL_PEEK_WIDTH = { rail: 330, queue: 390 };
+    const SHELL_WIDE_HEADER_THRESHOLD = 430;
+    let shellRailResizeObserver = null;
 
     function shellElement() {
       return document.querySelector(".shell");
+    }
+
+    function syncWorkspaceHeaderLayout() {
+      const rail = document.querySelector(".rail");
+      if (!rail) return;
+      rail.classList.toggle(
+        "wide-header",
+        isDesktopShellLayout() && rail.getBoundingClientRect().width >= SHELL_WIDE_HEADER_THRESHOLD
+      );
     }
 
     function isDesktopShellLayout() {
@@ -341,6 +352,13 @@ export const WEB_SHELL_CLIENT_SCRIPT = `    const SHELL_LAYOUT_KEY = "codetrap-s
       const splitters = document.querySelectorAll("[data-splitter]");
       if (!splitters.length) return;
       applySavedShellLayout();
+      syncWorkspaceHeaderLayout();
+
+      const rail = document.querySelector(".rail");
+      if (rail && typeof ResizeObserver === "function") {
+        shellRailResizeObserver = new ResizeObserver(syncWorkspaceHeaderLayout);
+        shellRailResizeObserver.observe(rail);
+      }
 
       splitters.forEach((splitter) => {
         splitter.addEventListener("pointerdown", (event) => {
@@ -405,6 +423,7 @@ export const WEB_SHELL_CLIENT_SCRIPT = `    const SHELL_LAYOUT_KEY = "codetrap-s
         resizeFrame = requestAnimationFrame(() => {
           resizeFrame = 0;
           applySavedShellLayout();
+          syncWorkspaceHeaderLayout();
           renderSidebarToggle();
         });
       });

@@ -1,20 +1,27 @@
 # Next Session
 
-Project: `D:\\llm\\codetrap\\codetrap`. Read
-`docs/tasks/2026-08-09-web-insight-shelf/handoff.md` first.
-
-Current state: `web-insight-shelf` contains the completed, uncommitted Web
-learning-shelf implementation based on `ac09710`. The former trap-derived
-Insights analytics is removed; the real Phase 2 shelf, explicit **Mark
-learned**, actionable Library health, bilingual empty states, and API/security
-regressions are implemented. Full validation is green: 398 pass, 1 configured
-browser-smoke skip, 0 fail.
-
-Now do: inspect the diff and commit only if the user explicitly requests it.
-Merge and push remain separately authorized actions.
-
-Phase 4 reminder: `ac09710` is already on local and remote `main`, but this task
-did not inspect GitHub CI evidence. Independent reproduction and Phase 4B
-longitudinal evidence also remain open.
-
-First verify: `git status --short --branch; git diff --check; bun run typecheck`.
+Project `D:\\llm\\codetrap\\codetrap` (codetrap). Read
+`docs/tasks/2026-08-27-agent-user-experience-hardening/handoff.md` first.
+Previous session: agent/user hardening and its learning-workflow follow-up,
+including first-class insight review, one-action approval/shelving, safe fenced
+code/source rendering, idempotent learned state, Windows-safe stdin JSON, and
+the shared ASCII-flow/example format. The focused learning/Web suite completed
+with 40 tests passing. The latest full run had 413 passes, one configured
+Windows browser-smoke skip, and two unrelated 5-second timeout flakes; both
+files passed 28/28 when rerun in isolation.
+Errata: None known.
+Current state: task code and docs are complete and committed locally on `main`;
+nothing has been pushed, published, released, or installed globally.
+Environment: the updated Web console was restarted with `--open` and left
+running on `127.0.0.1:4737`;
+the authenticated token is intentionally not stored in docs.
+Pending review: `cand-001` in session
+`2026-08-27-capture-windows-bun-json` records the Windows inline-JSON quoting
+pitfall; it is staged only, not confirmed memory.
+Now do: 1. Review the pending pitfall candidate. 2. Push or begin release work
+only if the user explicitly requests it.
+Red lines: do not push, publish, release, install globally, or change the version
+without explicit user authorization; preserve unrelated working-tree changes.
+First verify: `bun run typecheck; git status --short` (expected typecheck exit 0
+and a clean task worktree; mismatch means the committed task state drifted).
+Focused learning/Web expectation: 40 tests pass.

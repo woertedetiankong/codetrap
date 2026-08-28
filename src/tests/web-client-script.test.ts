@@ -52,9 +52,21 @@ describe("web client script", () => {
     expect(script.match(/\/api\/insight\/consult/g)).toHaveLength(1);
     expect(script).toContain('data-learning-insight');
     expect(script).toContain('id="consult-insight"');
+    expect(script).toContain("function renderLearningMarkup(value)");
+    expect(script).toContain('class="code-block learning-code"');
+    expect(script).toContain("Number(insight.consulted_count || 0) > 0");
     expect(script).not.toContain("loadInsightTraps");
     expect(script).not.toContain("insightTraps");
     expect(script).not.toContain("growthInsights");
+  });
+
+  test("routes insight candidates through their own payload and review actions", () => {
+    const script = webClientScript();
+    expect(script).toContain("function renderInsightCandidateDetail(candidate)");
+    expect(script).toContain("destinationPayload: insightCandidateFormPayload(candidate)");
+    expect(script).toContain('api("/api/candidate/apply-insight"');
+    expect(script).toContain('id="apply-insight"');
+    expect(script).toContain("isInsightCandidate(candidate) ? \"\" :");
   });
 
   test("keeps actionable trap health in the library instead of a duplicate analytics page", () => {
@@ -64,5 +76,26 @@ describe("web client script", () => {
     expect(script).toContain('never-useful');
     expect(script).not.toContain("renderInsightRankBlock");
     expect(script).not.toContain("renderInsightTrapRows");
+  });
+
+  test("removes the launch token from browser history after moving it to session storage", () => {
+    const script = webClientScript();
+    expect(script).toContain('sessionStorage.setItem("codetrap-token", token)');
+    expect(script).toContain('qs.delete("token")');
+    expect(script).toContain("history.replaceState");
+  });
+
+  test("turns a stale restart token into actionable localized guidance", () => {
+    const script = webClientScript();
+    expect(script).toContain('res.status === 401 ? t("error.sessionExpired")');
+    expect(script).toContain("err.status = res.status");
+  });
+
+  test("polls for external session changes without overwriting a dirty candidate draft", () => {
+    const script = webClientScript();
+    expect(script).toContain("async function refreshExternalChanges()");
+    expect(script).toContain("if (state.candidateDirty)");
+    expect(script).toContain("status.externalChangesDeferred");
+    expect(script).toContain("setInterval(refreshExternalChanges, 5000)");
   });
 });

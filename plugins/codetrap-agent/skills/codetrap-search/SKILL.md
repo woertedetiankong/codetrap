@@ -5,6 +5,11 @@ description: Search the codetrap pitfall database for known mistakes and project
 
 Search the codetrap database for recorded pitfalls matching the user's query. Default to the CLI `codetrap search --json`; use MCP only when it is already available and scoped to the right project.
 
+Use `codetrap` when it is available on `PATH`. In a Codetrap source checkout
+where the global command is intentionally absent, run the same arguments with
+`bun run src/index.ts` from the repository root. Outside that checkout, report
+the missing CLI; do not install or update it without user approval.
+
 ## When to use
 
 - Before writing code in a new area (e.g., "I need to write authentication middleware")

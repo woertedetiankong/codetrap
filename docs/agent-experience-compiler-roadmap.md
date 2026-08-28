@@ -1,7 +1,7 @@
 # codetrap Mature Product Roadmap v2.3: Agent Experience Compiler
 
 Date: 2026-06-22 (v1)
-Updated: 2026-08-09 (v2.3 implementation status)
+Updated: 2026-08-27 (v2.3 implementation status)
 Status: Product direction / long-term roadmap — authoritative parent plan
 Scope: Parent plan for codetrap mature product evolution
 Clients served: **Codex and Claude Code, symmetrically** (Cursor and others: future)
@@ -13,7 +13,7 @@ handoff) — see §19.
 
 ## Status Dashboard
 
-> Updated: 2026-08-09
+> Updated: 2026-08-27
 
 | Milestone | Status | Updated | Evidence | Note |
 |---|---|---|---|---|
@@ -22,9 +22,25 @@ handoff) — see §19.
 | Phase 2 – low-risk destinations | **Done** | 2026-08-08 | [handoff](tasks/2026-08-08-phase2-low-risk-destinations/handoff.md) | Four review-bound destinations, insight study, currency/graduation, metrics, and decision rule pass end to end. |
 | Phase 3 — high-side-effect destinations | **Done** | 2026-08-09 | [skill lifecycle handoff](tasks/2026-08-08-phase3-skill-candidate-lifecycle/handoff.md) | Cross-client install is current; a later Codex screenshot-review task changed the implemented UI workflow. |
 | Phase 4 — external validation | **In progress (4A merged and synced)** | 2026-08-09 | [Phase 4A handoff](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md) | Benchmark and audit hardening are on `origin/main`; remote CI evidence has not been inspected in this task, while independent reproduction and longitudinal publication remain open. |
+| Agent/user experience hardening | **Done** | 2026-08-27 | [handoff](tasks/2026-08-27-agent-user-experience-hardening/handoff.md) | Atomic editing, multilingual scoring, suppression undo, draft-safe refresh, purpose-specific insight review, idempotent study tracking, Windows-safe structured input, `web --open`, and token hygiene pass without changing install or release state. |
 
 ### Closed decisions by date
 
+- 2026-08-27 Learning insights are reviewed through their own destination
+  fields and can be approved and shelved in one explicit user action. Fenced
+  ASCII/code blocks render safely, sources stay visible, and **Mark learned** is
+  idempotent rather than an incrementing engagement score. Structured native
+  CLI payloads support `--input-json -` for Windows-safe standard input
+  ([detail](tasks/2026-08-27-agent-user-experience-hardening/handoff.md)).
+- 2026-08-27 User-study insights generated from external sources or session
+  review use an ASCII flow diagram and a concrete, plain-language example. The
+  longer teaching format does not expand concise runtime traps, and Codetrap
+  remains local memory rather than model training
+  ([detail](tasks/2026-08-27-agent-user-experience-hardening/handoff.md)).
+- 2026-08-27 Agent/user experience hardening keeps session IDs stable on rename,
+  exposes revision-safe candidate edits to CLI/MCP, uses local polling with a
+  dirty-draft guard, and does not embed an external translation provider
+  ([detail](tasks/2026-08-27-agent-user-experience-hardening/handoff.md)).
 - 2026-08-09 The Web console's former trap-derived `Insights` analytics page
   was removed. Its navigation slot now reads the real, learning-only Phase 2
   Insight Shelf; opening is read-only and consultation requires an explicit

@@ -121,20 +121,48 @@ describe("Phase 2 low-risk destinations", () => {
 
     const cwd = tempProjectDir("codetrap-p2-insight-");
     const home = tempHome();
+    const teachingBody = [
+      "Article -> Agent extracts -> User reviews -> Insight shelf",
+      "",
+      "Example: treat one narrow approval as permission for that revision only.",
+    ].join("\n");
     const captured = runJson([
       "phase2", "propose", "--input-json", JSON.stringify(proposal("insight", "Keep authorization narrow", {
         title: "Keep authorization narrow",
         summary: "Authorization should name one revision and destination.",
-        body: "Study how content hashes invalidate stale approvals.",
+        body: teachingBody,
         tags: ["authorization"],
       })),
     ], cwd, home);
     runJson(["phase2", "apply", captured.candidate.id, "--session", captured.session.id, "--executor", "user"], cwd, home);
     const insights = runJson(["phase2", "insights"], cwd, home);
     expect(insights).toHaveLength(1);
+    expect(insights[0].body).toBe(teachingBody);
     const consulted = runJson(["phase2", "consult", insights[0].id], cwd, home);
     expect(consulted.consulted_count).toBe(1);
+    const consultedAgain = runJson(["phase2", "consult", insights[0].id], cwd, home);
+    expect(consultedAgain.consulted_count).toBe(1);
+    expect(consultedAgain.last_consulted_at).toBe(consulted.last_consulted_at);
     expect(runJson(["phase2", "metrics"], cwd, home).insight_shelf).toEqual({ shelved: 1, consulted: 1 });
+  });
+
+  test("phase2 propose reads multiline JSON from stdin for Windows-safe automation", () => {
+    const cwd = tempProjectDir("codetrap-p2-stdin-");
+    const home = tempHome();
+    const input = proposal("insight", "PowerShell-safe proposal", {
+      title: "PowerShell-safe proposal",
+      summary: "Pipe JSON instead of forwarding quoted native arguments.",
+      body: "request -> stdin -> parsed proposal\n\nExample: PowerShell keeps every quote intact.",
+      tags: ["windows", "cli"],
+      source_refs: ["https://example.com/source"],
+    });
+    const result = runCli(["phase2", "propose", "--input-json", "-", "--json"], cwd, home, JSON.stringify(input));
+    expect(result.exitCode).toBe(0);
+    const captured = JSON.parse(result.stdout);
+    expect(captured.candidate).toMatchObject({
+      candidate_kind: "insight",
+      destination_payload: { title: "PowerShell-safe proposal" },
+    });
   });
 
   test("graduation visibly removes a lesson from default recall and keeps history", () => {

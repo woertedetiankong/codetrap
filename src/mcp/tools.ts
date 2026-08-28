@@ -55,6 +55,26 @@ export const toolDefinitions = [
     inputSchema: captureCandidateSchema(),
   },
   {
+    name: "edit_candidate",
+    description:
+      "Edit a proposed candidate through Codetrap's revisioned session store. Use this after translating or improving candidate fields; it updates the content hash and invalidates stale approval safely.",
+    inputSchema: editCandidateSchema(),
+  },
+  {
+    name: "update_session_goal",
+    description:
+      "Update a session goal without changing its stable session id. Codetrap keeps session metadata, index, recap, and implementation-notes header in sync.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        session_id: { type: "string", description: "Stable session id to update." },
+        goal: { type: "string", description: "New human-readable session goal." },
+        cwd: cwdProperty,
+      },
+      required: ["session_id", "goal"],
+    },
+  },
+  {
     name: "doctor",
     description:
       "Diagnose codetrap health for the resolved project: trap and embedding counts, hybrid-search availability, mis-scoped traps, pending candidate review, and recommended next actions. Pass cwd to diagnose a specific project.",
@@ -178,5 +198,23 @@ function captureCandidateSchema() {
       evidence_note: { type: "string", description: "Optional note describing the supporting evidence." },
       cwd: cwdProperty,
     },
+  };
+}
+
+function editCandidateSchema() {
+  const base = trapUpdateSchema();
+  const editProperties = Object.fromEntries(
+    Object.entries(base.properties).filter(([key]) => key !== "id" && key !== "scope")
+  );
+  return {
+    type: "object",
+    properties: {
+      candidate_id: { type: "string", description: "Candidate id, for example cand-001." },
+      session_id: { type: "string", description: "Session containing the candidate." },
+      ...editProperties,
+      scope: base.properties.scope,
+      cwd: cwdProperty,
+    },
+    required: ["candidate_id", "session_id"],
   };
 }

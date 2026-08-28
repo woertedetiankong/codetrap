@@ -122,7 +122,11 @@ export class Phase2Store {
       const document = this.readInsights();
       const insight = document.insights.find((item) => item.id === id);
       if (!insight) throw new Error(`Insight ${id} not found.`);
-      insight.consulted_count += 1;
+      // "Mark learned" is a state transition, not a click counter. Keeping it
+      // idempotent also makes a retry safe when the browser loses the first
+      // response after the write succeeded.
+      if (insight.consulted_count > 0) return insight;
+      insight.consulted_count = 1;
       insight.last_consulted_at = now.toISOString();
       this.writeInsights(document);
       return insight;

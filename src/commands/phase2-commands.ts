@@ -2,7 +2,7 @@ import type { TrapStore } from "../lib/store";
 import type { TrapOperations } from "../lib/trap-operations";
 import { Phase2Operations } from "../lib/phase2-operations";
 import { errorResult, jsonResult, textResult, type CommandResult } from "./command-result";
-import { parseArgs, wantsJson } from "./command-args";
+import { jsonObjectInput, parseArgs, wantsJson } from "./command-args";
 
 export function cmdPhase2(args: string[], store: TrapStore, traps: TrapOperations): CommandResult {
   const projectRoot = store.getProjectRoot();
@@ -15,10 +15,10 @@ export function cmdPhase2(args: string[], store: TrapStore, traps: TrapOperation
   let result: unknown;
   switch (sub) {
     case "propose":
-      result = operations.propose(inputJson(opts));
+      result = operations.propose(jsonObjectInput(opts));
       break;
     case "edit":
-      result = operations.edit(requiredOpt(opts, "session"), requiredPosition(positionals, 0, "candidate id"), inputJson(opts));
+      result = operations.edit(requiredOpt(opts, "session"), requiredPosition(positionals, 0, "candidate id"), jsonObjectInput(opts));
       break;
     case "preview":
       result = operations.preview(requiredOpt(opts, "session"), requiredPosition(positionals, 0, "candidate id"));
@@ -68,17 +68,6 @@ export function cmdPhase2(args: string[], store: TrapStore, traps: TrapOperation
 
   if (wantsJson(opts)) return jsonResult(result);
   return textResult(JSON.stringify(result, null, 2));
-}
-
-function inputJson(opts: Record<string, string>): Record<string, unknown> {
-  const input = opts["input-json"];
-  if (!input || input === "true") throw new Error("--input-json requires a JSON object.");
-  let parsed: unknown;
-  try { parsed = JSON.parse(input); } catch (error) {
-    throw new Error(`Invalid --input-json: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("--input-json must be a JSON object.");
-  return parsed as Record<string, unknown>;
 }
 
 function requiredOpt(opts: Record<string, string>, name: string): string {

@@ -63,6 +63,11 @@ describe("Phase 1C — learn CLI", () => {
     expect(existsSync(review.prompt_path)).toBe(true);
     expect(review.durable_writes).toBe(0);
 
+    const prompt = readFileSync(review.prompt_path, "utf-8");
+    expect(prompt).toContain("用ASCII流程图结合通俗易懂的例子讲解");
+    expect(prompt).toContain("concrete, plain-language example");
+    expect(prompt).toContain("This format applies only to insights");
+
     // §3.2: pointers and capped excerpts, never the transcript.
     const pack = JSON.parse(readFileSync(review.evidence_pack_path, "utf-8"));
     expect(pack.items.length).toBeGreaterThan(0);

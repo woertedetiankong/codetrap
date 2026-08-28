@@ -43,6 +43,19 @@ describe("agent first-run onboarding assets", () => {
     expect(text).toContain("Only after the user confirms");
   });
 
+  test("user-study skills request an ASCII flow and a plain-language example", () => {
+    const external = read("plugins/codetrap-agent/skills/codetrap-capture-external/SKILL.md");
+    const review = read("plugins/codetrap-agent/skills/codetrap-learning-review/SKILL.md");
+
+    for (const text of [external, review]) {
+      expect(text).toContain("用ASCII流程图结合通俗易懂的例子讲解");
+      expect(text).toContain("plain-language example");
+    }
+    expect(external).toContain('"kind":"insight"');
+    expect(external).toContain("An agent must not approve its own proposal");
+    expect(review).toContain("applies only to user-study insights");
+  });
+
   test("plugin bundle is the single Codex skill source", () => {
     const manifest = JSON.parse(read("package.json"));
     const plugin = JSON.parse(read("plugins/codetrap-agent/.codex-plugin/plugin.json"));

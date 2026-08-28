@@ -124,8 +124,9 @@ function showHelp(): void {
   console.log("  --project <path>        Project path for web console");
   console.log("  --host <host>           Host for web console (default 127.0.0.1)");
   console.log("  --port <n>              Port for web console (default 4737)");
+  console.log("  --open                  Open the authenticated web console URL in the default browser");
   console.log("  --json                  JSON output (all commands); errors become { success: false, error }");
-  console.log("  --input-json <json>     JSON input for add/edit/add_trap_evidence");
+  console.log("  --input-json <json|->   JSON input; use - to read from stdin safely");
   console.log("  --output-json           Alias for --json output (kept for compatibility)");
   console.log("  --from-project-path <path>  Source project path for scope repair/migration");
   console.log("  --to-project-path <path>    Destination project path for scope repair/migration");
@@ -150,14 +151,16 @@ function showWebHelp(): void {
   console.log("codetrap web — start the local review and trap library console");
   console.log("");
   console.log("Usage:");
-  console.log("  codetrap web [--project <path>] [--host <host>] [--port <n>]");
+  console.log("  codetrap web [--project <path>] [--host <host>] [--port <n>] [--open]");
   console.log("");
   console.log("Options:");
   console.log("  --project <path>  Project path to open in the web console");
   console.log("  --host <host>     Host to bind (default 127.0.0.1)");
   console.log("  --port <n>        Port to try first (default 4737; next free port is used if busy)");
+  console.log("  --open            Open the authenticated local URL in your default browser");
   console.log("");
   console.log("Examples:");
   console.log("  codetrap web");
+  console.log("  codetrap web --open");
   console.log("  codetrap web --project /path/to/project --port 4789");
 }

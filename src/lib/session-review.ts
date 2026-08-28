@@ -1,4 +1,5 @@
 import type { CandidateTrap, SessionIndexEntry, SessionMetadata } from "../domain/session";
+import type { CandidateKind } from "../domain/candidate";
 import type { LearningReceipt, SuppressionRecord } from "../domain/learning";
 import { authorizationIsCurrent } from "./candidate-envelope";
 import type { Scope } from "./constants";
@@ -105,6 +106,12 @@ export type SessionCandidateReview =
       trap_id?: number;
       scope?: string;
       trap_present: false;
+    }
+  | {
+      status: "destination_committed";
+      label: string;
+      destination: CandidateKind;
+      commit_id: string;
     }
   | {
       status: "rejected";
@@ -298,6 +305,7 @@ export function reviewedSessionCandidates(
 
 export function candidateReviewCounts(candidates: CandidateTrap[]): CandidateReviewCounts {
   const pending = candidates.filter((candidate) => candidate.status === "proposed");
+  const pendingTraps = pending.filter((candidate) => (candidate.candidate_kind ?? "pitfall_trap") === "pitfall_trap");
   const accepted = candidates.filter((candidate) => candidate.status === "accepted");
   const rejected = candidates.filter((candidate) => candidate.status === "rejected");
   return {
@@ -306,10 +314,10 @@ export function candidateReviewCounts(candidates: CandidateTrap[]): CandidateRev
     reviewed_count: accepted.length + rejected.length,
     accepted_count: accepted.length,
     rejected_count: rejected.length,
-    high_quality_pending_count: pending.filter((candidate) =>
+    high_quality_pending_count: pendingTraps.filter((candidate) =>
       candidate.quality_score >= 0.8 && candidate.quality.suggested_action === "accept"
     ).length,
-    needs_edit_count: pending.filter((candidate) => candidate.quality.suggested_action === "edit").length,
+    needs_edit_count: pendingTraps.filter((candidate) => candidate.quality.suggested_action === "edit").length,
   };
 }
 
@@ -386,6 +394,16 @@ export function sessionCandidateReview(
       label: "rejected",
       rejected_at: candidate.rejected_at,
       rejection_reason: candidate.rejection_reason,
+    };
+  }
+
+  const destination = candidate.candidate_kind ?? "pitfall_trap";
+  if (destination !== "pitfall_trap" && candidate.delivery_state === "committed" && candidate.destination_commit_id) {
+    return {
+      status: "destination_committed",
+      label: `committed -> ${destination}`,
+      destination,
+      commit_id: candidate.destination_commit_id,
     };
   }
 

@@ -27,12 +27,14 @@ import {
   sessionCandidateRequestFromArgs,
   sessionCaptureRequestFromArgs,
   sessionCloseRequestFromArgs,
+  sessionEditCandidateRequestFromArgs,
   sessionIdRequestFromArgs,
   sessionListRequestFromArgs,
   sessionNoteRequestFromArgs,
   sessionPruneRequestFromArgs,
   sessionApproveRequestFromArgs,
   sessionRejectRequestFromArgs,
+  sessionRenameRequestFromArgs,
   sessionRollbackRequestFromArgs,
   sessionShowRequestFromArgs,
   sessionStartRequestFromArgs,
@@ -62,6 +64,8 @@ export async function cmdSession(args: string[], store: TrapStore, trapOperation
         return cmdSessionList(rest, sessions);
       case "show":
         return cmdSessionShow(rest, sessions);
+      case "rename":
+        return cmdSessionRename(rest, sessions);
       case "notes":
         return cmdSessionNotes(rest, sessions);
       case "close":
@@ -72,6 +76,8 @@ export async function cmdSession(args: string[], store: TrapStore, trapOperation
         return cmdSessionCandidates(rest, sessions);
       case "candidate":
         return cmdSessionCandidate(rest, sessions);
+      case "edit":
+        return cmdSessionEditCandidate(rest, sessions);
       case "accept":
         return cmdSessionAccept(rest, sessions);
       case "approve":
@@ -95,7 +101,7 @@ export async function cmdSession(args: string[], store: TrapStore, trapOperation
       case "cleanup":
         return cmdSessionCleanup(rest, sessions);
       default:
-        return errorResult("Usage: codetrap session <start|note|status|list|show|notes|close|capture|candidates|candidate|accept|approve|reject|rollback|migrate|receipts|suppressions|unsuppress|delete|prune|cleanup>");
+        return errorResult("Usage: codetrap session <start|note|status|list|show|rename|notes|close|capture|candidates|candidate|edit|accept|approve|reject|rollback|migrate|receipts|suppressions|unsuppress|delete|prune|cleanup>");
     }
   } catch (error) {
     return errorFrom(error, args);
@@ -280,6 +286,25 @@ function cmdSessionCandidate(args: string[], sessions: SessionOperations): Comma
   const result = sessions.getCandidate(request.candidateId, request.sessionId);
   if (opts.json !== undefined) return jsonResult({ session_id: result.session.id, candidate: result.candidate });
   return textResult(JSON.stringify(result.candidate, null, 2));
+}
+
+function cmdSessionRename(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const request = sessionRenameRequestFromArgs(positionals, opts);
+  const result = sessions.updateSessionGoal(request.sessionId, request.goal);
+  if (opts.json !== undefined) return jsonResult({ success: true, ...result });
+  return textResult(`Renamed session ${result.session.id}: ${result.previous_goal} -> ${result.session.goal}`);
+}
+
+function cmdSessionEditCandidate(args: string[], sessions: SessionOperations): CommandResult {
+  const { opts, positionals } = parseArgs(args);
+  const result = sessions.saveCandidate(sessionEditCandidateRequestFromArgs(positionals, opts));
+  const payload = { success: true, session_id: result.session.id, candidate: result.candidate };
+  if (opts.json !== undefined) return jsonResult(payload);
+  return textResult([
+    `Updated ${result.candidate.id} to revision ${result.candidate.revision}.`,
+    `Content hash: ${result.candidate.content_hash}`,
+  ].join("\n"));
 }
 
 async function cmdSessionAccept(args: string[], sessions: SessionOperations): Promise<CommandResult> {

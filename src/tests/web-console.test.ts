@@ -6,6 +6,7 @@ import { TrapStore } from "../lib/store";
 import { TrapOperations } from "../lib/trap-operations";
 import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
+import { Phase2Operations } from "../lib/phase2-operations";
 import { addWebProject, loadWebProjectRegistry, resolveWebProjectRoot, webProjectsPath } from "../web/project-registry";
 import { createWebHandler } from "../web/server";
 import { tempDir, tempHome, tempProjectDir } from "./helpers";
@@ -234,11 +235,84 @@ describe("web API", () => {
     expect(consultedPayload.insight.consulted_count).toBe(1);
     expect(consultedPayload.insight.last_consulted_at).toBeString();
 
+    const consultedAgain = await api(handler, "/api/insight/consult", {
+      method: "POST",
+      body: { projectRoot: project, id: "ins-web-separation" },
+    });
+    const consultedAgainPayload = await consultedAgain.json();
+    expect(consultedAgainPayload.insight.consulted_count).toBe(1);
+    expect(consultedAgainPayload.insight.last_consulted_at).toBe(consultedPayload.insight.last_consulted_at);
+
     const missing = await api(handler, "/api/insight/consult", {
       method: "POST",
       body: { projectRoot: project, id: "ins-missing" },
     });
     expect(missing.status).toBe(404);
+  });
+
+  test("edits, approves, shelves, and rolls back an insight through purpose-specific Web routes", async () => {
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-insight-review-", { realpath: true });
+    addWebProject(project, home);
+    const traps = new TrapOperations(new TrapStore(project, undefined, home));
+    const proposed = new Phase2Operations(project, traps).propose({
+      kind: "insight",
+      title: "Stable prompt prefixes",
+      rationale: "This mental model changes agent tool design.",
+      payload: {
+        title: "Stable prompt prefixes",
+        summary: "The reusable unit is an exact token prefix.",
+        body: "[stable prefix] -> [cache hit]",
+        tags: ["prompt-cache"],
+        source_refs: ["https://example.com/prompt-cache"],
+      },
+    });
+    if (proposed.suppressed) throw new Error("Fresh insight proposal was unexpectedly suppressed.");
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+    const destinationPayload = {
+      ...proposed.candidate.destination_payload,
+      summary: "An exact token prefix is reusable; similar meaning is not enough.",
+      body: "```text\n[stable prefix] -> [cache hit]\n```\n\nExample: append one page instead of rewriting chapter one.",
+    };
+
+    const applied = await api(handler, "/api/candidate/apply-insight", {
+      method: "POST",
+      body: {
+        projectRoot: project,
+        sessionId: proposed.session.id,
+        candidateId: proposed.candidate.id,
+        destinationPayload,
+      },
+    });
+    expect(applied.status).toBe(200);
+    const appliedPayload = await applied.json();
+    expect(appliedPayload.candidate).toMatchObject({
+      status: "accepted",
+      candidate_kind: "insight",
+      delivery_state: "committed",
+    });
+    expect(appliedPayload.receipt.destination).toBe("insight");
+
+    const candidates = await api(handler, `/api/candidates?project=${encodeURIComponent(project)}&session=${encodeURIComponent(proposed.session.id)}`);
+    expect((await candidates.json()).candidates[0].review).toMatchObject({
+      status: "destination_committed",
+      destination: "insight",
+    });
+    const insights = await api(handler, `/api/insights?project=${encodeURIComponent(project)}`);
+    expect((await insights.json()).insights[0].summary).toBe(destinationPayload.summary);
+
+    const rolledBack = await api(handler, "/api/candidate/rollback", {
+      method: "POST",
+      body: {
+        projectRoot: project,
+        sessionId: proposed.session.id,
+        candidateId: proposed.candidate.id,
+      },
+    });
+    expect(rolledBack.status).toBe(200);
+    expect((await rolledBack.json()).candidate).toMatchObject({ status: "proposed", delivery_state: "rolled_back" });
+    const emptyShelf = await api(handler, `/api/insights?project=${encodeURIComponent(project)}`);
+    expect((await emptyShelf.json()).insights).toEqual([]);
   });
 
   test("embedding settings API exposes status and preserves unrelated config on provider switch", async () => {
@@ -454,6 +528,27 @@ describe("web API", () => {
         pending_count: 2,
       },
     });
+  });
+
+  test("renames a session through the Web API without changing its stable id", async () => {
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-session-rename-", { realpath: true });
+    addWebProject(project, home);
+    const { sessionId } = seedCandidateSession(project, 1, home);
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+
+    const renamed = await api(handler, "/api/session/rename", {
+      method: "POST",
+      body: { projectRoot: project, sessionId, goal: "中文会话名称" },
+    });
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toMatchObject({
+      previous_goal: expect.any(String),
+      session: { id: sessionId, goal: "中文会话名称" },
+    });
+
+    const listed = await api(handler, `/api/sessions?project=${encodeURIComponent(project)}`);
+    expect((await listed.json()).sessions[0]).toMatchObject({ id: sessionId, goal: "中文会话名称" });
   });
 
   test("saves candidate drafts and resets conflict diagnostics", async () => {

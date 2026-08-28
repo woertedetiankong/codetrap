@@ -1,5 +1,12 @@
 ## Codetrap
 
+Use `codetrap` when it is available on `PATH`. In this repository's source
+checkout, if the global command is intentionally absent, replace the command
+prefix with `bun run src/index.ts` from the repository root. Outside the source
+checkout, report the missing CLI and do not install or update it without user
+approval. For structured input on Windows, prefer piping JSON to
+`--input-json -`.
+
 Before non-trivial code edits, check local pitfall memory from the current project cwd:
 
 ```bash

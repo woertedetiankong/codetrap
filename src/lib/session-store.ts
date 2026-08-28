@@ -46,7 +46,12 @@ import {
   SESSIONS_DIR,
 } from "./session-codec";
 import { uniqueStrings } from "./string-list";
-import { mergeCandidateTraps, proposeCandidateTraps, type CandidateDraft } from "./session-capture";
+import {
+  candidateWithTrapEdits,
+  mergeCandidateTraps,
+  proposeCandidateTraps,
+  type CandidateDraft,
+} from "./session-capture";
 
 export interface StartSessionArgs {
   goal: string;
@@ -107,6 +112,11 @@ export interface RemoveSessionCandidatesResult {
   removed_count: number;
   removed_candidate_ids: string[];
   candidates: CandidateTrap[];
+}
+
+export interface UpdateSessionGoalResult {
+  session: SessionMetadata;
+  previous_goal: string;
 }
 
 export interface AddSessionCandidateArgs {
@@ -270,6 +280,24 @@ export class SessionStore {
     return this.requireSession(id);
   }
 
+  updateSessionGoal(id: string, goal: string, now = new Date()): UpdateSessionGoalResult {
+    const nextGoal = requireGoal(goal);
+    return this.withLock(() => {
+      const session = this.requireSession(id);
+      if (session.goal === nextGoal) return { session, previous_goal: session.goal };
+
+      const updated = {
+        ...session,
+        goal: nextGoal,
+        updated_at: now.toISOString(),
+      };
+      this.writeSession(updated);
+      this.rewriteNotesHeader(updated);
+      this.refreshSessionSummaries(updated.id);
+      return { session: updated, previous_goal: session.goal };
+    });
+  }
+
   showSession(id: string): { session: SessionMetadata; recap: string | null; notes_path: string; session_dir: string } {
     const session = this.requireSession(id);
     return {
@@ -338,7 +366,7 @@ export class SessionStore {
       // L21: the notes header is written once at start with "Status: active";
       // refresh it on close so implementation-notes.md doesn't claim the session
       // is still active forever.
-      this.rewriteNotesHeaderStatus(updated);
+      this.rewriteNotesHeader(updated);
       writeFileAtomic(this.recapPath(updated.id), formatRecap(updated, notes, candidates));
       this.writeIndexEntry(updated, notes, candidates, recapSummary(updated, notes, candidates));
       if (this.readActive()?.active_session_id === updated.id) this.clearActive();
@@ -422,6 +450,25 @@ export class SessionStore {
         document.candidates,
         candidateId,
         { sessionId, trap: args.trap }
+      ));
+    });
+  }
+
+  editCandidateTrap(
+    candidateId: string,
+    args: { sessionId?: string; edit: Record<string, unknown> }
+  ): { session: SessionMetadata; candidate: CandidateTrap } {
+    return this.withLock(() => {
+      const sessionId = this.resolveSessionId(args.sessionId);
+      const session = this.requireSession(sessionId);
+      const document = this.readCandidateDocument(sessionId);
+      const candidate = document.candidates.find((item) => item.id === candidateId);
+      if (!candidate) throw new Error(`Candidate ${candidateId} not found in session ${sessionId}.`);
+      const edited = candidateWithTrapEdits(candidate, args.edit);
+      return this.saveCandidateDocumentMutation(session, saveCandidateTrapInDocument(
+        document.candidates,
+        candidateId,
+        { sessionId, trap: edited.trap }
       ));
     });
   }
@@ -931,15 +978,17 @@ export class SessionStore {
     return join(this.sessionDir(id), NOTES_FILE);
   }
 
-  // L21: rewrite only the header's Status line (the region before "## Timeline"),
-  // leaving the appended note bodies untouched.
-  private rewriteNotesHeaderStatus(session: SessionMetadata): void {
+  // Rewrite only header fields, leaving every appended timeline note untouched.
+  private rewriteNotesHeader(session: SessionMetadata): void {
     const path = this.notesPath(session.id);
     const content = this.readOptionalText(path);
     if (content === null) return;
     const splitAt = content.indexOf("## Timeline");
     const headerEnd = splitAt === -1 ? content.length : splitAt;
-    const header = content.slice(0, headerEnd).replace(/^Status: .*$/m, `Status: ${session.status}`);
+    const header = content
+      .slice(0, headerEnd)
+      .replace(/^# Implementation Notes:.*$/m, `# Implementation Notes: ${session.goal}`)
+      .replace(/^Status: .*$/m, `Status: ${session.status}`);
     writeFileAtomic(path, header + content.slice(headerEnd));
   }
 
@@ -951,4 +1000,3 @@ export class SessionStore {
     return join(this.sessionDir(id), CANDIDATES_FILE);
   }
 }
-

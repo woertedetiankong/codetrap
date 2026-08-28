@@ -74,6 +74,15 @@ export type SessionCandidateRequest = {
   sessionId?: string;
 };
 
+export type SessionRenameRequest = {
+  sessionId: string;
+  goal: string;
+};
+
+export type SessionEditCandidateRequest = SessionCandidateRequest & {
+  edit: Record<string, unknown>;
+};
+
 export type SessionAcceptRequest = SessionCandidateRequest & AuthorizationInput & {
   edit?: Record<string, unknown>;
   supersedesId?: number;
@@ -276,6 +285,22 @@ export function sessionCandidateRequestFromArgs(positionals: string[], args: Raw
   return {
     candidateId: requiredPositional(positionals, 0, "candidate-id"),
     sessionId: stringOption(args, "session"),
+  };
+}
+
+export function sessionRenameRequestFromArgs(positionals: string[], args: RawArgs): SessionRenameRequest {
+  const sessionId = requiredPositional(positionals, 0, "session-id");
+  const goal = stringOption(args, "goal") ?? positionals.slice(1).join(" ").trim();
+  if (!goal) throw new Error("Session goal is required. Pass it after the session id or with --goal.");
+  return { sessionId, goal };
+}
+
+export function sessionEditCandidateRequestFromArgs(positionals: string[], args: RawArgs): SessionEditCandidateRequest {
+  const edit = jsonObjectOption(args, "edit-json");
+  if (!edit) throw new Error("--edit-json is required.");
+  return {
+    ...sessionCandidateRequestFromArgs(positionals, args),
+    edit,
   };
 }
 

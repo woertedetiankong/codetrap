@@ -5,6 +5,11 @@ description: Check the codetrap pitfall database before code changes and apply r
 
 Before generating any non-trivial code, pause and check the codetrap database for relevant pitfalls. This is a "pre-flight check" that prevents you from repeating known mistakes.
 
+Use `codetrap` when it is available on `PATH`. In a Codetrap source checkout
+where the global command is intentionally absent, run the same arguments with
+`bun run src/index.ts` from the repository root. Outside that checkout, report
+the missing CLI; do not install or update it without user approval.
+
 ## When to trigger
 
 Run this check when:

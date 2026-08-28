@@ -263,6 +263,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
 
     .bar {
       min-height: 56px;
+      flex: 0 0 auto;
       padding: 12px 14px;
       border-bottom: 1px solid var(--line-soft);
       display: flex;
@@ -368,11 +369,10 @@ export const WEB_INDEX_HTML = `<!doctype html>
     }
 
     .rail-actions {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
       align-items: center;
-      justify-content: flex-end;
       gap: 8px;
-      flex-wrap: wrap;
       flex: 0 0 auto;
       min-width: 0;
       width: 100%;
@@ -381,11 +381,25 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .main-nav {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      width: min(100%, 240px);
+      grid-column: 1 / -1;
+      width: 100%;
     }
 
     .main-nav button {
       width: 100%;
+    }
+
+    .locale-switcher {
+      grid-column: 2;
+      justify-self: end;
+    }
+
+    .rail-actions > #refresh {
+      grid-column: 3;
+    }
+
+    .rail.wide-header .main-nav {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
     .compact-workspace-toggle { display: none; }
@@ -397,7 +411,9 @@ export const WEB_INDEX_HTML = `<!doctype html>
       gap: 8px;
     }
 
-    .session-delete-action {
+    .session-heading-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .session-action {
       min-height: 28px;
       padding: 4px 8px;
       color: var(--muted);
@@ -405,6 +421,8 @@ export const WEB_INDEX_HTML = `<!doctype html>
       box-shadow: none;
       font-size: 12px;
     }
+
+    .session-action:hover { color: var(--text); border-color: var(--line); }
 
     .session-delete-action:hover {
       color: var(--danger);
@@ -420,11 +438,12 @@ export const WEB_INDEX_HTML = `<!doctype html>
     }
 
     .subtle { color: var(--muted); font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
-    .scroll { overflow: auto; min-height: 0; }
+    .scroll { flex: 1 1 auto; overflow: auto; min-height: 0; }
     .stack { display: grid; gap: 10px; padding: 12px; }
 
     .project-form {
       display: grid;
+      flex: 0 0 auto;
       grid-template-columns: 1fr auto;
       gap: 8px;
       padding: 12px;
@@ -448,6 +467,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .row.active { border-color: color-mix(in srgb, var(--accent), var(--line) 28%); background: #ffffff; box-shadow: inset 3px 0 0 var(--accent), 0 8px 28px var(--shadow); }
     .row.accepted { border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .row.accepted-missing { border-color: color-mix(in srgb, var(--warn), var(--line) 40%); }
+    .row.destination-committed { border-color: color-mix(in srgb, var(--ok), var(--line) 48%); }
     .row.rejected { border-color: color-mix(in srgb, var(--danger), var(--line) 55%); opacity: 0.72; }
     .row.approved { border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .row-main {
@@ -488,11 +508,31 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .pill.proposed { color: var(--accent-strong); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent), var(--line) 55%); }
     .pill.accepted { color: var(--ok); border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .pill.accepted-missing { color: var(--warn); border-color: color-mix(in srgb, var(--warn), var(--line) 55%); }
+    .pill.destination-committed { color: var(--ok); background: color-mix(in srgb, var(--ok), transparent 94%); border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .pill.rejected { color: var(--danger); border-color: color-mix(in srgb, var(--danger), var(--line) 55%); }
     .receipt { position: fixed; right: 16px; bottom: 64px; max-width: 380px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 6px 24px rgba(0,0,0,0.18); opacity: 0; pointer-events: none; transition: opacity 160ms; z-index: 40; }
-    .receipt.show { opacity: 1; }
+    .receipt.show { opacity: 1; pointer-events: auto; }
     .receipt-line { font-size: 12px; line-height: 1.5; }
     .receipt-line.subtle { color: var(--muted); }
+    .receipt-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .receipt-actions button { min-height: 30px; font-size: 12px; }
+
+    .decision-dialog {
+      width: min(520px, calc(100vw - 32px));
+      padding: 0;
+      color: var(--text);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 20px 64px rgba(0, 0, 0, 0.28);
+    }
+    .decision-dialog::backdrop { background: rgba(12, 18, 17, 0.52); backdrop-filter: blur(2px); }
+    .decision-dialog form { display: grid; gap: 14px; padding: 20px; }
+    .dialog-heading { display: grid; gap: 6px; }
+    .dialog-heading h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 22px; font-weight: 600; }
+    .dialog-copy { margin: 0; color: var(--muted); line-height: 1.55; }
+    .dialog-candidate { padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--accent-soft); overflow-wrap: anywhere; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
     .pill.approved { color: var(--ok); border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn), var(--line) 55%); }
     .pill.scope { color: var(--violet); background: var(--violet-soft); border-color: color-mix(in srgb, var(--violet), var(--line) 55%); }
@@ -643,9 +683,92 @@ export const WEB_INDEX_HTML = `<!doctype html>
       gap: 8px;
     }
 
+    .learning-prompt-card {
+      width: min(680px, 100%);
+      margin-top: 8px;
+      padding: 12px 14px;
+      display: grid;
+      gap: 7px;
+      text-align: left;
+      border: 1px solid color-mix(in srgb, var(--accent), var(--line) 68%);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      background: var(--accent-soft);
+    }
+
+    .learning-prompt-card span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .learning-prompt-card code {
+      color: var(--text);
+      font-family: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
+      font-size: 13px;
+      line-height: 1.65;
+      white-space: normal;
+    }
+
     .learning-title { font-size: 18px; }
     .learning-summary { font-size: 14px; line-height: 1.55; }
-    .learning-body { white-space: pre-wrap; line-height: 1.65; overflow-wrap: anywhere; }
+    .learning-body {
+      display: grid;
+      gap: 12px;
+      line-height: 1.65;
+      overflow-wrap: anywhere;
+      font-size: 14px;
+    }
+
+    .learning-prose {
+      white-space: pre-wrap;
+      font-family: Georgia, "Noto Serif SC", "Songti SC", "Microsoft YaHei UI", serif;
+    }
+
+    .learning-code {
+      padding: 14px 16px;
+      font-size: 13px;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+
+    .source-list {
+      display: grid;
+      gap: 7px;
+      align-items: start;
+    }
+
+    .source-link,
+    .source-ref {
+      width: fit-content;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      color: var(--accent-strong);
+      font-size: 13px;
+    }
+
+    .source-link:hover { text-decoration-thickness: 2px; }
+
+    .insight-review-header {
+      border-top: 0;
+      border-left: 3px solid var(--accent);
+      background: linear-gradient(90deg, var(--accent-soft), transparent 72%);
+    }
+
+    .insight-rationale {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .insight-form-grid { grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr); }
+
+    .learning-editor {
+      min-height: 360px;
+      font-family: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
+      line-height: 1.6;
+    }
 
     .insight-grid {
       display: grid;
@@ -839,6 +962,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
         flex-wrap: wrap;
       }
       .rail-actions {
+        display: flex;
         width: auto;
         flex: 1 1 520px;
         flex-wrap: nowrap;
@@ -873,13 +997,18 @@ export const WEB_INDEX_HTML = `<!doctype html>
         grid-template-columns: repeat(4, minmax(0, 1fr));
         width: 100%;
       }
+      .locale-switcher,
+      .rail-actions > #refresh {
+        grid-column: auto;
+        justify-self: stretch;
+      }
     }
 
     @media (max-width: 520px) {
       .bar { align-items: flex-start; flex-direction: column; }
       .rail > .bar { align-items: stretch; }
       .rail-actions { justify-content: stretch; }
-      .filter-grid, .summary-grid, .detail-kv, .provider-fields { grid-template-columns: 1fr; }
+      .filter-grid, .summary-grid, .detail-kv, .provider-fields, .form-grid, .insight-form-grid { grid-template-columns: 1fr; }
       .project-form { grid-template-columns: 1fr auto; }
     }
   </style>
@@ -907,7 +1036,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
             <button type="button" data-main-view="learning">Learning</button>
             <button type="button" data-main-view="embeddings">Embeddings</button>
           </div>
-          <div class="segmented" aria-label="Language">
+          <div class="segmented locale-switcher" aria-label="Language">
             <button type="button" data-locale="en">EN</button>
             <button type="button" data-locale="zh">中文</button>
           </div>
@@ -924,7 +1053,10 @@ export const WEB_INDEX_HTML = `<!doctype html>
         <div class="section">
           <div class="section-heading">
             <div class="title" id="sessions-title">sessions</div>
-            <button type="button" class="ghost session-delete-action hidden" id="delete-session">Delete selected</button>
+            <div class="session-heading-actions">
+              <button type="button" class="ghost session-action hidden" id="rename-session">Rename selected</button>
+              <button type="button" class="ghost session-action session-delete-action hidden" id="delete-session">Delete selected</button>
+            </div>
           </div>
           <div id="sessions" class="stack" style="padding:0"></div>
         </div>
@@ -968,6 +1100,24 @@ export const WEB_INDEX_HTML = `<!doctype html>
   </main>
   <div class="status" id="status"></div>
   <div class="receipt" id="receipt"></div>
+  <dialog class="decision-dialog" id="reject-dialog" aria-labelledby="reject-dialog-title">
+    <form id="reject-form">
+      <div class="dialog-heading">
+        <h2 id="reject-dialog-title">Reject this candidate?</h2>
+        <div class="dialog-candidate" id="reject-dialog-candidate"></div>
+      </div>
+      <p class="dialog-copy" id="reject-dialog-scope"></p>
+      <p class="dialog-copy" id="reject-dialog-undo"></p>
+      <div class="field">
+        <label for="reject-reason" id="reject-reason-label">Reason (optional)</label>
+        <textarea id="reject-reason" rows="3"></textarea>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="ghost" id="reject-cancel">Cancel</button>
+        <button type="submit" class="danger" id="reject-confirm">Reject and suppress</button>
+      </div>
+    </form>
+  </dialog>
 
   <script>${webClientScript()}</script>
 </body>

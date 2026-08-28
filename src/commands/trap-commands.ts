@@ -17,7 +17,7 @@ import {
 import { mutationJsonPayload } from "../lib/trap-mutation-result";
 import { errorResult, jsonResult, textResult, type CommandResult } from "./command-result";
 import { buildContextPack, formatContextPackMarkdown } from "../lib/context-pack";
-import { errorFrom, errorMessage, failureMessage, parseArgs, wantsJson } from "./command-args";
+import { errorFrom, errorMessage, failureMessage, jsonObjectInput, parseArgs, wantsJson } from "./command-args";
 
 export async function cmdAdd(args: string[], operations: TrapOperations): Promise<CommandResult> {
   const { opts, positionals } = parseArgs(args);
@@ -27,7 +27,7 @@ export async function cmdAdd(args: string[], operations: TrapOperations): Promis
       return failureMessage("--input-json requires a JSON string argument", args);
     }
     try {
-      const result = operations.addTrap(JSON.parse(input));
+      const result = operations.addTrap(jsonObjectInput(opts));
       await operations.embedTrapBestEffort(result.id, result.scope);
       return wantsJson(opts)
         ? jsonResult(result)
@@ -217,7 +217,7 @@ export async function cmdEdit(args: string[], operations: TrapOperations): Promi
   }
 
   try {
-    const result = operations.updateTrap(id, JSON.parse(input), opts.scope);
+    const result = operations.updateTrap(id, jsonObjectInput(opts), opts.scope);
     if (!result.success) {
       return failureMessage(result.error ?? `Trap #${id} not found or no fields changed.`, args);
     }
@@ -261,7 +261,7 @@ export function cmdAddTrapEvidence(args: string[], operations: TrapOperations): 
 
   try {
     const inputJson = opts["input-json"];
-    const input = inputJson && inputJson !== "true" ? JSON.parse(inputJson) : evidenceRequestFromArgs(opts);
+    const input = inputJson !== undefined ? jsonObjectInput(opts) : evidenceRequestFromArgs(opts);
     const result = operations.addTrapEvidence(id, input, opts.scope);
     if (wantsJson(opts)) {
       return mutationJsonResult({ id, ...result }, `Trap #${id} not found.`);

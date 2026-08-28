@@ -50,18 +50,25 @@ export function scoreCandidateTrap(candidate: CandidateDraft): { score: number; 
 }
 
 function hasMeaningfulText(value: string | undefined): boolean {
-  return typeof value === "string" && value.replace(/\s+/g, " ").trim().length >= 24;
+  if (typeof value !== "string") return false;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const cjkCharacters = normalized.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu)?.length ?? 0;
+  // CJK text carries substantially more information per character than
+  // whitespace-delimited Latin prose. A single 24-character threshold made a
+  // faithful Chinese translation score lower than the English source.
+  return cjkCharacters >= 10 || normalized.length >= 24;
 }
 
 function hasTriggerLanguage(value: string): boolean {
   const normalized = value.toLowerCase();
-  return /\bwhen\b|\bwhile\b|\bduring\b|\bif\b/.test(normalized) || /当|如果|处理|实现|修改/.test(value);
+  return /\bwhen\b|\bwhile\b|\bduring\b|\bif\b|\bwhenever\b/.test(normalized)
+    || /当|如果|(?:在|于).{0,24}时|期间|场景|情况下|遇到|处理|实现|修改|运行|使用/.test(value);
 }
 
 function hasActionLanguage(value: string): boolean {
   const normalized = value.toLowerCase();
-  return /\buse\b|\bavoid\b|\bprefer\b|\bkeep\b|\bcheck\b|\bcall\b|\bwrite\b|\badd\b|\bverify\b/.test(normalized)
-    || /使用|避免|优先|检查|验证|改用|保留|调用/.test(value);
+  return /\buse\b|\bavoid\b|\bprefer\b|\bkeep\b|\bcheck\b|\bcall\b|\bwrite\b|\badd\b|\bverify\b|\bensure\b|\bmust\b|\bshould\b|\bupdate\b/.test(normalized)
+    || /使用|避免|优先|检查|验证|改用|改为|保留|保持|调用|确保|必须|应该|需要|增加|更新|同步|先.+再/.test(value);
 }
 
 function hasFutureReuseSignal(candidate: CandidateDraft): boolean {
@@ -95,6 +102,9 @@ function isTooBroad(candidate: CandidateDraft): boolean {
     "always test",
     "先看文档",
     "小心",
+    "注意",
+    "保持谨慎",
+    "多测试",
     "写好代码",
   ];
   return broadPhrases.some((phrase) => combined.includes(phrase));

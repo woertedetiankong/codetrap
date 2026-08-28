@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   sessionCliConflictPayload,
+  sessionCandidateReview,
   sessionConflictPayload,
   sessionConflictText,
 } from "../lib/session-review";
@@ -36,5 +37,22 @@ describe("session review contract", () => {
       "codetrap session accept cand-001 --session session-1 --supersedes <trap-id>",
       "codetrap session reject cand-001 --session session-1 --reason <reason>",
     ]);
+  });
+
+  test("describes committed insights as destination writes rather than missing traps", () => {
+    const review = sessionCandidateReview({
+      id: "cand-001",
+      status: "accepted",
+      candidate_kind: "insight",
+      delivery_state: "committed",
+      destination_commit_id: "p2-test",
+    } as any, {} as any);
+
+    expect(review).toEqual({
+      status: "destination_committed",
+      label: "committed -> insight",
+      destination: "insight",
+      commit_id: "p2-test",
+    });
   });
 });

@@ -102,6 +102,35 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
         });
       }
 
+      case "edit_candidate": {
+        const sessions = projectSessionOperations(scopedStore, operations, "edit_candidate");
+        const edit = Object.fromEntries(Object.entries(args).filter(([key]) => ![
+          "candidate_id",
+          "session_id",
+          "cwd",
+        ].includes(key)));
+        const result = sessions.saveCandidate({
+          candidateId: args.candidate_id,
+          sessionId: args.session_id,
+          edit,
+        });
+        return toMcpTextJson({
+          success: true,
+          session_id: result.session.id,
+          candidate_id: result.candidate.id,
+          revision: result.candidate.revision,
+          content_hash: result.candidate.content_hash,
+          quality_score: result.candidate.quality_score,
+          warnings: result.candidate.quality.warnings,
+        });
+      }
+
+      case "update_session_goal": {
+        const sessions = projectSessionOperations(scopedStore, operations, "update_session_goal");
+        const result = sessions.updateSessionGoal(args.session_id, args.goal);
+        return toMcpTextJson({ success: true, ...result });
+      }
+
       case "get_trap": {
         const result = operations.getTrapDetails(args.id, args.scope);
         if (!result) {
@@ -205,6 +234,18 @@ function projectScopeWarning(scopedStore: TrapStore, scope?: unknown): string | 
   if (scope === "global") return undefined;
   if (scopedStore.hasProject()) return undefined;
   return "No project scope resolved for this call: the server's working directory is not inside a codetrap project, so only global traps were considered. Pass `cwd` (the absolute path of the active project) to include project-scoped traps.";
+}
+
+function projectSessionOperations(
+  scopedStore: TrapStore,
+  operations: TrapOperations,
+  toolName: string
+): SessionOperations {
+  const projectRoot = scopedStore.getProjectRoot();
+  if (!projectRoot) {
+    throw new Error(`${toolName} requires a project. Pass cwd for a directory initialized with 'codetrap init'.`);
+  }
+  return new SessionOperations(new SessionStore(projectRoot), operations);
 }
 
 function effectiveCwd(args: ToolArgs): string {

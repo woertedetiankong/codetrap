@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { errorResult, jsonResult, type CommandResult } from "./command-result";
 
 export type ParsedArgs = {
@@ -62,6 +63,33 @@ export function wantsJsonRaw(args: string[]): boolean {
   return args.some((arg) =>
     arg === "--json" || arg === "--output-json" || arg.startsWith("--json=") || arg.startsWith("--output-json=")
   );
+}
+
+/**
+ * Read a JSON object from a CLI option. Passing `--input-json -` reads stdin,
+ * which avoids the quote-rewriting performed by Windows PowerShell when a
+ * multiline JSON value is forwarded to a native executable.
+ */
+export function jsonObjectInput(
+  opts: Record<string, string>,
+  key = "input-json"
+): Record<string, unknown> {
+  const option = opts[key];
+  if (!option || option === "true") throw new Error(`--${key} requires a JSON object.`);
+  if (option === "-" && process.stdin.isTTY === true) {
+    throw new Error(`--${key} - requires piped JSON input.`);
+  }
+  const input = option === "-" ? readFileSync(0, "utf-8") : option;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(input);
+  } catch (error) {
+    throw new Error(`Invalid --${key}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`--${key} must be a JSON object.`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 export function errorFrom(error: unknown, rawArgs?: string[]): CommandResult {

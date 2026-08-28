@@ -8,6 +8,7 @@ import { SessionOperations } from "../lib/session-operations";
 import { parseExecutor, type Executor } from "../domain/learning";
 import { SessionStore } from "../lib/session-store";
 import { Phase2Store } from "../lib/phase2-store";
+import { Phase2Operations } from "../lib/phase2-operations";
 import { DEFAULT_RANKING_CONFIG } from "../lib/search-policy";
 import { toListJson, toTrapDetailsJson } from "../lib/output-json";
 import { isRecord } from "../lib/value-types";
@@ -30,6 +31,7 @@ export interface WebServerOptions {
   port?: number;
   token?: string;
   home?: string;
+  open?: boolean;
 }
 
 type WebContext = {
@@ -57,6 +59,13 @@ export async function startWebServerFromArgs(args: string[], cwd = process.cwd()
   });
   const url = `http://${host}:${server.port}/?token=${encodeURIComponent(token)}`;
   console.log(`codetrap web listening on ${url}`);
+  if (options.open) {
+    try {
+      launchWebBrowser(url);
+    } catch (error) {
+      console.warn(`Could not open the browser automatically: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   setInterval(() => undefined, 60_000);
   await new Promise(() => {});
 }
@@ -96,8 +105,26 @@ export function webServerOptionsFromArgs(args: string[], cwd = process.cwd()): W
     if (key === "project") options.project = value;
     if (key === "host") options.host = value;
     if (key === "port") options.port = parsePort(value);
+    if (key === "open") options.open = value !== "false";
   }
   return options;
+}
+
+export function webBrowserCommand(url: string, platform = process.platform): string[] {
+  if (platform === "win32") return ["cmd.exe", "/d", "/s", "/c", "start", "", url];
+  if (platform === "darwin") return ["open", url];
+  return ["xdg-open", url];
+}
+
+export function launchWebBrowser(url: string, platform = process.platform): void {
+  const child = Bun.spawn({
+    cmd: webBrowserCommand(url, platform),
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+    windowsHide: true,
+  });
+  void child.exited.catch(() => undefined);
 }
 
 async function routeApi(request: Request, url: URL, context: WebContext): Promise<Response> {
@@ -252,12 +279,25 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
   if (request.method === "POST" && url.pathname === "/api/candidate/save") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    const result = sessionOperations(projectRoot, context.home).sessions.saveCandidate({
-      candidateId: stringBodyField(body, "candidateId"),
-      sessionId: optionalStringBodyField(body, "sessionId"),
-      edit: recordBodyField(body, "trap"),
-    });
+    const ops = sessionOperations(projectRoot, context.home).sessions;
+    const result = saveCandidateDraftFromBody(
+      ops,
+      stringBodyField(body, "candidateId"),
+      optionalStringBodyField(body, "sessionId"),
+      body
+    );
+    if (!result) throw new WebHttpError(400, "trap or destinationPayload is required.");
     return jsonResponse({ success: true, session: result.session, candidate: result.candidate });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/session/rename") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const result = sessionOperations(projectRoot, context.home).sessions.updateSessionGoal(
+      stringBodyField(body, "sessionId"),
+      stringBodyField(body, "goal")
+    );
+    return jsonResponse({ success: true, ...result });
   }
 
   if (request.method === "POST" && url.pathname === "/api/candidate/accept") {
@@ -300,8 +340,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     const sessionId = optionalStringBodyField(body, "sessionId");
     // Persist the draft first so the authorization binds to the content the
     // user is looking at, not a stored revision they have since edited.
-    const edit = optionalRecordBodyField(body, "trap");
-    if (edit) ops.saveCandidate({ candidateId, sessionId, edit });
+    saveCandidateDraftFromBody(ops, candidateId, sessionId, body);
     const result = ops.approveCandidate({
       candidateId,
       sessionId,
@@ -317,12 +356,54 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     });
   }
 
+  if (request.method === "POST" && url.pathname === "/api/candidate/apply-insight") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const operations = sessionOperations(projectRoot, context.home);
+    const candidateId = stringBodyField(body, "candidateId");
+    const requestedSessionId = optionalStringBodyField(body, "sessionId");
+    saveCandidateDraftFromBody(operations.sessions, candidateId, requestedSessionId, body);
+    const current = operations.sessions.getCandidate(candidateId, requestedSessionId);
+    if (current.candidate.candidate_kind !== "insight") {
+      throw new WebHttpError(400, `Candidate ${candidateId} is not a learning insight.`);
+    }
+    const executor = executorBodyField(body);
+    const approval = operations.sessions.approveCandidate({
+      candidateId,
+      sessionId: current.session.id,
+      executor,
+      authorizedScope: optionalStringBodyField(body, "authorizedScope"),
+    });
+    const applied = new Phase2Operations(projectRoot, operations.traps).apply(
+      current.session.id,
+      candidateId,
+      executor
+    );
+    return jsonResponse({
+      ...applied,
+      approval_receipt: approval.receipt,
+    });
+  }
+
   if (request.method === "POST" && url.pathname === "/api/candidate/rollback") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    const result = sessionOperations(projectRoot, context.home).sessions.rollbackCandidate({
-      candidateId: stringBodyField(body, "candidateId"),
-      sessionId: optionalStringBodyField(body, "sessionId"),
+    const operations = sessionOperations(projectRoot, context.home);
+    const candidateId = stringBodyField(body, "candidateId");
+    const sessionId = optionalStringBodyField(body, "sessionId");
+    const current = operations.sessions.getCandidate(candidateId, sessionId);
+    if ((current.candidate.candidate_kind ?? "pitfall_trap") !== "pitfall_trap") {
+      const commitId = current.candidate.destination_commit_id;
+      if (!commitId) throw new WebHttpError(409, `Candidate ${candidateId} has no destination commit to roll back.`);
+      const result = new Phase2Operations(projectRoot, operations.traps).revert(
+        commitId,
+        executorBodyField(body)
+      );
+      return jsonResponse(result);
+    }
+    const result = operations.sessions.rollbackCandidate({
+      candidateId,
+      sessionId,
       executor: executorBodyField(body),
       authorizedScope: optionalStringBodyField(body, "authorizedScope"),
     });
@@ -353,6 +434,17 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
       suppression: result.suppression,
       receipt: result.receipt,
     });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/suppression/undo") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const result = sessionOperations(projectRoot, context.home).sessions.unsuppress({
+      fingerprint: stringBodyField(body, "fingerprint"),
+      executor: executorBodyField(body),
+      authorizedScope: optionalStringBodyField(body, "authorizedScope"),
+    });
+    return jsonResponse(result);
   }
 
   if (request.method === "POST" && url.pathname === "/api/session/delete") {
@@ -400,6 +492,25 @@ function sessionOperations(projectRoot: string, home?: string): { traps: TrapOpe
     traps,
     sessions: new SessionOperations(new SessionStore(projectRoot), traps),
   };
+}
+
+function saveCandidateDraftFromBody(
+  operations: SessionOperations,
+  candidateId: string,
+  sessionId: string | undefined,
+  body: Record<string, unknown>
+): { session: ReturnType<SessionOperations["getCandidate"]>["session"]; candidate: ReturnType<SessionOperations["getCandidate"]>["candidate"] } | null {
+  const destinationPayload = optionalRecordBodyField(body, "destinationPayload");
+  if (destinationPayload) {
+    const current = operations.getCandidate(candidateId, sessionId);
+    if ((current.candidate.candidate_kind ?? "pitfall_trap") === "pitfall_trap") {
+      throw new WebHttpError(400, `Candidate ${candidateId} is a pitfall trap and has no destination payload.`);
+    }
+    const candidate = operations.editDestinationCandidate(current.session.id, candidateId, destinationPayload);
+    return { session: current.session, candidate };
+  }
+  const trap = optionalRecordBodyField(body, "trap");
+  return trap ? operations.saveCandidate({ candidateId, sessionId, edit: trap }) : null;
 }
 
 function trapOperations(projectRoot: string, home?: string): TrapOperations {

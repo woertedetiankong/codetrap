@@ -219,6 +219,10 @@ export class SessionOperations {
     return this.sessions.startSession(args);
   }
 
+  updateSessionGoal(sessionId: string, goal: string) {
+    return this.sessions.updateSessionGoal(sessionId, goal);
+  }
+
   addNote(args: AddSessionNoteArgs) {
     return this.sessions.addNote(args);
   }
@@ -405,11 +409,9 @@ export class SessionOperations {
   }
 
   saveCandidate(request: SessionSaveCandidateRequest) {
-    const { session, candidate } = this.sessions.getCandidate(request.candidateId, request.sessionId);
-    const editedCandidate = candidateWithTrapEdits(candidate, request.edit);
-    return this.sessions.saveCandidateTrap(editedCandidate.id, {
-      sessionId: session.id,
-      trap: editedCandidate.trap,
+    return this.sessions.editCandidateTrap(request.candidateId, {
+      sessionId: request.sessionId,
+      edit: request.edit,
     });
   }
 

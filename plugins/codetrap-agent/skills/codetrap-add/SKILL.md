@@ -5,6 +5,11 @@ description: Record a confirmed coding pitfall as a structured codetrap entry af
 
 You are helping the user record a "coding pitfall" (a mistake pattern that AI coding assistants tend to make, and the correct approach). These pitfalls are stored in a local database and will be used to warn AI in future sessions.
 
+Use `codetrap` when it is available on `PATH`. In a Codetrap source checkout
+where the global command is intentionally absent, run the same arguments with
+`bun run src/index.ts` from the repository root. Outside that checkout, report
+the missing CLI; do not install or update it without user approval.
+
 This skill writes confirmed memory. Do not use it for autonomous post-flight agent discoveries, repeated failures, or review feedback unless the user explicitly asks to save the trap as confirmed memory. For agent-drafted lessons, prefer:
 
 ```bash
@@ -48,10 +53,10 @@ Pick the best-fitting category:
 
 ## Step 4: Structure and confirm
 
-Convert the user's description into this JSON structure, show the draft to the user, and ask for explicit confirmation before writing it as confirmed memory:
+Convert the user's description into this JSON structure, show the draft to the user, and ask for explicit confirmation before writing it as confirmed memory. After confirmation, feed the object to `codetrap add --input-json - --output-json` through standard input:
 
-```bash
-codetrap add --input-json '{
+```json
+{
   "title": "<one-line summary>",
   "category": "<category>",
   "scope": "<project|global>",
@@ -65,7 +70,7 @@ codetrap add --input-json '{
   "owner": "<optional team>",
   "before_code": "<wrong code snippet (optional)>",
   "after_code": "<correct code snippet (optional)>"
-}' --output-json
+}
 ```
 
 Only after the user confirms the draft should you call the CLI. If the CLI is not available and the user explicitly confirmed the save, use the MCP tool `add_trap` instead.

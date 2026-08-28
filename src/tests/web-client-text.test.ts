@@ -25,6 +25,17 @@ describe("web client text", () => {
     expect(WEB_TEXT.zh["nav.learning"]).toBe("学习");
     expect(WEB_TEXT.zh["empty.noLearningInsights"]).toContain("陷阱不会自动复制到这里");
     expect(WEB_TEXT.zh["action.markLearned"]).toBe("标记已学习");
+    expect(WEB_TEXT.zh["action.approveAndAddLearning"]).toBe("批准并加入学习架");
+    expect(WEB_TEXT.zh["error.sessionExpired"]).toContain("新打开");
+    expect(WEB_TEXT.zh["pill.learned"]).toBe("已学习");
+    expect(WEB_TEXT.zh["prompt.learningGeneration"]).toContain("用ASCII流程图结合通俗易懂的例子讲解");
+    expect(WEB_TEXT.en["prompt.learningGeneration"]).toContain("ASCII flow diagram");
+    expect(WEB_INDEX_HTML).toContain("learning-prompt-card");
+    expect(WEB_INDEX_HTML).toContain("prompt.learningGeneration");
+    expect(WEB_TEXT.zh["dialog.rejectScope"]).toContain("当前项目");
+    expect(WEB_TEXT.zh["action.undoSuppression"]).toBe("允许今后再次提出");
+    expect(WEB_INDEX_HTML).toContain('id="reject-dialog"');
+    expect(WEB_INDEX_HTML).toContain('id="rename-session"');
   });
 
   test("embeds desktop pane splitters in the web shell", () => {

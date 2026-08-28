@@ -107,7 +107,7 @@ codetrap/
 │   ├── commands/command-result.ts  CLI command results + rendering
 │   ├── mcp/
 │   │   ├── server.ts         MCP stdio transport + handlers
-│   │   ├── tools.ts          12 MCP tool definitions
+│   │   ├── tools.ts          MCP tool definitions
 │   │   └── resources.ts      4 MCP resource URIs
 │   ├── domain/trap.ts        Trap types, builders, schemas
 │   ├── domain/session.ts     Session, note, and candidate trap types
@@ -205,6 +205,11 @@ codetrap/
 | `setup claude` | Install Claude Code skills into `~/.claude/skills` and CLAUDE.md guidance; MCP is opt-in with `--mcp` |
 | `repair-scope` | Move legacy mis-scoped project traps into the current project (dry-run by default, `--apply` to mutate, `--json`) |
 | `migrate-project` | Move project traps between initialized projects (`--from-project-path`, `--to-project-path`, dry-run by default, `--apply`, `--json`) |
+
+Commands that accept `--input-json` also accept `--input-json -` and read one
+JSON object from standard input. Prefer this form for multiline payloads on
+Windows PowerShell, where native argument forwarding can otherwise rewrite
+quotes.
 | `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
 | `embeddings` | Manage embedding profiles (`status`, `list`, `use ollama|jina`, `reindex`) |
 | `learn` | Review your own Codex or Claude Code history for reusable lessons (`sources`, `review`, `evidence-pack`, `reviews`, `stage`, `delete`); read-only against history, writes only a review directory |
@@ -234,6 +239,8 @@ EOF
 codetrap session close --propose-traps
 codetrap session candidates
 codetrap session candidate cand-001
+codetrap session edit cand-001 --edit-json '{"title":"中文标题","fix":"必须先验证再保存。"}'
+codetrap session rename <session-id> "中文会话名称"
 
 # Only after explicit human approval. The user approves; an agent may then
 # execute the commit against that approval:
@@ -242,6 +249,8 @@ codetrap session accept  cand-001 --executor agent
 ```
 
 `session capture` is the low-friction post-flight path: an agent drafts a structured Markdown or JSON candidate, codetrap scores it and puts it in the session inbox, and nothing is written to `traps.db` until the candidate is accepted. If no session is active, capture creates a post-flight session, writes the candidate and recap, then closes it.
+
+`session edit` is the supported automation path for translating or improving a candidate. It applies a partial `--edit-json` object under the session lock, recomputes quality, refreshes the content hash, bumps the revision when the lesson changes materially, and invalidates stale approval. `session rename` changes the human-readable goal while preserving the stable session ID and synchronizing `session.json`, `index.json`, `recap.md`, and the implementation-notes header.
 
 Pending candidates are surfaced through `codetrap session status`, `codetrap session list`, `codetrap doctor`, and the local `codetrap web` review console so candidate lessons do not disappear into session files.
 
@@ -442,10 +451,19 @@ codetrap phase2 migrate-insights          # dry run for v2 insight hints
 codetrap phase2 migrate-insights --apply
 ```
 
-The Web console exposes the same project-local shelf under **Learning**. Merely
-opening a learning insight is read-only; **Mark learned** is the explicit action
-that increments its consultation count. If the shelf is empty, the page says so
-and explains that confirmed traps are never copied into it automatically. The
+The Web console exposes the same project-local shelf under **Learning**. Learning
+candidates use a purpose-specific editor instead of trap-only severity and
+mistake/fix fields. **Approve and add to Learning** records the approval and
+shelves the current revision in one action; **Approve for Agent** keeps the
+two-step workflow available. Fenced code and ASCII diagrams render as code
+blocks, source links remain visible, and dates are localized. Merely opening an
+insight is read-only; **Mark learned** is an idempotent state change, so retries
+and repeated clicks do not inflate a counter. If the shelf is empty, the page
+shows a ready-to-send Agent request that asks for an ASCII flow diagram and a
+plain-language example. The bundled external-capture and learning-review skills
+apply that teaching format only to user-study insights; concise runtime traps
+stay action-oriented. Confirmed traps are never copied into the shelf
+automatically, and saving or marking an insight does not train the model. The
 Library keeps only actionable health filters (current, past the runtime's
 validation window, and never marked useful) rather than duplicating traps in a
 separate analytics dashboard.
@@ -627,14 +645,19 @@ The same skill bundle installs for **both** Codex and Claude Code from `plugins/
 - `codetrap-search` — search existing lessons.
 - `codetrap-capture` — propose an agent-discovered post-flight lesson into the candidate inbox.
 - `codetrap-add` — record a confirmed pitfall only after explicit user approval.
-- `codetrap-capture-external` — extract durable trap candidates from an external article, issue, paper, or reference; the agent reads the source and codetrap stores only confirmed lessons.
+- `codetrap-capture-external` — extract concise Agent pitfalls, user-study insights, or both from an external article, post, repository, issue, paper, or reference; insight bodies use an ASCII flow diagram and a plain-language example, and Codetrap stores only user-confirmed lessons.
 - `codetrap-learning-review` — look back over recent sessions and stage reusable lessons; runs only on explicit invocation.
 
 The plugin skill directory is the single source of truth for skill packaging in both clients. The repo does not keep a duplicate root `skills/` tree.
 
 Skills are a convenience layer. They do not replace MCP or `AGENTS.md` / `CLAUDE.md`; they make manual triggers like "run codetrap-check" easier.
 
-External lessons should keep codetrap local-first: let the agent read the URL or pasted source, ask which candidate traps to save, then attach the source as evidence instead of making the CLI crawl the web:
+External lessons should keep codetrap local-first: let the agent read the URL or
+pasted source, ask which candidates to save and whether each belongs in Agent
+memory or the user's Learning shelf, then attach the source as evidence instead
+of making the CLI crawl the web. For study material, the bundled skill uses the
+request `用ASCII流程图结合通俗易懂的例子讲解` and stages a reviewed Phase 2
+`insight`; it does not turn the CLI into a web crawler.
 
 ```bash
 codetrap add --input-json '{...}' --json
@@ -655,6 +678,8 @@ codetrap add_trap_evidence <id> \
 | `add_trap` | Record a new trap directly |
 | `mark_trap_useful` | Report that a recalled trap actually helped on this task — the usefulness signal, distinct from a view |
 | `capture_candidate` | Propose a pitfall for human review instead of writing it directly — writes a candidate to the session inbox for `session accept`/`reject` or the web console (preferred for the capture→review→accept workflow) |
+| `edit_candidate` | Translate or improve a proposed candidate through the revisioned session store without touching internal JSON |
+| `update_session_goal` | Update a session's human-readable goal while preserving its stable ID and derived documents |
 | `get_trap` | Drill down into full trap details and evidence |
 | `list_traps` | List traps with filters |
 | `update_trap` | Edit an existing trap |
@@ -769,7 +794,7 @@ codetrap embeddings reindex --scope global
 
 `codetrap embed` remains as a short alias for reindexing. codetrap stores embeddings by profile, so switching between Jina and Ollama does not overwrite existing vectors; it creates or refreshes the selected profile.
 
-You can also run `codetrap web` and open the `Embeddings` view to inspect the active provider/profile, see project and global fresh/stale/missing counts, switch between Ollama and Jina, and reindex project or global embeddings from the web console. The web console does not save Jina API keys; Jina still reads `JINA_API_KEY` from the environment.
+You can also run `codetrap web --open` to start the authenticated local console and open it in your default browser. The launch token is moved to session storage and removed from the visible URL immediately. After a server restart, an old tab explains that its credential expired and directs the user to the newest tab instead of showing a bare `Unauthorized` error. The console polls for candidate/session changes made by agents or other terminals, but pauses application of external updates while a candidate form has unsaved edits. Open the `Embeddings` view to inspect the active provider/profile, see project and global fresh/stale/missing counts, switch between Ollama and Jina, and reindex project or global embeddings. The web console does not save Jina API keys; Jina still reads `JINA_API_KEY` from the environment.
 
 5. Search with hybrid mode:
 

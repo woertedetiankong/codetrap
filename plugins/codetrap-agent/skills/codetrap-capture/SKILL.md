@@ -5,6 +5,11 @@ description: Propose a new codetrap candidate after repeated failures, user corr
 
 Use this after a task exposes a recurring mistake pattern. Draft a candidate trap with:
 
+Use `codetrap` when it is available on `PATH`. In a Codetrap source checkout
+where the global command is intentionally absent, run the same arguments with
+`bun run src/index.ts` from the repository root. Outside that checkout, report
+the missing CLI; do not install or update it without user approval.
+
 - triggering context
 - mistake to avoid
 - fix to apply next time
