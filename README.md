@@ -711,6 +711,13 @@ codetrap phase3 install cand-001 --session <session-id> \
 
 codetrap phase3 commits --json
 codetrap phase3 rollback <phase3-commit-id> --executor user --json
+
+# Read-only storage inventory and dry-run orphan collection:
+codetrap phase3 storage --json
+codetrap phase3 gc --json
+
+# Only after reviewing the dry-run result:
+codetrap phase3 gc --apply --executor user --json
 ```
 
 Legacy full-artifact candidates still replace the reviewed artifact as before.
@@ -732,6 +739,24 @@ embedding Codex/Claude before/after base64 copies in
 lock and remain rollback-compatible. New history is bounded to 1,000 commits,
 512 snapshot objects, 256 MB total snapshot JSON, and 30 MB per snapshot object;
 an install that would cross a bound is refused before either live Skill changes.
+
+`phase3 storage` is a read-only point-in-time inventory. It reports commit and
+snapshot usage, limits, objects reachable from active **and reverted** commits,
+valid orphan objects, malformed entries, and unavailable version 2 rollback
+objects. It does not migrate legacy version 1 history. `phase3 gc` is also a
+dry-run by default; `--apply` rechecks under the Phase 3 lock, refuses damaged or
+ambiguous state, and deletes only content-verified snapshot objects that no
+durable commit references. Applied runs leave an exact planned/completed/failed
+receipt under `.codetrap/phase3/maintenance-receipts/`. GC never prunes commit
+history or removes rollback material referenced by a reverted commit.
+
+The project-local Phase 3 store and PID-aware advisory lock are **single-host**
+coordination. Do not place `.codetrap/` on a network share and treat it as a
+distributed team database: PIDs, atomic rename, and filesystem failure semantics
+are host-specific. The first supported team-evaluation pattern is Git/PR review
+of candidates plus explicit local apply and receipts on each device. A central
+service, RBAC, signed rollout manifests, and cross-device leases require a later
+team architecture rather than weakening this local safety boundary.
 
 After organic use, attach the installed candidate to a directional outcome; a
 search hit alone is not improvement evidence:

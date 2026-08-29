@@ -235,6 +235,34 @@ describe("Phase 3 skill candidate lifecycle", () => {
     expect(refused.exitCode).toBe(1);
     expect(JSON.parse(refused.stdout).error).toContain("phase2 propose requires");
   });
+
+  test("storage and GC CLI stay read-only by default and reserve apply for the user", () => {
+    const cwd = tempProjectDir("codetrap-p3-storage-cli-");
+    const home = tempHome();
+
+    const status = runJson(["phase3", "storage"], cwd, home);
+    expect(status).toMatchObject({
+      commit_document_version: 2,
+      single_host_only: true,
+      commits: { total: 0 },
+      snapshots: { stored_entries: 0, orphan_objects: 0 },
+      can_collect: true,
+    });
+    expect(existsSync(join(cwd, ".codetrap", "phase3"))).toBe(false);
+
+    const dryRun = runJson(["phase3", "gc"], cwd, home);
+    expect(dryRun).toMatchObject({ mode: "dry-run", applied: false, deleted_snapshot_ids: [], receipt: null });
+    expect(existsSync(join(cwd, ".codetrap", "phase3"))).toBe(false);
+
+    const bothModes = runCli(["phase3", "gc", "--dry-run", "--apply", "--json"], cwd, home);
+    expect(bothModes.exitCode).toBe(1);
+    expect(bothModes.stderr).toContain("either --dry-run or --apply");
+
+    const agentApply = runCli(["phase3", "gc", "--apply", "--executor", "agent", "--json"], cwd, home);
+    expect(agentApply.exitCode).toBe(1);
+    expect(JSON.parse(agentApply.stdout).error).toContain("requires an explicit user-run GC apply");
+    expect(existsSync(join(cwd, ".codetrap", "phase3"))).toBe(false);
+  });
 });
 
 function directoryState(path: string): Array<{ path: string; type: "dir" | "file"; bytes?: string }> {

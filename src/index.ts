@@ -95,7 +95,7 @@ function showHelp(): void {
   console.log("  embeddings            Manage embedding profiles, provider config, and reindexing");
   console.log("  session               Record implementation notes and capture candidate traps");
   console.log("  phase2                Manage authorized patches, insights, currency, and learning metrics");
-  console.log("  phase3                Preview, install, and roll back approved cross-client skills");
+  console.log("  phase3                Govern cross-client skills and inspect bounded snapshot storage");
   console.log("  improver              Turn correlated human feedback into reviewable candidates");
   console.log("  web                   Start local review and trap library console");
   console.log("  export                Export traps as JSON");

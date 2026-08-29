@@ -6,13 +6,14 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import type { CandidateTrap } from "../domain/session";
 import { Phase3Store } from "../lib/phase3-store";
-import { finishSkillSnapshot, type SkillDirectorySnapshot } from "../lib/skill-artifact";
+import { finishSkillSnapshot, snapshotIdentity, type SkillDirectorySnapshot } from "../lib/skill-artifact";
 import { tempDir, tempProjectDir } from "./helpers";
 
 describe("Phase 3 review hardening", () => {
@@ -144,8 +145,29 @@ describe("Phase 3 review hardening", () => {
         })),
       }],
     }, null, 2)}\n`);
+    const beforeId = writeSnapshotObject(cwd, before);
+    const afterId = writeSnapshotObject(cwd, after);
+    const legacyOrphanId = writeSnapshotObject(cwd, textSnapshot("legacy-orphan", "Unreachable legacy-era object.\n"));
 
     const store = new Phase3Store(cwd);
+    const status = store.storageStatus(new Date("2026-08-29T00:00:00.000Z"));
+    expect(status).toMatchObject({
+      commit_document_version: 1,
+      commits: { total: 1, active: 1, reverted: 0 },
+      snapshots: {
+        stored_entries: 3,
+        referenced_objects: 2,
+        orphan_objects: 1,
+        unavailable_referenced_objects: 0,
+      },
+      orphan_snapshot_ids: [legacyOrphanId],
+    });
+    expect(JSON.parse(readFileSync(join(phase3Dir, "skill-commits.json"), "utf-8")).version).toBe(1);
+    store.collectGarbage(true, "user", new Date("2026-08-29T00:01:00.000Z"));
+    expect(existsSync(snapshotObjectPath(cwd, legacyOrphanId))).toBe(false);
+    expect(existsSync(snapshotObjectPath(cwd, beforeId))).toBe(true);
+    expect(existsSync(snapshotObjectPath(cwd, afterId))).toBe(true);
+    expect(JSON.parse(readFileSync(join(phase3Dir, "skill-commits.json"), "utf-8")).version).toBe(1);
     expect(store.listCommits()[0].id).toBe("p3-legacy-inline");
     store.revert("p3-legacy-inline");
     for (const home of Object.values(homes)) {
@@ -155,6 +177,102 @@ describe("Phase 3 review hardening", () => {
     expect(JSON.parse(migrated).version).toBe(2);
     expect(migrated).not.toContain("content_base64");
     expect(readdirSync(join(phase3Dir, "snapshots")).filter((name) => name.endsWith(".json"))).toHaveLength(2);
+  });
+
+  test("reports and safely collects only an orphan snapshot while reverted commit snapshots stay reachable", () => {
+    const cwd = tempProjectDir("codetrap-p3-storage-gc-");
+    const homes = { codex: tempDir("codetrap-p3-gc-codex-"), claude: tempDir("codetrap-p3-gc-claude-") };
+    writeSharedSkill(homes.codex);
+    writeSharedSkill(homes.claude);
+    const store = new Phase3Store(cwd);
+    const candidate = improvementCandidate(store, homes);
+    const commit = store.apply("session-gc", candidate, homes, store.preview(candidate, homes));
+    store.revert(commit.id);
+    const orphan = textSnapshot("orphan-skill", "Snapshot persisted before its commit index entry.\n");
+    const orphanId = writeSnapshotObject(cwd, orphan);
+    const commitsPath = join(cwd, ".codetrap", "phase3", "skill-commits.json");
+    const commitsBefore = readFileSync(commitsPath, "utf-8");
+
+    const status = store.storageStatus(new Date("2026-08-29T01:00:00.000Z"));
+    expect(status).toMatchObject({
+      commit_document_version: 2,
+      single_host_only: true,
+      commits: { total: 1, active: 0, reverted: 1 },
+      snapshots: {
+        stored_entries: 3,
+        valid_objects: 3,
+        referenced_objects: 2,
+        orphan_objects: 1,
+        invalid_entries: 0,
+        unavailable_referenced_objects: 0,
+      },
+      orphan_snapshot_ids: [orphanId],
+      can_collect: true,
+    });
+    expect(readFileSync(commitsPath, "utf-8")).toBe(commitsBefore);
+
+    const dryRun = store.collectGarbage(false, "agent", new Date("2026-08-29T01:01:00.000Z"));
+    expect(dryRun).toMatchObject({ mode: "dry-run", applied: false, deleted_snapshot_ids: [], receipt: null });
+    expect(existsSync(snapshotObjectPath(cwd, orphanId))).toBe(true);
+    expect(readFileSync(commitsPath, "utf-8")).toBe(commitsBefore);
+
+    const applied = store.collectGarbage(true, "user", new Date("2026-08-29T01:02:00.000Z"));
+    expect(applied).toMatchObject({
+      mode: "apply",
+      applied: true,
+      deleted_snapshot_ids: [orphanId],
+      receipt: { action: "snapshot_gc", status: "completed", executor: "user" },
+      after: { snapshots: { orphan_objects: 0, referenced_objects: 2 } },
+    });
+    expect(applied.released_bytes).toBeGreaterThan(0);
+    expect(existsSync(snapshotObjectPath(cwd, orphanId))).toBe(false);
+    for (const target of commit.targets) {
+      if (target.before_snapshot_id) expect(existsSync(snapshotObjectPath(cwd, target.before_snapshot_id))).toBe(true);
+      expect(existsSync(snapshotObjectPath(cwd, target.after_snapshot_id))).toBe(true);
+    }
+    expect(readFileSync(commitsPath, "utf-8")).toBe(commitsBefore);
+    const receiptPath = join(cwd, ".codetrap", "phase3", "maintenance-receipts", `${applied.receipt!.id}.json`);
+    expect(JSON.parse(readFileSync(receiptPath, "utf-8"))).toMatchObject({
+      status: "completed",
+      targeted_snapshot_ids: [orphanId],
+      deleted_snapshot_ids: [orphanId],
+    });
+  });
+
+  test("fails closed before GC when the snapshot directory contains an invalid entry", () => {
+    const cwd = tempProjectDir("codetrap-p3-gc-invalid-");
+    const store = new Phase3Store(cwd);
+    const orphan = textSnapshot("orphan-skill", "Valid but unreachable snapshot.\n");
+    const orphanId = writeSnapshotObject(cwd, orphan);
+    writeFileSync(join(cwd, ".codetrap", "phase3", "snapshots", "stray.txt"), "not a managed snapshot\n");
+
+    const status = store.storageStatus();
+    expect(status).toMatchObject({
+      snapshots: { orphan_objects: 1, invalid_entries: 1 },
+      orphan_snapshot_ids: [orphanId],
+      can_collect: false,
+    });
+    expect(() => store.collectGarbage(true, "user")).toThrow("invalid snapshot entry");
+    expect(existsSync(snapshotObjectPath(cwd, orphanId))).toBe(true);
+    expect(existsSync(join(cwd, ".codetrap", "phase3", "maintenance-receipts"))).toBe(false);
+  });
+
+  test("fails closed before GC when a version 2 commit references a missing object", () => {
+    const cwd = tempProjectDir("codetrap-p3-gc-missing-");
+    const homes = { codex: tempDir("codetrap-p3-gc-missing-codex-"), claude: tempDir("codetrap-p3-gc-missing-claude-") };
+    writeSharedSkill(homes.codex);
+    writeSharedSkill(homes.claude);
+    const store = new Phase3Store(cwd);
+    const candidate = improvementCandidate(store, homes);
+    const commit = store.apply("session-gc-missing", candidate, homes, store.preview(candidate, homes));
+    const missingId = commit.targets[0].after_snapshot_id;
+    rmSync(snapshotObjectPath(cwd, missingId));
+
+    expect(store.storageStatus()).toMatchObject({
+      unavailable_referenced_snapshot_ids: [missingId],
+      can_collect: false,
+    });
+    expect(() => store.collectGarbage(true, "user")).toThrow("unavailable referenced snapshot");
   });
 });
 
@@ -214,6 +332,18 @@ function textSnapshot(name: string, body: string): SkillDirectorySnapshot {
 function writeSnapshotDirectory(path: string, snapshot: SkillDirectorySnapshot): void {
   mkdirSync(path, { recursive: true });
   for (const file of snapshot.files) writeFileSync(join(path, file.path), Buffer.from(file.content_base64, "base64"));
+}
+
+function writeSnapshotObject(cwd: string, snapshot: SkillDirectorySnapshot): string {
+  const id = snapshotIdentity(snapshot);
+  const path = snapshotObjectPath(cwd, id);
+  mkdirSync(join(cwd, ".codetrap", "phase3", "snapshots"), { recursive: true });
+  writeFileSync(path, `${JSON.stringify({ version: 1, snapshot }, null, 2)}\n`);
+  return id;
+}
+
+function snapshotObjectPath(cwd: string, id: string): string {
+  return join(cwd, ".codetrap", "phase3", "snapshots", `${id}.json`);
 }
 
 function directoryState(path: string): Array<{ path: string; type: "dir" | "file"; bytes?: string; mode?: number }> {

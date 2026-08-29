@@ -176,6 +176,16 @@ export class Phase3Operations {
   }
 
   commits() { return this.phase3.listCommits(); }
+
+  storage() { return this.phase3.storageStatus(); }
+
+  gc(apply: boolean, executorInput?: string) {
+    const executor = parseExecutor(executorInput);
+    if (apply && executor === "agent") {
+      throw new Error("An agent may inspect Phase 3 storage, but snapshot deletion requires an explicit user-run GC apply.");
+    }
+    return this.phase3.collectGarbage(apply, executor);
+  }
 }
 
 function explicitHomes(input: ExplicitHomes) {

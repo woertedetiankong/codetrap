@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -7,11 +7,11 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { CandidateTrap } from "../domain/session";
+import type { Executor } from "../domain/learning";
 import type { SetupClient } from "./client-setup";
 import { withAdvisoryLock } from "./advisory-lock";
 import { CODETRAP_DIR } from "./constants";
@@ -81,6 +81,74 @@ type CommitDocumentV2 = { version: 2; commits: Phase3Commit[] };
 type ClientHomes = Record<SetupClient, string>;
 type SnapshotObject = { version: 1; snapshot: SkillDirectorySnapshot };
 
+type SnapshotInventoryEntry = {
+  name: string;
+  path: string;
+  id: string | null;
+  bytes: number;
+  valid: boolean;
+  error: string | null;
+};
+
+export type Phase3StorageStatus = {
+  version: 1;
+  observed_at: string;
+  commit_document_version: 1 | 2;
+  single_host_only: true;
+  commits: {
+    total: number;
+    active: number;
+    reverted: number;
+    limit: number;
+    usage_percent: number;
+  };
+  snapshots: {
+    stored_entries: number;
+    stored_bytes: number;
+    valid_objects: number;
+    referenced_objects: number;
+    orphan_objects: number;
+    orphan_bytes: number;
+    invalid_entries: number;
+    unavailable_referenced_objects: number;
+    object_limit: number;
+    byte_limit: number;
+    object_usage_percent: number;
+    byte_usage_percent: number;
+  };
+  orphan_snapshot_ids: string[];
+  unavailable_referenced_snapshot_ids: string[];
+  invalid_snapshot_entries: Array<{ name: string; bytes: number; error: string }>;
+  can_collect: boolean;
+  next_action?: { command: string };
+};
+
+export type Phase3MaintenanceReceipt = {
+  version: 1;
+  id: string;
+  action: "snapshot_gc";
+  status: "planned" | "completed" | "failed";
+  executor: Executor;
+  recorded_at: string;
+  commit_document_version: 1 | 2;
+  commit_count: number;
+  targeted_snapshot_ids: string[];
+  deleted_snapshot_ids: string[];
+  released_bytes: number;
+  error: string | null;
+};
+
+export type Phase3GcResult = {
+  mode: "dry-run" | "apply";
+  applied: boolean;
+  before: Phase3StorageStatus;
+  deleted_snapshot_ids: string[];
+  released_bytes: number;
+  receipt: Phase3MaintenanceReceipt | null;
+  after: Phase3StorageStatus | null;
+  next_action?: { command: string };
+};
+
 export type Phase3StoreOptions = {
   /** Fault injection hook used by recovery tests; production callers omit it. */
   beforeTargetWrite?: (target: { client: SetupClient; path: string }, index: number) => void;
@@ -93,6 +161,7 @@ export type Phase3StoreOptions = {
 const PHASE3_DIR = "phase3";
 const LOCK_DIR = ".phase3.lock";
 const SNAPSHOT_DIR = "snapshots";
+const MAINTENANCE_RECEIPT_DIR = "maintenance-receipts";
 const SNAPSHOT_ID = /^[a-f0-9]{64}$/;
 
 export const MAX_PHASE3_COMMITS = 1_000;
@@ -237,6 +306,90 @@ export class Phase3Store {
       ? document.commits
       : document.commits.map(convertLegacyCommit);
     return [...commits].reverse();
+  }
+
+  storageStatus(now = new Date()): Phase3StorageStatus {
+    return this.analyzeStorage(now).status;
+  }
+
+  collectGarbage(apply: boolean, executor: Executor, now = new Date()): Phase3GcResult {
+    if (!apply) {
+      const { status } = this.analyzeStorage(now);
+      return {
+        mode: "dry-run",
+        applied: false,
+        before: status,
+        deleted_snapshot_ids: [],
+        released_bytes: 0,
+        receipt: null,
+        after: null,
+        ...(status.orphan_snapshot_ids.length > 0 && status.can_collect
+          ? { next_action: { command: "codetrap phase3 gc --apply --executor user --json" } }
+          : {}),
+      };
+    }
+
+    return this.withLock(() => {
+      const analysis = this.analyzeStorage(now);
+      assertStorageCollectible(analysis.status);
+      const targets = analysis.orphanEntries;
+      if (targets.length === 0) {
+        return {
+          mode: "apply",
+          applied: true,
+          before: analysis.status,
+          deleted_snapshot_ids: [],
+          released_bytes: 0,
+          receipt: null,
+          after: analysis.status,
+        };
+      }
+
+      const receipt: Phase3MaintenanceReceipt = {
+        version: 1,
+        id: `p3gc-${now.toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${randomUUID().slice(0, 8)}`,
+        action: "snapshot_gc",
+        status: "planned",
+        executor,
+        recorded_at: now.toISOString(),
+        commit_document_version: analysis.status.commit_document_version,
+        commit_count: analysis.status.commits.total,
+        targeted_snapshot_ids: targets.map((entry) => entry.id!),
+        deleted_snapshot_ids: [],
+        released_bytes: 0,
+        error: null,
+      };
+      this.writeMaintenanceReceipt(receipt);
+
+      try {
+        for (const entry of targets) {
+          rmSync(entry.path);
+          receipt.deleted_snapshot_ids.push(entry.id!);
+          receipt.released_bytes += entry.bytes;
+        }
+        receipt.status = "completed";
+        this.writeMaintenanceReceipt(receipt);
+        const after = this.analyzeStorage(now).status;
+        return {
+          mode: "apply",
+          applied: true,
+          before: analysis.status,
+          deleted_snapshot_ids: [...receipt.deleted_snapshot_ids],
+          released_bytes: receipt.released_bytes,
+          receipt,
+          after,
+        };
+      } catch (error) {
+        receipt.status = "failed";
+        receipt.error = errorMessage(error);
+        try {
+          this.writeMaintenanceReceipt(receipt);
+        } catch (receiptError) {
+          throw new AggregateError([error, receiptError], "Phase 3 snapshot GC failed and its maintenance receipt could not be finalized.");
+        }
+        throw error;
+      }
+    });
   }
 
   private planTargets(artifact: SkillArtifact, homes: ClientHomes): Phase3TargetPlan[] {
@@ -427,20 +580,107 @@ export class Phase3Store {
   }
 
   private snapshotStoreUsage(): { count: number; bytes: number } {
+    const entries = this.scanSnapshotStore(false);
+    const invalid = entries.find((entry) => !entry.valid);
+    if (invalid) throw new Error(invalid.error ?? `Invalid Phase 3 snapshot entry ${invalid.path}.`);
+    return {
+      count: entries.length,
+      bytes: entries.reduce((sum, entry) => sum + entry.bytes, 0),
+    };
+  }
+
+  private analyzeStorage(now: Date): { status: Phase3StorageStatus; orphanEntries: SnapshotInventoryEntry[] } {
+    const document = this.readRawCommits();
+    const commits = document.version === 2
+      ? document.commits
+      : document.commits.map(convertLegacyCommit);
+    const referenced = referencedSnapshotIds(commits);
+    const entries = this.scanSnapshotStore(true);
+    const validEntries = entries.filter((entry) => entry.valid && entry.id !== null);
+    const validIds = new Set(validEntries.map((entry) => entry.id!));
+    const orphanEntries = validEntries.filter((entry) => !referenced.has(entry.id!));
+    const unavailableReferenced = document.version === 2
+      ? [...referenced].filter((id) => !validIds.has(id)).sort()
+      : [];
+    const invalidEntries = entries.filter((entry) => !entry.valid);
+    const storedBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+    const commitLimit = this.options.maxCommits ?? MAX_PHASE3_COMMITS;
+    const objectLimit = this.options.maxSnapshotObjects ?? MAX_PHASE3_SNAPSHOT_OBJECTS;
+    const byteLimit = this.options.maxSnapshotStoreBytes ?? MAX_PHASE3_SNAPSHOT_STORE_BYTES;
+    const status: Phase3StorageStatus = {
+      version: 1,
+      observed_at: now.toISOString(),
+      commit_document_version: document.version,
+      single_host_only: true,
+      commits: {
+        total: commits.length,
+        active: commits.filter((commit) => commit.reverted_at === null).length,
+        reverted: commits.filter((commit) => commit.reverted_at !== null).length,
+        limit: commitLimit,
+        usage_percent: usagePercent(commits.length, commitLimit),
+      },
+      snapshots: {
+        stored_entries: entries.length,
+        stored_bytes: storedBytes,
+        valid_objects: validEntries.length,
+        referenced_objects: validEntries.filter((entry) => referenced.has(entry.id!)).length,
+        orphan_objects: orphanEntries.length,
+        orphan_bytes: orphanEntries.reduce((sum, entry) => sum + entry.bytes, 0),
+        invalid_entries: invalidEntries.length,
+        unavailable_referenced_objects: unavailableReferenced.length,
+        object_limit: objectLimit,
+        byte_limit: byteLimit,
+        object_usage_percent: usagePercent(entries.length, objectLimit),
+        byte_usage_percent: usagePercent(storedBytes, byteLimit),
+      },
+      orphan_snapshot_ids: orphanEntries.map((entry) => entry.id!).sort(),
+      unavailable_referenced_snapshot_ids: unavailableReferenced,
+      invalid_snapshot_entries: invalidEntries.map((entry) => ({
+        name: entry.name,
+        bytes: entry.bytes,
+        error: entry.error ?? "invalid snapshot entry",
+      })),
+      can_collect: invalidEntries.length === 0 && unavailableReferenced.length === 0,
+      ...(orphanEntries.length > 0 && invalidEntries.length === 0 && unavailableReferenced.length === 0
+        ? { next_action: { command: "codetrap phase3 gc --apply --executor user --json" } }
+        : {}),
+    };
+    return { status, orphanEntries };
+  }
+
+  private scanSnapshotStore(validateContents: boolean): SnapshotInventoryEntry[] {
     const dir = this.snapshotsDir();
-    if (!existsSync(dir)) return { count: 0, bytes: 0 };
+    if (!existsSync(dir)) return [];
     const root = lstatSync(dir);
     if (!root.isDirectory() || root.isSymbolicLink()) throw new Error(`Phase 3 snapshot store ${dir} must be a regular directory.`);
-    let count = 0;
-    let bytes = 0;
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.name.endsWith(".json")) continue;
-      const path = join(dir, entry.name);
-      if (!entry.isFile() || entry.isSymbolicLink()) throw new Error(`Phase 3 snapshot entry ${path} must be a regular file.`);
-      count += 1;
-      bytes += statSync(path).size;
-    }
-    return { count, bytes };
+    return readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((entry): SnapshotInventoryEntry => {
+        const path = join(dir, entry.name);
+        let bytes = 0;
+        try {
+          const stat = lstatSync(path);
+          bytes = stat.isFile() ? stat.size : 0;
+          if (!stat.isFile() || stat.isSymbolicLink()) {
+            return { name: entry.name, path, id: null, bytes, valid: false, error: `Phase 3 snapshot entry ${path} must be a regular file.` };
+          }
+          const match = /^([a-f0-9]{64})\.json$/.exec(entry.name);
+          if (!match) {
+            return { name: entry.name, path, id: null, bytes, valid: false, error: `Phase 3 snapshot entry ${path} does not have a canonical snapshot id filename.` };
+          }
+          const id = match[1];
+          if (validateContents) this.readSnapshot(id);
+          return { name: entry.name, path, id, bytes, valid: true, error: null };
+        } catch (error) {
+          return { name: entry.name, path, id: snapshotIdFromFilename(entry.name), bytes, valid: false, error: errorMessage(error) };
+        }
+      });
+  }
+
+  private writeMaintenanceReceipt(receipt: Phase3MaintenanceReceipt): void {
+    const dir = join(this.phase3Dir(), MAINTENANCE_RECEIPT_DIR);
+    mkdirSync(dir, { recursive: true });
+    writeFileAtomic(join(dir, `${receipt.id}.json`), `${JSON.stringify(receipt, null, 2)}\n`);
   }
 
   private removeUnreferencedCreatedSnapshots(ids: string[], document: CommitDocumentV2): void {
@@ -461,6 +701,39 @@ export class Phase3Store {
     mkdirSync(this.phase3Dir(), { recursive: true });
     return withAdvisoryLock(join(this.phase3Dir(), LOCK_DIR), fn).value;
   }
+}
+
+function referencedSnapshotIds(commits: Phase3Commit[]): Set<string> {
+  return new Set(commits.flatMap((commit) => commit.targets.flatMap((target) => [
+    ...(target.before_snapshot_id ? [target.before_snapshot_id] : []),
+    target.after_snapshot_id,
+  ])));
+}
+
+function assertStorageCollectible(status: Phase3StorageStatus): void {
+  if (status.invalid_snapshot_entries.length > 0) {
+    throw new Error(
+      `Phase 3 snapshot GC found ${status.invalid_snapshot_entries.length} invalid snapshot entr${status.invalid_snapshot_entries.length === 1 ? "y" : "ies"}; repair the store and rerun storage status before applying GC.`
+    );
+  }
+  if (status.unavailable_referenced_snapshot_ids.length > 0) {
+    throw new Error(
+      `Phase 3 snapshot GC found ${status.unavailable_referenced_snapshot_ids.length} unavailable referenced snapshot object(s); refusing to delete anything.`
+    );
+  }
+}
+
+function usagePercent(value: number, limit: number): number {
+  if (limit <= 0) return value <= 0 ? 0 : 100;
+  return Math.round((value / limit) * 10_000) / 100;
+}
+
+function snapshotIdFromFilename(name: string): string | null {
+  return /^([a-f0-9]{64})\.json$/.exec(name)?.[1] ?? null;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function skillArtifact(candidate: CandidateTrap): SkillArtifact {

@@ -13,7 +13,7 @@ handoff) — see §19.
 
 ## Status Dashboard
 
-> Updated: 2026-08-28
+> Updated: 2026-08-29
 
 | Milestone | Status | Updated | Evidence | Note |
 |---|---|---|---|---|
@@ -21,14 +21,32 @@ handoff) — see §19.
 | Phase 1 — MVP compiler loop | **Done** | 2026-08-08 | [closeout handoff](tasks/2026-08-08-phase1-closeout/handoff.md) | All five slices pass; trap #5 travelled from Claude Code mining to useful Codex recall. |
 | Phase 2 – low-risk destinations | **Done** | 2026-08-08 | [handoff](tasks/2026-08-08-phase2-low-risk-destinations/handoff.md) | Four review-bound destinations, insight study, currency/graduation, metrics, and decision rule pass end to end. |
 | Phase 3 — high-side-effect destinations | **Done** | 2026-08-09 | [skill lifecycle handoff](tasks/2026-08-08-phase3-skill-candidate-lifecycle/handoff.md) | Cross-client install is current; a later Codex screenshot-review task changed the implemented UI workflow. |
-| Phase 4 — external validation | **In progress (4A merged and synced)** | 2026-08-09 | [Phase 4A handoff](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md) | Benchmark and audit hardening are on `origin/main`; remote CI evidence has not been inspected in this task, while independent reproduction and longitudinal publication remain open. |
+| Phase 4 — external validation | **In progress (remote gates verified)** | 2026-08-29 | [Phase 4A handoff](tasks/2026-08-09-phase4-public-retrieval-benchmark/handoff.md) | Windows/Linux CI and retrieval benchmark runs for `8206618` succeeded; independent reproduction and privacy-safe longitudinal publication remain open. |
 | Agent/user experience hardening | **Done** | 2026-08-27 | [handoff](tasks/2026-08-27-agent-user-experience-hardening/handoff.md) | Atomic editing, multilingual scoring, suppression undo, draft-safe refresh, purpose-specific insight review, idempotent study tracking, Windows-safe structured input, `web --open`, and token hygiene pass without changing install or release state. |
 | Feedback improver loop | **Done** | 2026-08-28 | [handoff](tasks/2026-08-28-feedback-improver-loop/handoff.md) | Generic redacted feedback ingress, evidence weighting, destination routing, concurrent/idempotent candidate staging, and directional behavior outcomes pass; remote adapters and scheduling remain future permissioned slices. |
 | Existing Skill improvement loop | **Done** | 2026-08-28 | [handoff](tasks/2026-08-28-existing-skill-improvement/handoff.md) | Resource-preserving, exact-base Skill patches now pass through static validation, file-level preview, content-bound approval, symmetric install, behavior outcomes, and rollback. |
 | Improvement-loop review hardening | **Done** | 2026-08-28 | [handoff](tasks/2026-08-28-review-hardening/handoff.md) | Independent-review findings in retention, strict inputs, provenance, live-owner locking, portable metadata, bounded snapshot history, and partial-failure recovery are closed with 437 passing tests. |
+| Phase 3 storage lifecycle foundation | **Done** | 2026-08-29 | [handoff](tasks/2026-08-29-phase3-storage-lifecycle/handoff.md) | Read-only usage diagnostics and governed orphan snapshot GC pass with 441 tests; the store remains explicitly single-host. |
+
+### Needs your judgment
+
+- Review the pending locking/storage candidates and accept, edit, reject, or
+  supersede each explicitly. Leaving them pending does not affect runtime, but
+  the project-memory decision remains unresolved
+  ([detail](tasks/2026-08-29-phase3-storage-lifecycle/handoff.md)).
+
 
 ### Closed decisions by date
 
+- 2026-08-29 Phase 3 GC treats every active, reverted, and legacy inline commit
+  reference as live. Status/dry-run are read-only; apply rechecks under the
+  single-host lock, deletes only verified unreachable objects, and leaves a
+  maintenance receipt. History pruning and distributed coordination remain
+  separate decisions
+  ([detail](tasks/2026-08-29-phase3-storage-lifecycle/handoff.md)).
+- 2026-08-29 Windows/Linux CI and retrieval benchmark runs for `8206618`
+  succeeded on GitHub Actions. This closes remote-run inspection, not
+  independent reproduction or longitudinal evidence.
 - 2026-08-28 Improvement-loop persistence is bounded and owner-aware: deleted
   feedback cannot resurrect, JSON metrics stay type-strict, source refs share
   redaction, stale locks check live PIDs and reclaim atomically, and Phase 3 v2
@@ -118,6 +136,9 @@ handoff) — see §19.
   remains evidence-gated.
 - Useful cross-client recall is proven end to end but has only two usefulness
   marks on one trap; longitudinal product claims remain premature.
+- Phase 3 filesystem coordination is single-host. A team pilot should use
+  Git/PR review plus per-device local apply; shared service identity, leases,
+  and rollout receipts remain a later architecture decision.
 
 What changed in v2:
 
@@ -1613,9 +1634,10 @@ type merely to satisfy the roadmap; unsupported types remain unshipped.
 > The public proxy is now vocabulary-independent from the dogfood evaluator;
 > its semantic-only MRR is 0.875. Packaging, project typecheck, and the full
 > local suite pass. Pinned-Bun Windows/Linux clean-runner workflows and JSON
-> artifacts are implemented but the hardening changes have not run remotely.
-> Independent reproduction and privacy-safe longitudinal flywheel evidence are
-> still required.
+> artifacts are implemented. On 2026-08-28, CI run #8 and retrieval benchmark
+> run #9 for `8206618` both succeeded across their Windows/Linux matrices. This
+> closes the uninspected-remote-run gap, not independent reproduction or
+> privacy-safe longitudinal flywheel evidence; both are still required.
 > Evidence: `docs/tasks/2026-08-09-phase4-public-retrieval-benchmark/` and
 > `benchmarks/retrieval-v1/`.
 

@@ -34,8 +34,17 @@ export function cmdPhase3(args: string[], store: TrapStore, traps: TrapOperation
     case "commits":
       result = operations.commits();
       break;
+    case "storage":
+      result = operations.storage();
+      break;
+    case "gc":
+      if (opts.apply !== undefined && opts["dry-run"] !== undefined) {
+        return errorResult("Choose either --dry-run or --apply, not both.");
+      }
+      result = operations.gc(opts.apply !== undefined, opts.executor);
+      break;
     default:
-      return errorResult("Usage: codetrap phase3 <propose|improve|edit|preview|install|rollback|commits>");
+      return errorResult("Usage: codetrap phase3 <propose|improve|edit|preview|install|rollback|commits|storage|gc>");
   }
 
   if (wantsJson(opts)) return jsonResult(result);
