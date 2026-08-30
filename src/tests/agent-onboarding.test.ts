@@ -54,6 +54,16 @@ describe("agent first-run onboarding assets", () => {
     expect(external).toContain('"kind":"insight"');
     expect(external).toContain("An agent must not approve its own proposal");
     expect(review).toContain("applies only to user-study insights");
+    expect(external).toContain("collection.position");
+    expect(review).toContain("collection.position");
+    expect(external).toContain("two passes");
+    expect(external).toContain("source_coverage");
+    expect(external).toContain("source_unit_refs");
+    expect(external).toContain("context_sections");
+    expect(external).toContain("phase2 propose-batch");
+    expect(review).toContain("source_coverage");
+    expect(review).toContain("source_unit_refs");
+    expect(review).toContain("context_sections");
   });
 
   test("plugin bundle is the single Codex skill source", () => {

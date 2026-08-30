@@ -13,6 +13,27 @@ import {
 } from "./learning-review-dir";
 import { isRecord } from "./value-types";
 import type { CoverageClaim } from "./coverage-verify";
+import { INSIGHT_SOURCE_TYPES, type InsightSourceType } from "./phase2-store";
+import {
+  normalizeCollectionContextSections,
+  normalizeSourceCoverage,
+  normalizeSourceUnitRefs,
+  type CollectionContextSection,
+  type SourceCoverageManifest,
+} from "../domain/source-coverage";
+import { normalizeInsightCollectionBatches } from "./insight-collection-batch";
+
+export type StagedInsightCollection = {
+  id?: string;
+  title: string;
+  summary?: string;
+  source_type?: InsightSourceType;
+  source_refs?: string[];
+  topics?: string[];
+  source_coverage?: SourceCoverageManifest;
+  context_sections?: CollectionContextSection[];
+  position: number;
+};
 
 export type StagedCandidateDraft = {
   title: string;
@@ -29,6 +50,10 @@ export type StagedCandidateDraft = {
   path_globs?: string[];
   module?: string;
   owner?: string;
+  source_type?: InsightSourceType;
+  topics?: string[];
+  source_unit_refs?: string[];
+  collection?: StagedInsightCollection;
   evidence: { ref: string; note?: string }[];
   /** Agent coverage claims, verified deterministically at staging (§9.3). */
   coverage?: CoverageClaim;
@@ -75,7 +100,7 @@ export function validateStagedCandidates(args: {
     );
   }
 
-  const accepted: StagedCandidateDraft[] = [];
+  const acceptedRows: { index: number; draft: StagedCandidateDraft }[] = [];
   const rejected: StageRejection[] = [];
 
   rows.forEach((row, index) => {
@@ -105,13 +130,32 @@ export function validateStagedCandidates(args: {
     }
 
     const evidence = normalizeEvidence(row.evidence, knownRefs, errors);
+    const sourceType = normalizeSourceType(row.source_type, errors);
+    const collection = normalizeInsightCollection(row.collection, errors);
+    const sourceUnitRefs = normalizeCandidateSourceUnitRefs(row.source_unit_refs, collection, errors);
+    if (collection && !collection.source_coverage
+      && (kind === "insight" || optionalText(row.destination_hint) === "insight")) {
+      errors.push("collection.source_coverage is required for new learning collections.");
+    }
+    if (collection?.source_coverage) {
+      if (collection.source_coverage.mode !== "sampled") {
+        errors.push("AI-session learning review collections must use source_coverage.mode sampled.");
+      }
+      if (collection.source_coverage.source_fingerprint !== args.pack.source_fingerprint) {
+        errors.push("collection.source_coverage.source_fingerprint does not match the evidence pack.");
+      }
+    }
+    if ((sourceType || collection || Array.isArray(row.topics) || Array.isArray(row.source_unit_refs))
+      && kind !== "insight" && optionalText(row.destination_hint) !== "insight") {
+      errors.push("source_type, topics, source_unit_refs, and collection are only valid for learning insights.");
+    }
 
     if (errors.length > 0) {
       rejected.push({ index, title, errors });
       return;
     }
 
-    accepted.push({
+    acceptedRows.push({ index, draft: {
       title: title as string,
       candidate_kind: kind,
       destination_hint: optionalText(row.destination_hint),
@@ -126,10 +170,25 @@ export function validateStagedCandidates(args: {
       path_globs: stringArray(row.path_globs),
       module: optionalText(row.module),
       owner: optionalText(row.owner),
+      source_type: sourceType,
+      topics: stringArray(row.topics),
+      source_unit_refs: sourceUnitRefs,
+      collection,
       evidence,
       coverage: isRecord(row.coverage) ? (row.coverage as CoverageClaim) : undefined,
-    });
+    } });
   });
+
+  const batchErrors = validateInsightCollectionBatches(acceptedRows.map((entry) => entry.draft));
+  const accepted: StagedCandidateDraft[] = [];
+  for (const entry of acceptedRows) {
+    const errors = batchErrors.get(entry.draft);
+    if (errors?.length) {
+      rejected.push({ index: entry.index, title: entry.draft.title, errors });
+    } else {
+      accepted.push(entry.draft);
+    }
+  }
 
   return {
     accepted,
@@ -178,6 +237,30 @@ export function draftToTrapInput(draft: StagedCandidateDraft): CandidateTrap["tr
   });
 }
 
+export function insightDestinationPayload(
+  draft: StagedCandidateDraft,
+  sourceRefs: string[],
+  fallbackSourceType: InsightSourceType = "conversation"
+): Record<string, unknown> | undefined {
+  const isInsight = draft.candidate_kind === "insight" || draft.destination_hint?.trim().toLocaleLowerCase() === "insight";
+  if (!isInsight) return undefined;
+  return {
+    title: draft.title,
+    summary: draft.rationale ?? draft.lesson,
+    body: draft.recommended_action,
+    tags: draft.tags ?? [],
+    source_refs: sourceRefs,
+    source_type: draft.source_type ?? fallbackSourceType,
+    topics: draft.topics ?? [],
+    source_unit_refs: draft.source_unit_refs ?? [],
+    ...(draft.collection ? {
+      // Collection-level metadata is stamped once for the whole batch during
+      // validation. Never derive it again from this individual chapter.
+      collection: { ...draft.collection },
+    } : {}),
+  };
+}
+
 function normalizeEvidence(
   value: unknown,
   knownRefs: Set<string>,
@@ -222,4 +305,113 @@ function stringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const items = value.map((item) => String(item).trim()).filter(Boolean);
   return items.length > 0 ? items : undefined;
+}
+
+function normalizeSourceType(value: unknown, errors: string[]): InsightSourceType | undefined {
+  const sourceType = optionalText(value)?.toLocaleLowerCase();
+  if (!sourceType) return undefined;
+  if (!(INSIGHT_SOURCE_TYPES as readonly string[]).includes(sourceType)) {
+    errors.push(`source_type must be one of: ${INSIGHT_SOURCE_TYPES.join(", ")}.`);
+    return undefined;
+  }
+  return sourceType as InsightSourceType;
+}
+
+function normalizeInsightCollection(value: unknown, errors: string[]): StagedInsightCollection | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) {
+    errors.push("collection must be an object.");
+    return undefined;
+  }
+  const title = requiredText(value.title);
+  const position = value.position;
+  if (!title) errors.push("collection.title is required.");
+  if (typeof position !== "number" || !Number.isInteger(position) || position < 1) {
+    errors.push("collection.position must be a positive integer.");
+  }
+  const sourceType = normalizeSourceType(value.source_type, errors);
+  let sourceCoverage: SourceCoverageManifest | undefined;
+  try {
+    sourceCoverage = normalizeSourceCoverage(value.source_coverage, "collection.source_coverage");
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+  let contextSections: CollectionContextSection[] = [];
+  try {
+    contextSections = normalizeCollectionContextSections(
+      value.context_sections,
+      sourceCoverage,
+      "collection.context_sections"
+    );
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+  if (!title || typeof position !== "number" || !Number.isInteger(position) || position < 1) return undefined;
+  return {
+    id: optionalText(value.id),
+    title,
+    summary: optionalText(value.summary),
+    source_type: sourceType,
+    source_refs: stringArray(value.source_refs),
+    topics: stringArray(value.topics),
+    source_coverage: sourceCoverage,
+    context_sections: contextSections.length > 0 ? contextSections : undefined,
+    position,
+  };
+}
+
+function normalizeCandidateSourceUnitRefs(
+  value: unknown,
+  collection: StagedInsightCollection | undefined,
+  errors: string[]
+): string[] | undefined {
+  try {
+    const refs = normalizeSourceUnitRefs(value, collection?.source_coverage, "source_unit_refs");
+    if (collection?.source_coverage && refs.length === 0) {
+      errors.push("source_unit_refs must identify at least one learned source unit when collection.source_coverage is present.");
+    }
+    return refs.length > 0 ? refs : undefined;
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+    return undefined;
+  }
+}
+
+function validateInsightCollectionBatches(
+  drafts: StagedCandidateDraft[]
+): Map<StagedCandidateDraft, string[]> {
+  const errors = new Map<StagedCandidateDraft, string[]>();
+  const members: Array<{
+    draft: StagedCandidateDraft;
+    payload: Record<string, unknown>;
+  }> = [];
+  for (const draft of drafts) {
+    const payload = insightDestinationPayload(
+      draft,
+      draft.evidence.map((item) => item.ref)
+    );
+    if (payload?.collection) members.push({ draft, payload });
+  }
+
+  const issues = normalizeInsightCollectionBatches(
+    members.map((member) => ({ payload: member.payload }))
+  );
+  for (const issue of issues) {
+    for (const index of issue.member_indexes) {
+      const draft = members[index]?.draft;
+      if (!draft) continue;
+      const current = errors.get(draft) ?? [];
+      if (!current.includes(issue.message)) current.push(issue.message);
+      errors.set(draft, current);
+    }
+  }
+
+  // Persist the shared contract on accepted drafts. `learn stage --apply`
+  // later rebuilds each destination payload from these drafts, so CLI apply and
+  // Web edit see the same stamped collection metadata as Phase 2 proposals.
+  members.forEach(({ draft, payload }) => {
+    if (errors.has(draft)) return;
+    draft.collection = payload.collection as StagedInsightCollection;
+  });
+  return errors;
 }

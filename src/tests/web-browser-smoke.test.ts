@@ -83,9 +83,19 @@ describe("web browser smoke", () => {
 
       await page.getByRole("button", { name: "Learning" }).click();
       await page.waitForSelector("text=Browser smoke learning insight");
+      await expectText(page.locator(".collection-title-line"), "Browser smoke study set");
+      await expectText(page.locator(".collection-header"), "0 of 2 learned");
+      await expectText(page.locator(".collection-header"), "coverage not audited");
       await expectText(page.locator("#candidates"), "not learned");
+      await page.getByRole("button", { name: "Collapse Browser smoke study set" }).click();
+      expect(await page.locator(".collection-chapters").isHidden()).toBe(true);
+      await page.getByRole("button", { name: "Expand Browser smoke study set" }).click();
+      expect(await page.locator(".collection-chapters").isVisible()).toBe(true);
       await page.getByRole("button", { name: /Browser smoke learning insight/ }).click();
       await expectTextContent(page.locator("#detail"), "Learning status");
+      await expectText(page.locator(".source-coverage-panel"), "legacy collection");
+      await expectText(page.locator(".source-coverage-panel"), "cannot verify whether anything was omitted");
+      await expectText(page.locator(".learning-breadcrumb"), "1 / 2");
       await expectText(page.locator("pre.learning-code"), "[source] -> [agent] -> [insight]");
       expect(await page.locator("a.source-link").getAttribute("href")).toBe("https://example.com/learning-source");
       await page.getByRole("button", { name: "Mark learned" }).click();
@@ -181,7 +191,7 @@ function seedBrowserSmokeData(project: string, home: string): void {
   const insightDir = join(project, ".codetrap", "phase2");
   mkdirSync(insightDir, { recursive: true });
   writeFileSync(join(insightDir, "insights.json"), `${JSON.stringify({
-    version: 1,
+    version: 2,
     insights: [{
       id: "ins-browser-smoke",
       title: "Browser smoke learning insight",
@@ -192,7 +202,35 @@ function seedBrowserSmokeData(project: string, home: string): void {
       shelved_at: "2026-08-09T12:00:00.000Z",
       consulted_count: 0,
       last_consulted_at: null,
+      source_type: "article",
+      topics: ["Web testing"],
+    }, {
+      id: "ins-browser-smoke-next",
+      title: "Browser smoke next chapter",
+      summary: "The second ordered note proves collection navigation.",
+      body: "Second chapter body.",
+      tags: ["learning", "smoke"],
+      source_refs: ["https://example.com/learning-source"],
+      shelved_at: "2026-08-09T12:01:00.000Z",
+      consulted_count: 0,
+      last_consulted_at: null,
+      source_type: "article",
+      topics: ["Web testing"],
     }],
+    collections: [{
+      id: "col-browser-smoke",
+      title: "Browser smoke study set",
+      summary: "A browser-level ordered collection.",
+      source_type: "article",
+      source_refs: ["https://example.com/learning-source"],
+      topics: ["Web testing"],
+      created_at: "2026-08-09T12:00:00.000Z",
+      updated_at: "2026-08-09T12:01:00.000Z",
+    }],
+    collection_items: [
+      { collection_id: "col-browser-smoke", insight_id: "ins-browser-smoke", position: 1 },
+      { collection_id: "col-browser-smoke", insight_id: "ins-browser-smoke-next", position: 2 },
+    ],
   }, null, 2)}\n`);
 }
 

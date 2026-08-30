@@ -250,6 +250,58 @@ describe("web API", () => {
     expect(missing.status).toBe(404);
   });
 
+  test("aggregates registered learning projects and governs inferred collection edits", async () => {
+    const home = tempHome("codetrap-web-learning-all-home-", { realpath: true, initCodetrap: true });
+    const projectA = tempProjectDir("codetrap-web-learning-all-a-", { realpath: true });
+    const projectB = tempProjectDir("codetrap-web-learning-all-b-", { realpath: true });
+    addWebProject(projectA, home);
+    addWebProject(projectB, home);
+    writeInsightShelf(projectA, [
+      webInsight("ins-a2", "A second", "2026-08-29T02:00:00.000Z", "https://example.com/guide"),
+      webInsight("ins-a1", "A first", "2026-08-29T01:00:00.000Z", "https://example.com/guide"),
+    ]);
+    writeInsightShelf(projectB, [
+      webInsight("ins-b1", "B standalone", "2026-08-29T03:00:00.000Z", "manual:b"),
+    ]);
+    const handler = createWebHandler({ token: TOKEN, cwd: projectA, home, currentProjectRoot: projectA });
+
+    const projectOnly = await api(handler, `/api/insights?project=${encodeURIComponent(projectA)}`);
+    const projectPayload = await projectOnly.json();
+    expect(projectPayload.scope).toBe("project");
+    expect(projectPayload.insights).toHaveLength(2);
+    expect(projectPayload.collections).toHaveLength(1);
+    expect(projectPayload.collections[0].inferred).toBe(true);
+    expect(projectPayload.collections[0].coverage_summary).toMatchObject({ status: "unknown", mode: null });
+
+    const all = await api(handler, `/api/insights?project=${encodeURIComponent(projectA)}&scope=all`);
+    const allPayload = await all.json();
+    expect(allPayload.insights).toHaveLength(3);
+    expect(new Set(allPayload.insights.map((insight: any) => insight.origin_project_root)))
+      .toEqual(new Set([projectA, projectB]));
+    expect(new Set(allPayload.insights.map((insight: any) => insight.library_key)).size).toBe(3);
+
+    const collectionId = projectPayload.collections[0].id;
+    const renamed = await api(handler, "/api/learning/collection/update", {
+      method: "POST",
+      body: { projectRoot: projectA, id: collectionId, title: "Example guide", topics: ["Web"] },
+    });
+    expect(renamed.status).toBe(200);
+    expect((await renamed.json()).collection).toMatchObject({ title: "Example guide", topics: ["Web"] });
+
+    const reordered = await api(handler, "/api/learning/collection/reorder", {
+      method: "POST",
+      body: { projectRoot: projectA, id: collectionId, insightIds: ["ins-a2", "ins-a1"] },
+    });
+    expect(reordered.status).toBe(200);
+    expect((await reordered.json()).items.map((item: any) => item.insight_id)).toEqual(["ins-a2", "ins-a1"]);
+
+    const invalid = await api(handler, "/api/learning/collection/reorder", {
+      method: "POST",
+      body: { projectRoot: projectA, id: collectionId, insightIds: ["ins-a1", "ins-a1"] },
+    });
+    expect(invalid.status).toBe(400);
+  });
+
   test("edits, approves, shelves, and rolls back an insight through purpose-specific Web routes", async () => {
     const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
     const project = tempProjectDir("codetrap-web-insight-review-", { realpath: true });
@@ -313,6 +365,56 @@ describe("web API", () => {
     expect((await rolledBack.json()).candidate).toMatchObject({ status: "proposed", delivery_state: "rolled_back" });
     const emptyShelf = await api(handler, `/api/insights?project=${encodeURIComponent(project)}`);
     expect((await emptyShelf.json()).insights).toEqual([]);
+  });
+
+  test("rejects invalid source-covered Insight drafts on every Web mutation route", async () => {
+    const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-source-guard-", { realpath: true });
+    addWebProject(project, home);
+    const traps = new TrapOperations(new TrapStore(project, undefined, home));
+    const proposed = new Phase2Operations(project, traps).propose({
+      kind: "insight",
+      title: "Audited lesson",
+      rationale: "The source has one declared lesson.",
+      payload: {
+        title: "Audited lesson",
+        summary: "One source unit.",
+        body: "source -> lesson",
+        source_refs: ["https://example.com/audited"],
+        source_unit_refs: ["lesson"],
+        collection: {
+          id: "col-audited",
+          title: "Audited source",
+          position: 1,
+          source_coverage: {
+            version: 1,
+            mode: "full_source",
+            source_fingerprint: `sha256:${"d".repeat(64)}`,
+            units: [{ id: "lesson", title: "Lesson", disposition: "learn" }],
+          },
+        },
+      },
+    });
+    if (proposed.suppressed) throw new Error("Fresh audited Insight was unexpectedly suppressed.");
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+    const invalidPayload = { ...proposed.candidate.destination_payload, source_unit_refs: [] };
+
+    for (const route of ["/api/candidate/save", "/api/candidate/approve", "/api/candidate/apply-insight"]) {
+      const response = await api(handler, route, {
+        method: "POST",
+        body: {
+          projectRoot: project,
+          sessionId: proposed.session.id,
+          candidateId: proposed.candidate.id,
+          destinationPayload: invalidPayload,
+        },
+      });
+      expect(response.status, route).toBe(400);
+      expect((await response.json()).error).toContain("must identify at least one learned source unit");
+    }
+
+    const shelf = await api(handler, `/api/insights?project=${encodeURIComponent(project)}`);
+    expect((await shelf.json()).insights).toEqual([]);
   });
 
   test("embedding settings API exposes status and preserves unrelated config on provider switch", async () => {
@@ -761,6 +863,26 @@ describe("web API", () => {
     expect((await list.json()).sessions).toEqual([]);
   });
 });
+
+function writeInsightShelf(project: string, insights: Record<string, unknown>[]): void {
+  const dir = join(project, ".codetrap", "phase2");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "insights.json"), `${JSON.stringify({ version: 1, insights }, null, 2)}\n`);
+}
+
+function webInsight(id: string, title: string, shelvedAt: string, sourceRef: string) {
+  return {
+    id,
+    title,
+    summary: `${title} summary`,
+    body: `${title} body`,
+    tags: ["learning"],
+    source_refs: [sourceRef],
+    shelved_at: shelvedAt,
+    consulted_count: 0,
+    last_consulted_at: null,
+  };
+}
 
 function seedCandidateSession(project: string, count: number, home: string): { sessionId: string; traps: TrapOperations } {
   const traps = new TrapOperations(new TrapStore(project, undefined, home));

@@ -56,8 +56,8 @@ an invented pointer is not evidence.
 
 A lesson with no trigger cannot become a guardrail, and one with no recommended
 action cannot enter runtime; both are rejected. A lesson that carries real
-understanding but no agent action is still worth keeping — mark it
-`"candidate_kind": "unclassified"` with `"destination_hint": "insight"`.
+understanding but no agent action is still worth keeping — mark it directly as
+`"candidate_kind": "insight"`.
 
 For every user-study insight, generate the study body with this instruction:
 
@@ -68,6 +68,24 @@ Put the compact ASCII flow diagram and the concrete, plain-language example in
 migration. Explain what the reader should notice, and do not imply that saving
 or marking the insight trains the model. Keep ordinary pitfall candidates
 concise; this teaching format applies only to user-study insights.
+
+When one AI conversation yields several study insights, give them the same
+`collection.id`, `collection.title`, and shared `collection.topics`, set
+`source_type` to `conversation`, and
+assign consecutive `collection.position` values in the recommended reading
+order. Use the conversation evidence refs as the source refs; do not combine
+unrelated conversations merely because they were reviewed in one run.
+
+Before drafting those insights, inventory every relevant evidence item as a
+stable source unit. Put the same `collection.source_coverage` manifest on every
+candidate, using mode `sampled` and the exact `source_fingerprint` printed in
+`evidence-pack.json`/`discovery-prompt.md`. Route study material through a
+candidate's `source_unit_refs`; preserve conversation-level background in
+shared `collection.context_sections` with its own source-unit refs. Use
+`skip` only for non-content or irrelevant evidence, with a reason. The CLI
+rejects inconsistent manifests, unexplained units, and duplicate or gapped
+positions. Because evidence packs are budgeted samples, never describe the
+result as full-source complete.
 
 ## 5. Stage, then stop
 
@@ -85,8 +103,7 @@ Staging fills the review inbox. It is **not** a commit. Report to the user:
 
 Then stop. The user reviews with `codetrap web` or `codetrap session candidates`.
 For a `pitfall_trap`, approval is followed by `codetrap session accept <id>
---executor agent`. For an insight-hinted lesson, first run `codetrap phase2
-migrate-insights --session <session-id> --apply --json`; after user approval,
-commit it with `codetrap phase2 apply <id> --session <session-id> --executor
-agent --json`. The Web console can also let the user approve and add an insight
-to Learning in one explicit action. You cannot approve on their behalf.
+--executor agent`. After the user approves an `insight`, commit it with
+`codetrap phase2 apply <id> --session <session-id> --executor agent --json`.
+The Web console can also let the user approve and add an insight to Learning in
+one explicit action. You cannot approve on their behalf.

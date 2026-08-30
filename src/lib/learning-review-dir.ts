@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { TURN_NORMALIZER_VERSION, type LearningSourceId, type NormalizedSession, type SourceManifest } from "../domain/learning-source";
@@ -82,6 +83,8 @@ export type EvidencePack = {
   session_count: number;
   evidence_count: number;
   excerpt_char_cap: number;
+  /** Exact fingerprint of the sampled evidence units presented to the agent. */
+  source_fingerprint: string;
   /** §4.2 evidence-pack budget, and what had to be dropped to meet it. */
   budget: {
     max_bytes: number;
@@ -191,6 +194,7 @@ export function buildEvidencePack(args: {
     session_count: args.sessions.length,
     evidence_count: items.length,
     excerpt_char_cap: MAX_EXCERPT_CHARS,
+    source_fingerprint: `sha256:${createHash("sha256").update(JSON.stringify(items)).digest("hex")}`,
     budget: { max_bytes: maxBytes, bytes, dropped_items: dropped, per_session_cap: perSessionCap },
     items,
   };
@@ -389,6 +393,8 @@ export function discoveryPrompt(args: {
   source: LearningSourceId;
   sessionCount: number;
   limit: number;
+  sourceFingerprint: string;
+  droppedItems: number;
 }): string {
   const client = args.source === "codex-sessions" ? "Codex" : "Claude Code";
   const clientSources = args.source === "codex-sessions"
@@ -401,6 +407,8 @@ export function discoveryPrompt(args: {
     `Source: \`${args.source}\` (${client})`,
     `Sessions in this pack: ${args.sessionCount}`,
     `Candidate limit: ${args.limit}`,
+    `Coverage mode: \`sampled\` (${args.droppedItems} proposed evidence item(s) omitted by the pack budget)`,
+    `Source fingerprint: \`${args.sourceFingerprint}\``,
     "",
     "## Red lines for this run",
     "",
@@ -423,8 +431,7 @@ export function discoveryPrompt(args: {
     "Look for lessons that are repeated, costly, error-prone, context-heavy, or",
     "likely to improve future agent behavior. Also surface lessons whose value is",
     "the user's understanding — rationale, tradeoffs, mental models — even when no",
-    "agent action exists; mark those with an `insight` destination hint and leave",
-    "`candidate_kind` as `unclassified`.",
+    "agent action exists; mark those directly with `candidate_kind: insight`.",
     "",
     "For every user-study insight, follow this teaching instruction:",
     "",
@@ -435,10 +442,24 @@ export function discoveryPrompt(args: {
     "migration. Explain what the reader should notice. Do not imply that saving",
     "or marking an insight trains the model. This format applies only to insights,",
     "not concise runtime pitfall candidates.",
+    "When one AI conversation yields several insights, give them the same",
+    "`collection.id`, `collection.title`, shared `collection.topics`, and",
+    "conversation source metadata, with",
+    "consecutive `collection.position` values in the recommended reading order.",
+    "Before drafting, inventory every evidence item relevant to that conversation",
+    "as a stable source unit. Put the same `collection.source_coverage` manifest",
+    "on every candidate, with mode `sampled`, the exact source fingerprint shown",
+    "above, and one unit per distinct topic/example/configuration/background.",
+    "Route study material to candidate `source_unit_refs`. Preserve source-level",
+    "background in shared `collection.context_sections`, each with a stable id,",
+    "title, body, and source-unit refs. Use `skip` only for non-content or",
+    "irrelevant evidence, with a concrete reason. Every substantive unit needs a",
+    "durable destination.",
+    "A sampled review must never claim full-source completeness.",
     "",
-    "Choose the smallest appropriate destination hypothesis. Phase 1 stabilizes only",
-    "`pitfall_trap` and `unclassified`; do not force an uncertain lesson into a",
-    "speculative destination.",
+    "Choose the smallest appropriate destination: concise runtime behavior belongs",
+    "in `pitfall_trap`; deliberate user study belongs in `insight`; genuinely",
+    "uncertain material may remain `unclassified`.",
     "",
     "## Quality bar",
     "",
@@ -466,6 +487,22 @@ export function discoveryPrompt(args: {
     '  "scope": "project",',
     '  "severity": "warning",',
     '  "tags": ["..."],',
+    '  "source_type": "conversation",',
+    '  "topics": ["..."],',
+    '  "source_unit_refs": ["unit-1"],',
+    '  "collection": {',
+    '    "id": "conversation-...", "title": "...", "topics": ["..."], "position": 1,',
+    '    "context_sections": [{',
+    '      "id": "source-background", "title": "Source background",',
+    '      "body": "Context worth preserving without a study chapter.",',
+    '      "source_unit_refs": ["background-unit"]',
+    '    }],',
+    '    "source_coverage": {',
+    '      "version": 1, "mode": "sampled",',
+    `      "source_fingerprint": "${args.sourceFingerprint}",`,
+    '      "units": [{ "id": "unit-1", "title": "...", "disposition": "learn" }]',
+    '    }',
+    '  },',
     '  "evidence": [{ "ref": "<session-id>#<turn-index>", "note": "why this supports the lesson" }]',
     "}",
     "```",

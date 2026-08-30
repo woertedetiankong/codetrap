@@ -7,7 +7,7 @@ import { TrapOperations } from "../lib/trap-operations";
 import { SessionOperations } from "../lib/session-operations";
 import { parseExecutor, type Executor } from "../domain/learning";
 import { SessionStore } from "../lib/session-store";
-import { Phase2Store } from "../lib/phase2-store";
+import { Phase2Store, type InsightRecord } from "../lib/phase2-store";
 import { Phase2Operations } from "../lib/phase2-operations";
 import { DEFAULT_RANKING_CONFIG } from "../lib/search-policy";
 import { toListJson, toTrapDetailsJson } from "../lib/output-json";
@@ -205,10 +205,16 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
 
   if (request.method === "GET" && url.pathname === "/api/insights") {
     const projectRoot = projectRootFromQuery(url, context);
-    return jsonResponse({
-      project_root: projectRoot,
-      insights: new Phase2Store(projectRoot).listInsights(),
-    });
+    const scope = learningScopeQuery(url);
+    const registry = loadWebProjectRegistry(context.home);
+    const projects = scope === "all"
+      ? registry.projects
+      : [registry.projects.find((project) => project.root === projectRoot) ?? {
+        root: projectRoot,
+        name: projectRoot,
+        last_opened_at: new Date(0).toISOString(),
+      }];
+    return jsonResponse(learningLibraryPayload(projects, projectRoot, scope));
   }
 
   if (request.method === "POST" && url.pathname === "/api/insight/consult") {
@@ -222,8 +228,40 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     return jsonResponse({
       success: true,
       project_root: projectRoot,
-      insight: store.consultInsight(id),
+      insight: decorateLearningInsight(store.consultInsight(id), projectRoot, learningProjectName(projectRoot, context)),
     });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/learning/collection/update") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const id = stringBodyField(body, "id");
+    const store = new Phase2Store(projectRoot);
+    if (!store.learningLibrary().collections.some((collection) => collection.id === id)) {
+      throw new WebHttpError(404, `Insight collection ${id} not found.`);
+    }
+    const collection = store.updateCollection(id, {
+      title: optionalStringBodyField(body, "title"),
+      summary: optionalStringBodyField(body, "summary"),
+      topics: optionalStringArrayBodyField(body, "topics"),
+    });
+    return jsonResponse({ success: true, project_root: projectRoot, collection });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/learning/collection/reorder") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    const id = stringBodyField(body, "id");
+    const store = new Phase2Store(projectRoot);
+    if (!store.learningLibrary().collections.some((collection) => collection.id === id)) {
+      throw new WebHttpError(404, `Insight collection ${id} not found.`);
+    }
+    try {
+      const items = store.reorderCollection(id, stringArrayBodyField(body, "insightIds"));
+      return jsonResponse({ success: true, project_root: projectRoot, collection_id: id, items });
+    } catch (error) {
+      throw new WebHttpError(400, error instanceof Error ? error.message : String(error));
+    }
   }
 
   if (request.method === "GET" && url.pathname === "/api/embeddings") {
@@ -279,9 +317,9 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
   if (request.method === "POST" && url.pathname === "/api/candidate/save") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    const ops = sessionOperations(projectRoot, context.home).sessions;
+    const operations = sessionOperations(projectRoot, context.home);
     const result = saveCandidateDraftFromBody(
-      ops,
+      operations,
       stringBodyField(body, "candidateId"),
       optionalStringBodyField(body, "sessionId"),
       body
@@ -335,12 +373,13 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
   if (request.method === "POST" && url.pathname === "/api/candidate/approve") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    const ops = sessionOperations(projectRoot, context.home).sessions;
+    const operations = sessionOperations(projectRoot, context.home);
+    const ops = operations.sessions;
     const candidateId = stringBodyField(body, "candidateId");
     const sessionId = optionalStringBodyField(body, "sessionId");
     // Persist the draft first so the authorization binds to the content the
     // user is looking at, not a stored revision they have since edited.
-    saveCandidateDraftFromBody(ops, candidateId, sessionId, body);
+    saveCandidateDraftFromBody(operations, candidateId, sessionId, body);
     const result = ops.approveCandidate({
       candidateId,
       sessionId,
@@ -362,7 +401,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     const operations = sessionOperations(projectRoot, context.home);
     const candidateId = stringBodyField(body, "candidateId");
     const requestedSessionId = optionalStringBodyField(body, "sessionId");
-    saveCandidateDraftFromBody(operations.sessions, candidateId, requestedSessionId, body);
+    saveCandidateDraftFromBody(operations, candidateId, requestedSessionId, body);
     const current = operations.sessions.getCandidate(candidateId, requestedSessionId);
     if (current.candidate.candidate_kind !== "insight") {
       throw new WebHttpError(400, `Candidate ${candidateId} is not a learning insight.`);
@@ -486,31 +525,38 @@ function executorBodyField(body: Record<string, unknown>): Executor {
   }
 }
 
-function sessionOperations(projectRoot: string, home?: string): { traps: TrapOperations; sessions: SessionOperations } {
+type WebOperations = { traps: TrapOperations; sessions: SessionOperations; phase2: Phase2Operations };
+
+function sessionOperations(projectRoot: string, home?: string): WebOperations {
   const traps = trapOperations(projectRoot, home);
   return {
     traps,
     sessions: new SessionOperations(new SessionStore(projectRoot), traps),
+    phase2: new Phase2Operations(projectRoot, traps),
   };
 }
 
 function saveCandidateDraftFromBody(
-  operations: SessionOperations,
+  operations: WebOperations,
   candidateId: string,
   sessionId: string | undefined,
   body: Record<string, unknown>
 ): { session: ReturnType<SessionOperations["getCandidate"]>["session"]; candidate: ReturnType<SessionOperations["getCandidate"]>["candidate"] } | null {
   const destinationPayload = optionalRecordBodyField(body, "destinationPayload");
   if (destinationPayload) {
-    const current = operations.getCandidate(candidateId, sessionId);
+    const current = operations.sessions.getCandidate(candidateId, sessionId);
     if ((current.candidate.candidate_kind ?? "pitfall_trap") === "pitfall_trap") {
       throw new WebHttpError(400, `Candidate ${candidateId} is a pitfall trap and has no destination payload.`);
     }
-    const candidate = operations.editDestinationCandidate(current.session.id, candidateId, destinationPayload);
-    return { session: current.session, candidate };
+    try {
+      operations.phase2.edit(current.session.id, candidateId, destinationPayload);
+    } catch (error) {
+      throw new WebHttpError(400, error instanceof Error ? error.message : String(error));
+    }
+    return operations.sessions.getCandidate(candidateId, current.session.id);
   }
   const trap = optionalRecordBodyField(body, "trap");
-  return trap ? operations.saveCandidate({ candidateId, sessionId, edit: trap }) : null;
+  return trap ? operations.sessions.saveCandidate({ candidateId, sessionId, edit: trap }) : null;
 }
 
 function trapOperations(projectRoot: string, home?: string): TrapOperations {
@@ -602,6 +648,65 @@ function assertRegisteredProject(root: string, context: WebContext): string {
   );
 }
 
+function learningLibraryPayload(projects: WebProject[], selectedProjectRoot: string, scope: "project" | "all") {
+  const insights: Record<string, unknown>[] = [];
+  const collections: Record<string, unknown>[] = [];
+  const collectionItems: Record<string, unknown>[] = [];
+  for (const project of projects) {
+    const library = new Phase2Store(project.root).learningLibrary();
+    for (const insight of library.insights) {
+      insights.push(decorateLearningInsight(insight, project.root, project.name));
+    }
+    for (const collection of library.collections) {
+      collections.push({
+        ...collection,
+        library_key: learningKey(project.root, collection.id),
+        origin_project_root: project.root,
+        origin_project_name: project.name,
+      });
+    }
+    for (const item of library.collection_items) {
+      collectionItems.push({
+        ...item,
+        collection_key: learningKey(project.root, item.collection_id),
+        insight_key: learningKey(project.root, item.insight_id),
+        origin_project_root: project.root,
+      });
+    }
+  }
+  return {
+    project_root: selectedProjectRoot,
+    scope,
+    insights,
+    collections,
+    collection_items: collectionItems,
+  };
+}
+
+function decorateLearningInsight(insight: InsightRecord, projectRoot: string, projectName: string) {
+  return {
+    ...insight,
+    library_key: learningKey(projectRoot, insight.id),
+    origin_project_root: projectRoot,
+    origin_project_name: projectName,
+  };
+}
+
+function learningKey(projectRoot: string, id: string): string {
+  return `${projectRoot}::${id}`;
+}
+
+function learningProjectName(projectRoot: string, context: WebContext): string {
+  return loadWebProjectRegistry(context.home).projects.find((project) => project.root === projectRoot)?.name
+    ?? projectRoot;
+}
+
+function learningScopeQuery(url: URL): "project" | "all" {
+  const scope = optionalQuery(url, "scope") ?? "project";
+  if (scope === "project" || scope === "all") return scope;
+  throw new WebHttpError(400, "scope must be project or all.");
+}
+
 function requiredQuery(url: URL, key: string): string {
   const value = url.searchParams.get(key);
   if (!value) throw new WebHttpError(400, `${key} is required.`);
@@ -642,6 +747,21 @@ function optionalStringBodyField(body: Record<string, unknown>, key: string): st
   if (typeof value !== "string") throw new WebHttpError(400, `${key} must be a string.`);
   const trimmed = value.trim();
   return trimmed || undefined;
+}
+
+function stringArrayBodyField(body: Record<string, unknown>, key: string): string[] {
+  const value = optionalStringArrayBodyField(body, key);
+  if (!value) throw new WebHttpError(400, `${key} is required.`);
+  return value;
+}
+
+function optionalStringArrayBodyField(body: Record<string, unknown>, key: string): string[] | undefined {
+  const value = body[key];
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new WebHttpError(400, `${key} must be an array of strings.`);
+  }
+  return value.map((item) => item.trim()).filter(Boolean);
 }
 
 function numberBodyField(body: Record<string, unknown>, key: string): number {

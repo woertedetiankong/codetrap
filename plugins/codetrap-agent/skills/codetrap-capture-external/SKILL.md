@@ -25,7 +25,28 @@ understanding.
 
 ## Step 2: Extract And Route Candidate Lessons
 
-Create as many candidates as pass the quality bar. Do not force a fixed count.
+Use two passes. In pass one, inventory the source before drafting anything:
+
+- headings and sections
+- core claims and mental models
+- examples and case studies
+- source background, dated facts, authorship, and case-study context
+- code, commands, configuration, APIs, and diagrams
+- limitations, exceptions, tradeoffs, and conclusions
+
+Give every meaningful unit a short stable id. Calculate a SHA-256 fingerprint
+from the exact rendered text you reviewed and format it as `sha256:<64 hex>`.
+If the source is truncated or only sampled, use mode `sampled`; never claim
+full-source completeness.
+
+In pass two, create as many candidates as pass the quality bar. Do not force a
+fixed count. Route substantive units to either an Insight's
+`source_unit_refs` or a source-backed `collection.context_sections` entry.
+Use collection context for background or dated facts that should remain
+available but should not become artificial study chapters. Use `skip` only
+for page chrome, navigation, duplicated widgets, or material outside the
+article body, with a concrete reason. Never silently discard substantive
+source content.
 Choose the destination by purpose:
 
 - `pitfall_trap` is concise agent memory: when it applies, what an agent might
@@ -45,10 +66,14 @@ Each trap candidate must include:
 - `tags`: useful retrieval terms
 - optional `path_globs`, `module`, and `owner` when the lesson is project-specific
 
-Reject or omit candidates that are broad summaries, one-off facts, vague advice, marketing claims, or source details that would not change future coding behavior.
+Reject trap candidates that are broad summaries, one-off facts, vague advice,
+marketing claims, or source details that would not change future coding
+behavior. Preserve substantive article background in collection context rather
+than discarding it merely because it is not a trap or standalone lesson.
 
 Each insight candidate must include `title`, `summary`, `body`, `tags`, and
-`source_refs`. Generate `body` with this teaching instruction:
+`source_refs`, plus a suitable `source_type`. Generate `body` with this teaching
+instruction:
 
 > 用ASCII流程图结合通俗易懂的例子讲解
 
@@ -57,10 +82,28 @@ sequence or relationship and a concrete, plain-language example. Keep the
 diagram aligned as plain text and explain what the reader should notice. Do not
 claim that saving or marking an insight trains the model.
 
+When one source yields multiple insights, treat the extraction as one source
+collection. Give every proposal the same stable `collection.id`, title, shared
+collection topics, source metadata, and consecutive `collection.position`
+values following the source's recommended reading order. Give every proposal
+the same complete
+`collection.source_coverage` manifest and the source-unit ids taught by that
+proposal. Even a single source-derived insight uses a one-item collection so
+the source inventory and any intentional skips remain auditable.
+When background belongs to the whole source, repeat the same
+`collection.context_sections` array on every proposal. Each section needs a
+stable id, title, body, and `source_unit_refs`; those refs count toward
+collection completeness without increasing the chapter count.
+
 ## Step 3: Rank And Ask
 
 Present the recommended candidates in priority order. Name the proposed
 destination and include a short reason for each recommendation.
+
+Also present the source coverage account: every inventoried unit, which
+candidate covers it, and every explicit skip reason. If any unit is unresolved,
+say the collection is incomplete and resolve it before proposing a full-source
+collection.
 
 Ask the user which candidates to save. Do not write any trap until the user confirms.
 
@@ -87,25 +130,59 @@ codetrap add_trap_evidence <id> \
 
 Use `global` for generally reusable lessons across projects. Use `project` only when the lesson is specific to the current repository or technology stack.
 
-For each confirmed insight candidate, stage a reviewed Phase 2 proposal with
-the teaching content in `payload.body` and the source in
-`payload.source_refs`:
+Stage every confirmed insight from one source as a single reviewed Phase 2
+batch. The command validates the whole coverage account before it writes any
+candidate, so never loop over `phase2 propose` for a multi-insight source.
+Put teaching content in `payload.body` and the source in `payload.source_refs`.
 
-Feed the following object to `codetrap phase2 propose --input-json - --json`
+Feed the following object to `codetrap phase2 propose-batch --input-json - --json`
 through standard input:
 
 ```json
 {
-  "kind":"insight",
-  "title":"<title>",
-  "rationale":"<why this is worth studying>",
-  "payload":{
-    "title":"<title>",
-    "summary":"<short summary>",
-    "body":"<ASCII flow plus plain-language example>",
-    "tags":["<tag>"],
-    "source_refs":["<url-or-source-id>"]
-  }
+  "goal":"External source study collection: <source title>",
+  "proposals":[
+    {
+      "kind":"insight",
+      "title":"<title>",
+      "rationale":"<why this is worth studying>",
+      "payload":{
+        "title":"<title>",
+        "summary":"<short summary>",
+        "body":"<ASCII flow plus plain-language example>",
+        "tags":["<tag>"],
+        "source_refs":["<url-or-source-id>"],
+        "source_type":"article",
+        "topics":["<primary topic>"],
+        "source_unit_refs":["unit-1"],
+        "collection":{
+          "id":"<same stable id for this extraction>",
+          "title":"<source collection title>",
+          "source_type":"article",
+          "source_refs":["<url-or-source-id>"],
+          "topics":["<shared collection topic>"],
+          "context_sections":[
+            {
+              "id":"source-background",
+              "title":"Source background",
+              "body":"Dated authorship, company, or case context.",
+              "source_unit_refs":["unit-2"]
+            }
+          ],
+          "source_coverage":{
+            "version":1,
+            "mode":"full_source",
+            "source_fingerprint":"sha256:<64 hex>",
+            "units":[
+              {"id":"unit-1","title":"<source section>","disposition":"learn"},
+              {"id":"unit-2","title":"<source background>","disposition":"learn"}
+            ]
+          },
+          "position":1
+        }
+      }
+    }
+  ]
 }
 ```
 

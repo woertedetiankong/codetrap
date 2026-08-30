@@ -24,6 +24,7 @@ import {
 } from "./learning-sources";
 import {
   draftToTrapInput,
+  insightDestinationPayload,
   readReviewArtifacts,
   validateStagedCandidates,
   type StageRejection,
@@ -203,6 +204,8 @@ export class LearningOperations {
         source: request.source,
         sessionCount: collected.sessions.length,
         limit,
+        sourceFingerprint: pack.source_fingerprint,
+        droppedItems: pack.budget.dropped_items,
       }),
     });
 
@@ -436,6 +439,7 @@ export class LearningOperations {
         destinationHint: draft.destination_hint,
         rationale: draft.rationale,
         sourceManifestRefs: refs,
+        destinationPayload: insightDestinationPayload(draft, refs),
       });
 
       // A lesson the user already skipped must not come back through a new

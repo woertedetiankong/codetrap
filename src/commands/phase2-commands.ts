@@ -17,6 +17,9 @@ export function cmdPhase2(args: string[], store: TrapStore, traps: TrapOperation
     case "propose":
       result = operations.propose(jsonObjectInput(opts));
       break;
+    case "propose-batch":
+      result = operations.proposeBatch(jsonObjectInput(opts));
+      break;
     case "edit":
       result = operations.edit(requiredOpt(opts, "session"), requiredPosition(positionals, 0, "candidate id"), jsonObjectInput(opts));
       break;
@@ -63,7 +66,7 @@ export function cmdPhase2(args: string[], store: TrapStore, traps: TrapOperation
       result = operations.migrateInsightCandidates(opts.session, opts.apply !== undefined);
       break;
     default:
-      return errorResult("Usage: codetrap phase2 <propose|edit|preview|apply|revert|insights|consult|commits|validate|graduate|outcome|metrics|decision|migrate-insights>");
+      return errorResult("Usage: codetrap phase2 <propose|propose-batch|edit|preview|apply|revert|insights|consult|commits|validate|graduate|outcome|metrics|decision|migrate-insights>");
   }
 
   if (wantsJson(opts)) return jsonResult(result);

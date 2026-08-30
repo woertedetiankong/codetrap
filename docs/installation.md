@@ -304,7 +304,52 @@ codetrap embeddings reindex --scope global
 
 `codetrap embed` remains as a short alias for reindexing. codetrap stores embeddings by profile, so switching between Jina and Ollama does not overwrite existing vectors; it creates or refreshes the selected profile.
 
-You can also run `codetrap web --open` to start the authenticated local console and open it in your default browser. The launch token is removed from the visible URL after it is copied into session storage. If the server restarts, an old tab explains that its credential expired and directs the user to the newly opened tab instead of showing a bare `Unauthorized` error. The console notices session and candidate updates made by agents or other terminals, while preserving any unsaved candidate draft. Learning candidates have their own editor and can be approved and added to the shelf in one explicit action. The Learning view renders fenced ASCII/code blocks safely, keeps source links visible, localizes dates, and treats **Mark learned** as an idempotent state instead of an incrementing score. Its empty state shows a ready-to-send Agent request for study material explained with an ASCII flow diagram and a plain-language example; the bundled external-capture and learning-review skills use the same format for user-study insights. This is local memory and study tracking, not model training. Open the `Embeddings` view to inspect the active provider/profile, see project and global fresh/stale/missing counts, switch between Ollama and Jina, and reindex project or global embeddings. The web console does not save Jina API keys; Jina still reads `JINA_API_KEY` from the environment.
+You can also run `codetrap web --open` to start the authenticated local console
+and open it in your default browser. The launch token is removed from the
+visible URL after it is copied into session storage. If the server restarts, an
+old tab explains that its credential expired and directs the user to the newly
+opened tab instead of showing a bare `Unauthorized` error. The console notices
+session and candidate updates made by agents or other terminals while
+preserving any unsaved candidate draft.
+
+Learning candidates have their own editor and can be approved and added to the
+shelf in one explicit action. The Learning view can switch between the current
+project and all registered projects, groups notes from one article or AI
+conversation into collapsible ordered source collections, shows progress and
+previous/next navigation, and filters by search, source, tag, or learned state.
+Project files remain the durable source of truth; the all-project view is an
+aggregation rather than a second writable store.
+
+New source-derived collections use a fingerprinted source-unit inventory. Core
+knowledge and examples route to ordered Insights; substantive background and
+dated facts can live in collection `context_sections`, where they stay visible
+and count toward coverage without increasing the chapter count. Explicit skips
+are reserved for excluded non-content and require reasons. Multi-note sources
+enter review through one validated `phase2 propose-batch`, and the UI derives
+complete/incomplete/curated/sampled status from chapters and source context that
+actually reached the shelf. Collapsed cards show a short source-audit phrase
+beside the source type and reserve their only ratio for learning progress;
+detailed coverage counts remain in the source ledger. Legacy collections remain
+readable and show unknown coverage rather than a false completeness claim.
+
+Web save, approval, and apply routes reuse the same source-coverage validation as
+the CLI. The store also rejects occupied chapter positions and any attempt by a
+single Insight apply to replace an existing audited collection's manifest,
+context, or metadata; append and re-audit semantics require an explicit future
+collection operation.
+
+The Learning view renders fenced ASCII/code blocks safely, keeps source links
+visible, localizes dates, and treats **Mark learned** as an idempotent state
+instead of an incrementing score. Its empty state shows a ready-to-send Agent
+request for a two-pass coverage account plus study material explained with an
+ASCII flow diagram and a plain-language example; the bundled external-capture
+and learning-review skills use the same contract. This is local memory and
+study tracking, not model training.
+
+Open the `Embeddings` view to inspect the active provider/profile, see project
+and global fresh/stale/missing counts, switch between Ollama and Jina, and
+reindex project or global embeddings. The web console does not save Jina API
+keys; Jina still reads `JINA_API_KEY` from the environment.
 
 Then search:
 

@@ -1,6 +1,17 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { CandidateTrap } from "../domain/session";
+import {
+  collectionContextSourceRefs,
+  normalizeCollectionContextSections,
+  normalizeSourceCoverage,
+  normalizeSourceUnitRefs,
+  sourceCoverageSummary,
+  type CollectionContextSection,
+  type SourceCoverageManifest,
+  type SourceCoverageSummary,
+} from "../domain/source-coverage";
 import { CODETRAP_DIR } from "./constants";
 import { withAdvisoryLock } from "./advisory-lock";
 import { readJsonFile, writeFileAtomic } from "./fs-json";
@@ -23,9 +34,56 @@ export type InsightRecord = {
   body: string;
   tags: string[];
   source_refs: string[];
+  source_type?: InsightSourceType;
+  topics?: string[];
+  /** Stable source-unit ids taught by this Insight. */
+  source_unit_refs?: string[];
   shelved_at: string;
   consulted_count: number;
   last_consulted_at: string | null;
+};
+
+export const INSIGHT_SOURCE_TYPES = [
+  "article",
+  "conversation",
+  "documentation",
+  "paper",
+  "video",
+  "course",
+  "manual",
+  "other",
+] as const;
+export type InsightSourceType = (typeof INSIGHT_SOURCE_TYPES)[number];
+
+export type InsightCollectionRecord = {
+  id: string;
+  title: string;
+  summary: string;
+  source_type: InsightSourceType;
+  source_refs: string[];
+  topics: string[];
+  source_coverage?: SourceCoverageManifest;
+  /** Source-backed background preserved without becoming a study chapter. */
+  context_sections?: CollectionContextSection[];
+  /** Derived on read from the manifest and Insights that actually exist. */
+  coverage_summary?: SourceCoverageSummary;
+  created_at: string;
+  updated_at: string;
+  /** Read-time legacy grouping; persisted only after an explicit edit. */
+  inferred?: boolean;
+};
+
+export type InsightCollectionItem = {
+  collection_id: string;
+  insight_id: string;
+  position: number;
+};
+
+export type InsightLibrary = {
+  version: 2;
+  insights: InsightRecord[];
+  collections: InsightCollectionRecord[];
+  collection_items: InsightCollectionItem[];
 };
 
 export type Phase2Event = {
@@ -39,7 +97,24 @@ export type Phase2Event = {
 };
 
 type CommitDocument = { version: 1; commits: Phase2Commit[] };
-type InsightDocument = { version: 1; insights: InsightRecord[] };
+type InsightDocument = {
+  version: 1 | 2;
+  insights: InsightRecord[];
+  collections?: InsightCollectionRecord[];
+  collection_items?: InsightCollectionItem[];
+};
+type PreparedInsightCollection = {
+  id: string;
+  title: string;
+  summary: string;
+  source_type: InsightSourceType;
+  source_refs: string[];
+  topics: string[];
+  source_coverage?: SourceCoverageManifest;
+  context_sections: CollectionContextSection[];
+  replace_context_sections: boolean;
+  position: unknown;
+};
 type EventDocument = { version: 1; events: Phase2Event[] };
 
 const PHASE2_DIR = "phase2";
@@ -117,6 +192,59 @@ export class Phase2Store {
     return [...this.readInsights().insights].reverse();
   }
 
+  learningLibrary(): InsightLibrary {
+    return libraryFromDocument(this.readInsights());
+  }
+
+  updateCollection(
+    id: string,
+    updates: { title?: string; summary?: string; topics?: string[] },
+    now = new Date()
+  ): InsightCollectionRecord {
+    return this.withLock(() => {
+      const document = materializeInferredCollection(this.readInsights(), id);
+      const collection = document.collections?.find((item) => item.id === id);
+      if (!collection) throw new Error(`Insight collection ${id} not found.`);
+      if (updates.title !== undefined) collection.title = requiredText(updates.title, "collection.title");
+      if (updates.summary !== undefined) collection.summary = updates.summary.trim();
+      if (updates.topics !== undefined) collection.topics = normalizedStrings(updates.topics);
+      collection.updated_at = now.toISOString();
+      delete collection.inferred;
+      this.writeInsights(document);
+      return collection;
+    });
+  }
+
+  reorderCollection(id: string, insightIds: string[], now = new Date()): InsightCollectionItem[] {
+    return this.withLock(() => {
+      const document = materializeInferredCollection(this.readInsights(), id);
+      const collection = document.collections?.find((item) => item.id === id);
+      if (!collection) throw new Error(`Insight collection ${id} not found.`);
+      const current = (document.collection_items ?? []).filter((item) => item.collection_id === id);
+      const requested = normalizedStrings(insightIds);
+      if (requested.length !== insightIds.length || requested.length !== current.length) {
+        throw new Error(`Collection ${id} reorder must contain every member exactly once.`);
+      }
+      const currentIds = new Set(current.map((item) => item.insight_id));
+      if (requested.some((insightId) => !currentIds.has(insightId))) {
+        throw new Error(`Collection ${id} reorder contains an unknown member.`);
+      }
+      const reordered = requested.map((insight_id, index) => ({
+        collection_id: id,
+        insight_id,
+        position: index + 1,
+      }));
+      document.collection_items = [
+        ...(document.collection_items ?? []).filter((item) => item.collection_id !== id),
+        ...reordered,
+      ];
+      collection.updated_at = now.toISOString();
+      delete collection.inferred;
+      this.writeInsights(document);
+      return reordered;
+    });
+  }
+
   consultInsight(id: string, now = new Date()): InsightRecord {
     return this.withLock(() => {
       const document = this.readInsights();
@@ -182,19 +310,42 @@ export class Phase2Store {
     if (kind === "insight") {
       const path = this.relativeInsightsPath();
       const before = this.readOptional(path);
-      const document = before === null ? { version: 1 as const, insights: [] } : parseInsightDocument(before, path);
+      const document = before === null
+        ? emptyInsightDocument()
+        : normalizedInsightDocument(parseInsightDocument(before, path));
+      const sourceRefs = stringArray(payload.source_refs ?? candidate.source_manifest_refs);
+      const collectionPayload = optionalRecordValue(payload.collection);
+      const sourceType = parseInsightSourceType(payload.source_type, inferSourceType(sourceRefs[0]));
+      const topics = normalizedStrings(stringArray(payload.topics));
+      const preparedCollection = collectionPayload
+        ? prepareInsightCollection(document, collectionPayload, sourceRefs, sourceType, topics)
+        : undefined;
+      const sourceUnitRefs = normalizeSourceUnitRefs(
+        payload.source_unit_refs,
+        preparedCollection?.source_coverage,
+        "payload.source_unit_refs"
+      );
+      if (preparedCollection?.source_coverage && sourceUnitRefs.length === 0) {
+        throw new Error("payload.source_unit_refs must identify at least one learned source unit when source_coverage is present.");
+      }
       const insight: InsightRecord = {
         id: `ins-${candidate.content_hash?.slice(0, 12) ?? candidate.id}`,
         title: requiredText(payload.title ?? candidate.trap.title, "payload.title"),
         summary: requiredText(payload.summary ?? candidate.rationale ?? candidate.trap.context, "payload.summary"),
         body: requiredText(payload.body ?? candidate.trap.fix, "payload.body"),
         tags: stringArray(payload.tags),
-        source_refs: stringArray(payload.source_refs ?? candidate.source_manifest_refs),
+        source_refs: sourceRefs,
+        source_type: sourceType,
+        topics,
+        ...(sourceUnitRefs.length > 0 ? { source_unit_refs: sourceUnitRefs } : {}),
         shelved_at: now.toISOString(),
         consulted_count: 0,
         last_consulted_at: null,
       };
       if (!document.insights.some((item) => item.id === insight.id)) document.insights.push(insight);
+      if (preparedCollection) {
+        upsertInsightCollection(document, insight, preparedCollection, now);
+      }
       return [{ path, before, after: `${JSON.stringify(document, null, 2)}\n` }];
     }
     throw new Error(`Candidate ${candidate.id} has unsupported Phase 2 destination ${kind}.`);
@@ -243,13 +394,17 @@ export class Phase2Store {
     return existsSync(this.commitsPath()) ? readJsonFile(this.commitsPath(), "Phase 2 commits") : { version: 1, commits: [] };
   }
   private readInsights(): InsightDocument {
-    return existsSync(this.insightsPath()) ? readJsonFile(this.insightsPath(), "insight shelf") : { version: 1, insights: [] };
+    return existsSync(this.insightsPath())
+      ? parseInsightDocument(readFileSync(this.insightsPath(), "utf-8"), this.insightsPath())
+      : emptyInsightDocument();
   }
   private readEvents(): EventDocument {
     return existsSync(this.eventsPath()) ? readJsonFile(this.eventsPath(), "Phase 2 events") : { version: 1, events: [] };
   }
   private writeCommits(document: CommitDocument): void { this.writeJson(this.commitsPath(), document); }
-  private writeInsights(document: InsightDocument): void { this.writeJson(this.insightsPath(), document); }
+  private writeInsights(document: InsightDocument): void {
+    this.writeJson(this.insightsPath(), normalizedInsightDocument(document));
+  }
   private writeEvents(document: EventDocument): void { this.writeJson(this.eventsPath(), document); }
   private writeJson(path: string, value: unknown): void {
     mkdirSync(dirname(path), { recursive: true });
@@ -290,12 +445,432 @@ function recordValue(value: unknown, field: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function optionalRecordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean) : [];
+}
+
+function normalizedStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const value of values.map(String).map((item) => item.trim()).filter(Boolean)) {
+    const key = value.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(value);
+  }
+  return normalized;
+}
+
+function emptyInsightDocument(): InsightDocument {
+  return { version: 2, insights: [], collections: [], collection_items: [] };
+}
+
+function normalizedInsightDocument(document: InsightDocument): InsightDocument {
+  const insightIds = new Set(document.insights.map((insight) => insight.id));
+  const collections = (document.collections ?? []).map((collection) => {
+    const { inferred: _inferred, coverage_summary: _coverageSummary, ...persisted } = collection;
+    return {
+      ...persisted,
+      source_type: parseInsightSourceType(collection.source_type, inferSourceType(collection.source_refs?.[0])),
+      source_refs: normalizedStrings(collection.source_refs ?? []),
+      topics: normalizedStrings(collection.topics ?? []),
+      ...(collection.source_coverage ? {
+        source_coverage: normalizeSourceCoverage(
+          collection.source_coverage,
+          `collection ${collection.id}.source_coverage`
+        ),
+      } : {}),
+      ...(collection.context_sections?.length ? {
+        context_sections: normalizeCollectionContextSections(
+          collection.context_sections,
+          collection.source_coverage,
+          `collection ${collection.id}.context_sections`
+        ),
+      } : {}),
+    };
+  });
+  const collectionIds = new Set(collections.map((collection) => collection.id));
+  const collectionItems = (document.collection_items ?? [])
+    .filter((item) => collectionIds.has(item.collection_id) && insightIds.has(item.insight_id))
+    .map((item) => ({
+      collection_id: item.collection_id,
+      insight_id: item.insight_id,
+      position: positiveInteger(item.position, 1),
+    }));
+  return {
+    version: 2,
+    insights: document.insights.map((insight) => ({
+      ...insight,
+      tags: normalizedStrings(insight.tags ?? []),
+      source_refs: normalizedStrings(insight.source_refs ?? []),
+      source_type: parseInsightSourceType(insight.source_type, inferSourceType(insight.source_refs?.[0])),
+      topics: normalizedStrings(insight.topics ?? []),
+      ...(insight.source_unit_refs?.length ? {
+        source_unit_refs: normalizedStrings(insight.source_unit_refs),
+      } : {}),
+    })),
+    collections,
+    collection_items: collectionItems,
+  };
+}
+
+function libraryFromDocument(document: InsightDocument): InsightLibrary {
+  const normalized = normalizedInsightDocument(document);
+  const explicitCollections = normalized.collections ?? [];
+  const explicitItems = normalized.collection_items ?? [];
+  const groupedIds = new Set(explicitItems.map((item) => item.insight_id));
+  const inferred = inferLegacyCollections(
+    normalized.insights.filter((insight) => !groupedIds.has(insight.id))
+  );
+  const collections = [...explicitCollections, ...inferred.collections];
+  const collectionItems = [...explicitItems, ...inferred.collection_items];
+  const insightsById = new Map(normalized.insights.map((insight) => [insight.id, insight]));
+  return {
+    version: 2,
+    insights: [...normalized.insights].reverse(),
+    collections: collections.map((collection) => {
+      const coveredRefs = collectionItems
+        .filter((item) => item.collection_id === collection.id)
+        .flatMap((item) => insightsById.get(item.insight_id)?.source_unit_refs ?? [])
+        .concat(collectionContextSourceRefs(collection.context_sections));
+      return {
+        ...collection,
+        coverage_summary: sourceCoverageSummary(collection.source_coverage, coveredRefs),
+      };
+    }),
+    collection_items: collectionItems,
+  };
+}
+
+function materializeInferredCollection(document: InsightDocument, id: string): InsightDocument {
+  const normalized = normalizedInsightDocument(document);
+  if (normalized.collections?.some((collection) => collection.id === id)) return normalized;
+  const library = libraryFromDocument(normalized);
+  const inferred = library.collections.find((collection) => collection.id === id && collection.inferred);
+  if (!inferred) return normalized;
+  const { inferred: _inferred, ...persisted } = inferred;
+  normalized.collections = [...(normalized.collections ?? []), persisted];
+  normalized.collection_items = [
+    ...(normalized.collection_items ?? []),
+    ...library.collection_items.filter((item) => item.collection_id === id),
+  ];
+  return normalized;
+}
+
+function upsertInsightCollection(
+  document: InsightDocument,
+  insight: InsightRecord,
+  payload: PreparedInsightCollection,
+  now: Date
+): void {
+  const timestamp = now.toISOString();
+  const collections = document.collections ?? [];
+  const existing = collections.find((collection) => collection.id === payload.id);
+  if (existing) {
+    existing.title = payload.title;
+    existing.summary = payload.summary || existing.summary;
+    existing.source_type = payload.source_type;
+    existing.source_refs = payload.source_refs.length > 0 ? payload.source_refs : existing.source_refs;
+    existing.topics = payload.topics.length > 0 ? payload.topics : existing.topics;
+    if (payload.source_coverage) existing.source_coverage = payload.source_coverage;
+    if (payload.replace_context_sections) existing.context_sections = payload.context_sections;
+    existing.updated_at = timestamp;
+  } else {
+    collections.push({
+      id: payload.id,
+      title: payload.title,
+      summary: payload.summary,
+      source_type: payload.source_type,
+      source_refs: payload.source_refs,
+      topics: payload.topics,
+      ...(payload.source_coverage ? { source_coverage: payload.source_coverage } : {}),
+      ...(payload.context_sections.length > 0 ? { context_sections: payload.context_sections } : {}),
+      created_at: timestamp,
+      updated_at: timestamp,
+    });
+  }
+  document.collections = collections;
+
+  const items = (document.collection_items ?? []).filter((item) => item.insight_id !== insight.id);
+  const collectionItems = items.filter((item) => item.collection_id === payload.id);
+  const occupiedPositions = new Set<number>();
+  for (const item of collectionItems) {
+    if (occupiedPositions.has(item.position)) {
+      throw new Error(`Collection ${payload.id} already contains duplicate position ${item.position}; reorder it before applying another Insight.`);
+    }
+    occupiedPositions.add(item.position);
+  }
+  const desired = positiveInteger(payload.position, nextCollectionPosition(items, payload.id));
+  const occupied = collectionItems.find((item) => item.position === desired);
+  if (occupied) {
+    throw new Error(`Collection ${payload.id} position ${desired} is already occupied by Insight ${occupied.insight_id}.`);
+  }
+  document.collection_items = [...items, { collection_id: payload.id, insight_id: insight.id, position: desired }];
+}
+
+function prepareInsightCollection(
+  document: InsightDocument,
+  payload: Record<string, unknown>,
+  insightSourceRefs: string[],
+  insightSourceType: InsightSourceType,
+  insightTopics: string[]
+): PreparedInsightCollection {
+  const title = requiredText(payload.title, "payload.collection.title");
+  const declaredId = optionalTextValue(payload.id);
+  const sourceCoverage = normalizeSourceCoverage(
+    payload.source_coverage,
+    "payload.collection.source_coverage"
+  );
+  const existing = findExistingAuditedCollection(document, declaredId, title, sourceCoverage);
+  const existingCoverage = existing?.source_coverage
+    ? normalizeSourceCoverage(existing.source_coverage, `collection ${existing.id}.source_coverage`)
+    : undefined;
+  const existingContext = existing?.source_coverage
+    ? normalizeCollectionContextSections(
+        existing.context_sections,
+        existingCoverage,
+        `collection ${existing.id}.context_sections`
+      )
+    : [];
+  const explicitSourceRefs = normalizedStrings(stringArray(payload.source_refs));
+  const sourceRefs = explicitSourceRefs.length > 0
+    ? explicitSourceRefs
+    : existing?.source_refs ?? normalizedStrings(insightSourceRefs);
+  const id = declaredId ?? existing?.id ?? deriveInsightCollectionId(title, sourceRefs);
+  const sourceType = payload.source_type !== undefined
+    ? parseInsightSourceType(payload.source_type, insightSourceType ?? inferSourceType(sourceRefs[0]))
+    : existing?.source_type ?? parseInsightSourceType(insightSourceType, inferSourceType(sourceRefs[0]));
+  const explicitTopics = normalizedStrings(stringArray(payload.topics));
+  const topics = explicitTopics.length > 0
+    ? explicitTopics
+    : existing?.topics ?? normalizedStrings(insightTopics);
+  const contextSections = payload.context_sections !== undefined
+    ? normalizeCollectionContextSections(
+        payload.context_sections,
+        sourceCoverage,
+        "payload.collection.context_sections"
+      )
+    : existingContext;
+  const prepared: PreparedInsightCollection = {
+    id,
+    title,
+    summary: optionalTextValue(payload.summary) ?? existing?.summary ?? "",
+    source_type: sourceType,
+    source_refs: sourceRefs,
+    topics,
+    ...(sourceCoverage ? { source_coverage: sourceCoverage } : {}),
+    context_sections: contextSections,
+    replace_context_sections: payload.context_sections !== undefined,
+    position: payload.position,
+  };
+
+  if (!existing?.source_coverage) return prepared;
+  const existingContract = JSON.stringify({
+    id: existing.id,
+    title: existing.title,
+    summary: existing.summary,
+    source_type: existing.source_type,
+    source_refs: existing.source_refs,
+    topics: existing.topics,
+    source_coverage: existingCoverage,
+    context_sections: existingContext,
+  });
+  const proposedContract = JSON.stringify({
+    id: prepared.id,
+    title: prepared.title,
+    summary: prepared.summary,
+    source_type: prepared.source_type,
+    source_refs: prepared.source_refs,
+    topics: prepared.topics,
+    source_coverage: prepared.source_coverage,
+    context_sections: prepared.context_sections,
+  });
+  if (proposedContract !== existingContract) {
+    throw new Error(
+      `Collection ${id} source contract cannot be replaced by an Insight apply; ` +
+      "resubmit the exact existing collection metadata or create a new collection with an explicit id."
+    );
+  }
+  return prepared;
+}
+
+function findExistingAuditedCollection(
+  document: InsightDocument,
+  declaredId: string | null,
+  title: string,
+  sourceCoverage?: SourceCoverageManifest
+): InsightCollectionRecord | undefined {
+  const collections = document.collections ?? [];
+  if (declaredId) return collections.find((collection) => collection.id === declaredId);
+
+  const sameTitle = collections.filter((collection) =>
+    Boolean(collection.source_coverage)
+    && collection.title.toLocaleLowerCase() === title.toLocaleLowerCase()
+  );
+  if (sameTitle.length <= 1) return sameTitle[0];
+
+  const fingerprintMatches = sourceCoverage
+    ? sameTitle.filter((collection) =>
+        collection.source_coverage?.source_fingerprint.toLocaleLowerCase()
+          === sourceCoverage.source_fingerprint.toLocaleLowerCase())
+    : [];
+  if (fingerprintMatches.length === 1) return fingerprintMatches[0];
+  throw new Error(
+    `Source-covered collection ${title} is ambiguous without collection.id; ` +
+    "resubmit the candidate with the intended existing collection id."
+  );
+}
+
+function inferLegacyCollections(insights: InsightRecord[]): {
+  collections: InsightCollectionRecord[];
+  collection_items: InsightCollectionItem[];
+} {
+  const groups = new Map<string, InsightRecord[]>();
+  for (const insight of insights) {
+    const key = normalizedPrimarySource(insight.source_refs?.[0]);
+    if (!key) continue;
+    const group = groups.get(key) ?? [];
+    group.push(insight);
+    groups.set(key, group);
+  }
+  const collections: InsightCollectionRecord[] = [];
+  const collectionItems: InsightCollectionItem[] = [];
+  for (const [source, members] of groups) {
+    if (members.length < 2) continue;
+    const ordered = [...members].sort((left, right) =>
+      left.shelved_at.localeCompare(right.shelved_at) || left.id.localeCompare(right.id)
+    );
+    const id = `col-inferred-${shortHash(source)}`;
+    const timestamps = ordered.map((insight) => insight.shelved_at).filter(Boolean).sort();
+    collections.push({
+      id,
+      title: inferredCollectionTitle(source),
+      summary: `${ordered.length} learning insights from one source.`,
+      source_type: inferSourceType(source),
+      source_refs: [source],
+      topics: commonTags(ordered),
+      created_at: timestamps[0] ?? new Date(0).toISOString(),
+      updated_at: timestamps.at(-1) ?? new Date(0).toISOString(),
+      inferred: true,
+    });
+    ordered.forEach((insight, index) => collectionItems.push({
+      collection_id: id,
+      insight_id: insight.id,
+      position: index + 1,
+    }));
+  }
+  return { collections, collection_items: collectionItems };
+}
+
+function normalizedPrimarySource(value: string | undefined): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  try {
+    const url = new URL(text);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return text.split("#")[0] || null;
+    url.hash = "";
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^(utm_|fbclid$|gclid$)/i.test(key)) url.searchParams.delete(key);
+    }
+    url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+    return url.toString();
+  } catch {
+    return text.split("#")[0]?.trim() || null;
+  }
+}
+
+function inferredCollectionTitle(source: string): string {
+  try {
+    const url = new URL(source);
+    const segment = decodeURIComponent(url.pathname.split("/").filter(Boolean).at(-1) ?? "");
+    if (segment) {
+      return segment
+        .replace(/\.[A-Za-z0-9]+$/, "")
+        .split(/[-_]+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
+        .join(" ");
+    }
+    return url.hostname;
+  } catch {
+    const compact = source.replace(/^(session|conversation|transcript):/i, "").trim();
+    return compact ? `Conversation ${compact}` : "AI conversation";
+  }
+}
+
+function commonTags(insights: InsightRecord[]): string[] {
+  const counts = new Map<string, { label: string; count: number }>();
+  for (const insight of insights) {
+    for (const tag of normalizedStrings(insight.tags ?? [])) {
+      const key = tag.toLocaleLowerCase();
+      const current = counts.get(key) ?? { label: tag, count: 0 };
+      current.count += 1;
+      counts.set(key, current);
+    }
+  }
+  const threshold = Math.ceil(insights.length / 2);
+  return [...counts.values()]
+    .filter((entry) => entry.count >= threshold)
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+    .slice(0, 5)
+    .map((entry) => entry.label);
+}
+
+export function inferSourceType(source: string | undefined): InsightSourceType {
+  const text = source?.trim().toLocaleLowerCase() ?? "";
+  if (!text) return "manual";
+  if (/^(session|conversation|transcript|learning-review|codex|claude)/.test(text)) return "conversation";
+  if (/youtube\.com|youtu\.be|bilibili\.com|vimeo\.com/.test(text)) return "video";
+  if (/\.pdf(?:$|\?)/.test(text) || /arxiv\.org/.test(text)) return "paper";
+  if (/\/docs?(?:\/|$)|documentation/.test(text)) return "documentation";
+  if (/^https?:/.test(text)) return "article";
+  return "other";
+}
+
+export function parseInsightSourceType(value: unknown, fallback: InsightSourceType = "other"): InsightSourceType {
+  const normalized = typeof value === "string" ? value.trim().toLocaleLowerCase() : "";
+  return (INSIGHT_SOURCE_TYPES as readonly string[]).includes(normalized)
+    ? normalized as InsightSourceType
+    : fallback;
+}
+
+function positiveInteger(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function nextCollectionPosition(items: InsightCollectionItem[], collectionId: string): number {
+  return items
+    .filter((item) => item.collection_id === collectionId)
+    .reduce((max, item) => Math.max(max, item.position), 0) + 1;
+}
+
+function optionalTextValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function shortHash(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
+export function deriveInsightCollectionId(title: string, sourceRefs: string[]): string {
+  return `col-${shortHash(JSON.stringify([title.toLocaleLowerCase(), normalizedStrings(sourceRefs)]))}`;
 }
 
 function parseInsightDocument(text: string, path: string): InsightDocument {
   const parsed = JSON.parse(text) as InsightDocument;
   if (!parsed || !Array.isArray(parsed.insights)) throw new Error(`Corrupt insight shelf ${path}.`);
+  if (parsed.version !== 1 && parsed.version !== 2) throw new Error(`Unsupported insight shelf version in ${path}.`);
+  if (parsed.collections !== undefined && !Array.isArray(parsed.collections)) {
+    throw new Error(`Corrupt insight collections in ${path}.`);
+  }
+  if (parsed.collection_items !== undefined && !Array.isArray(parsed.collection_items)) {
+    throw new Error(`Corrupt insight collection items in ${path}.`);
+  }
   return parsed;
 }

@@ -39,6 +39,11 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       trapSort: "updated",
       trapHealthFilter: "all",
       learningInsights: [],
+      learningCollections: [],
+      learningCollectionItems: [],
+      collapsedLearningCollections: new Set(),
+      learningScope: "all",
+      learningFilters: { query: "", status: "", sourceType: "", tag: "" },
       insightId: null,
       insightConsulting: false,
       embeddingStatus: null,
@@ -340,6 +345,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.candidates = [];
         state.traps = [];
         state.learningInsights = [];
+        state.learningCollections = [];
+        state.learningCollectionItems = [];
         state.insightId = null;
         state.embeddingStatus = null;
         state.embeddingSettings = null;
@@ -418,6 +425,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     async function loadLearningInsights() {
       if (!state.projectRoot) {
         state.learningInsights = [];
+        state.learningCollections = [];
+        state.learningCollectionItems = [];
         state.insightId = null;
         if (state.mainView === "learning") {
           renderLearningShelf();
@@ -425,10 +434,12 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         }
         return;
       }
-      const data = await api("/api/insights?project=" + encodeURIComponent(state.projectRoot));
+      const data = await api("/api/insights?project=" + encodeURIComponent(state.projectRoot) + "&scope=" + encodeURIComponent(state.learningScope));
       state.learningInsights = data.insights;
-      if (!state.learningInsights.some((insight) => insight.id === state.insightId)) {
-        state.insightId = state.learningInsights[0]?.id || null;
+      state.learningCollections = data.collections || [];
+      state.learningCollectionItems = data.collection_items || [];
+      if (!state.learningInsights.some((insight) => insight.library_key === state.insightId)) {
+        state.insightId = state.learningInsights[0]?.library_key || null;
       }
       if (state.mainView === "learning") {
         renderLearningShelf();
@@ -509,6 +520,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           state.trapKey = null;
           state.trapDetails = {};
           state.learningInsights = [];
+          state.learningCollections = [];
+          state.learningCollectionItems = [];
           state.insightId = null;
           state.embeddingStatus = null;
           state.embeddingSettings = null;
@@ -802,30 +815,259 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       return !Number.isFinite(validatedAt) || Date.now() - validatedAt > Number(state.options.stale_after_days || 180) * 24 * 60 * 60 * 1000;
     }
 
+    function learningMembership(insightKey) {
+      return state.learningCollectionItems.find((item) => item.insight_key === insightKey) || null;
+    }
+
+    function learningCollection(collectionKey) {
+      return state.learningCollections.find((collection) => collection.library_key === collectionKey) || null;
+    }
+
+    function sourceCoverageSummary(manifest, coveredRefs = []) {
+      if (!manifest || !Array.isArray(manifest.units)) {
+        return { status: "unknown", mode: null, total_units: 0, learn_units: 0, covered_units: 0, skipped_units: 0, unresolved_units: [] };
+      }
+      const covered = new Set((coveredRefs || []).map((ref) => String(ref).toLocaleLowerCase()));
+      const learnUnits = manifest.units.filter((unit) => unit.disposition === "learn");
+      const skippedUnits = manifest.units.filter((unit) => unit.disposition === "skip");
+      const unresolved = learnUnits.filter((unit) => !covered.has(String(unit.id).toLocaleLowerCase()));
+      return {
+        status: unresolved.length ? "incomplete" : manifest.mode === "sampled" ? "sampled" : skippedUnits.length ? "curated_subset" : "complete",
+        mode: manifest.mode || null,
+        total_units: manifest.units.length,
+        learn_units: learnUnits.length,
+        covered_units: learnUnits.length - unresolved.length,
+        skipped_units: skippedUnits.length,
+        unresolved_units: unresolved.map((unit) => ({ id: unit.id, title: unit.title }))
+      };
+    }
+
+    function coverageStatusText(summary) {
+      const key = "coverage." + (summary?.status || "unknown");
+      return t(key, {
+        covered_units: summary?.covered_units || 0,
+        learn_units: summary?.learn_units || 0,
+        skipped_units: summary?.skipped_units || 0
+      });
+    }
+
+    function coverageStatusClass(summary) {
+      return "coverage-" + (summary?.status || "unknown").replaceAll("_", "-");
+    }
+
+    function coverageBriefText(summary) {
+      const status = summary?.status || "unknown";
+      return t("coverageBrief." + status, {
+        unresolved_units: summary?.unresolved_units?.length || 0,
+        skipped_units: summary?.skipped_units || 0
+      });
+    }
+
+    function collectionContextSourceRefs(collection) {
+      return (collection?.context_sections || []).flatMap((section) => section.source_unit_refs || []);
+    }
+
+    function renderCollectionContext(collection) {
+      const sections = collection?.context_sections || [];
+      if (!sections.length) return "";
+      return '<details class="collection-context">' +
+        '<summary><span>' + escapeHtml(t("title.sourceContext")) + '</span><span class="collection-context-count">' + sections.length + '</span></summary>' +
+        '<div class="collection-context-sections">' + sections.map((section) =>
+          '<section class="collection-context-section"><strong>' + escapeHtml(section.title) + '</strong>' +
+          '<div class="collection-context-copy">' + renderLearningMarkup(section.body) + '</div></section>'
+        ).join("") + '</div></details>';
+    }
+
+    function renderCoverageChip(summary) {
+      return '<span class="coverage-chip ' + coverageStatusClass(summary) + '">' + escapeHtml(coverageStatusText(summary)) + '</span>';
+    }
+
+    function renderSourceCoveragePanel(manifest, summary, currentRefs = []) {
+      const normalizedSummary = summary || sourceCoverageSummary(manifest, []);
+      const current = new Set((currentRefs || []).map((ref) => String(ref).toLocaleLowerCase()));
+      const covered = new Set();
+      if (manifest && Array.isArray(manifest.units)) {
+        for (const unit of manifest.units) {
+          if (unit.disposition === "learn" && !normalizedSummary.unresolved_units?.some((entry) => String(entry.id).toLocaleLowerCase() === String(unit.id).toLocaleLowerCase())) {
+            covered.add(String(unit.id).toLocaleLowerCase());
+          }
+        }
+      }
+      const detailKey = "coverage." + (normalizedSummary.status || "unknown") + "Detail";
+      const percent = normalizedSummary.learn_units
+        ? Math.round(normalizedSummary.covered_units / normalizedSummary.learn_units * 100)
+        : normalizedSummary.status === "unknown" ? 0 : 100;
+      const units = manifest?.units || [];
+      const unitRows = units.map((unit) => {
+        const id = String(unit.id).toLocaleLowerCase();
+        const stateKey = unit.disposition === "skip" ? "skipped" : covered.has(id) ? "covered" : "unresolved";
+        return '<li class="coverage-unit ' + stateKey + '">' +
+          '<span class="coverage-unit-mark" aria-hidden="true"></span>' +
+          '<span class="coverage-unit-copy"><strong>' + escapeHtml(unit.title) + '</strong><span>' + escapeHtml(unit.id) + (unit.reason ? " · " + escapeHtml(unit.reason) : "") + '</span></span>' +
+          '<span class="coverage-unit-state">' + escapeHtml(t("value." + stateKey)) + (current.has(id) ? " · " + escapeHtml(t("value.thisInsight")) : "") + '</span>' +
+          '</li>';
+      }).join("");
+      return '<section class="source-coverage-panel ' + coverageStatusClass(normalizedSummary) + '">' +
+        '<div class="source-coverage-heading"><div><span class="coverage-eyebrow">' + escapeHtml(t("title.sourceCoverage")) + '</span><strong>' + escapeHtml(manifest?.mode ? valueLabel(manifest.mode) : t("value.legacyCollection")) + '</strong></div>' + renderCoverageChip(normalizedSummary) + '</div>' +
+        '<p>' + escapeHtml(t(detailKey, { covered_units: normalizedSummary.covered_units, learn_units: normalizedSummary.learn_units, skipped_units: normalizedSummary.skipped_units })) + '</p>' +
+        '<div class="coverage-meter" aria-hidden="true"><span style="width: ' + percent + '%"></span></div>' +
+        (units.length ? '<details class="coverage-details"><summary>' + escapeHtml(t("coverage.reviewUnits", { count: units.length })) + '</summary><ul>' + unitRows + '</ul></details>' : '') +
+        (manifest?.source_fingerprint ? '<div class="coverage-fingerprint"><span>' + escapeHtml(t("label.sourceFingerprint")) + '</span><code>' + escapeHtml(manifest.source_fingerprint) + '</code></div>' : '') +
+        '</section>';
+    }
+
+    function candidateSourceCoverage(candidate) {
+      const payload = candidate?.destination_payload || {};
+      const collection = payload.collection || {};
+      const manifest = collection.source_coverage;
+      if (!manifest) return { manifest: null, summary: sourceCoverageSummary(null, []), current_refs: [] };
+      const collectionKey = String(collection.id || collection.title || "").toLocaleLowerCase();
+      const siblings = state.candidates.filter((entry) => {
+        if (!isInsightCandidate(entry)) return false;
+        if (entry.review_decision === "rejected" || entry.review_decision === "suppressed") return false;
+        const siblingCollection = entry.destination_payload?.collection || {};
+        return String(siblingCollection.id || siblingCollection.title || "").toLocaleLowerCase() === collectionKey;
+      });
+      const refs = siblings
+        .flatMap((entry) => entry.destination_payload?.source_unit_refs || [])
+        .concat(collectionContextSourceRefs(collection));
+      return { manifest, summary: sourceCoverageSummary(manifest, refs), current_refs: payload.source_unit_refs || [] };
+    }
+
+    function learningInsightSearchText(insight) {
+      const membership = learningMembership(insight.library_key);
+      const collection = membership ? learningCollection(membership.collection_key) : null;
+      return [
+        insight.title,
+        insight.summary,
+        ...(insight.tags || []),
+        ...(insight.topics || []),
+        ...(insight.source_refs || []),
+        insight.origin_project_name,
+        collection?.title,
+        ...(collection?.topics || []),
+        ...(collection?.context_sections || []).flatMap((section) => [section.title, section.body])
+      ].filter(Boolean).join(" ").toLocaleLowerCase();
+    }
+
+    function filteredLearningInsights() {
+      const query = state.learningFilters.query.trim().toLocaleLowerCase();
+      return state.learningInsights.filter((insight) => {
+        const membership = learningMembership(insight.library_key);
+        const collection = membership ? learningCollection(membership.collection_key) : null;
+        const learned = Number(insight.consulted_count || 0) > 0;
+        const sourceType = insight.source_type || collection?.source_type || "other";
+        if (query && !learningInsightSearchText(insight).includes(query)) return false;
+        if (state.learningFilters.status === "learned" && !learned) return false;
+        if (state.learningFilters.status === "notLearned" && learned) return false;
+        if (state.learningFilters.sourceType && sourceType !== state.learningFilters.sourceType) return false;
+        if (state.learningFilters.tag && !(insight.tags || []).includes(state.learningFilters.tag)) return false;
+        return true;
+      });
+    }
+
+    function learningFilterOptions(values, selected, anyKey) {
+      return ['<option value="">' + escapeHtml(t(anyKey)) + '</option>']
+        .concat(values.map((value) => '<option value="' + escapeAttr(value) + '" ' + (value === selected ? "selected" : "") + '>' + escapeHtml(valueLabel(value)) + '</option>'))
+        .join("");
+    }
+
     function renderLearningShelf() {
       if (state.mainView !== "learning") return;
       const insights = state.learningInsights;
+      const visible = filteredLearningInsights();
+      if (!visible.some((insight) => insight.library_key === state.insightId)) {
+        state.insightId = visible[0]?.library_key || null;
+      }
       const consulted = insights.filter((insight) => Number(insight.consulted_count || 0) > 0).length;
+      const sourceTypes = [...new Set(state.learningInsights.map((insight) => {
+        const membership = learningMembership(insight.library_key);
+        return insight.source_type || (membership ? learningCollection(membership.collection_key)?.source_type : null) || "other";
+      }))].sort();
+      const tags = [...new Set(state.learningInsights.flatMap((insight) => insight.tags || []))].sort((left, right) => left.localeCompare(right));
       el("queue-title").textContent = t("title.learningInsights");
       el("candidate-tabs").classList.add("hidden");
       el("queue-meta").textContent = state.projectRoot
-        ? t("meta.learningCounts", { count: insights.length, consulted })
+        ? t("meta.learningVisibleCounts", { shown: visible.length, count: insights.length, consulted })
         : t("meta.noProject");
       if (!state.projectRoot) {
         el("candidates").innerHTML = '<div class="empty">' + escapeHtml(t("meta.selectProject")) + '</div>';
         return;
       }
-      el("candidates").innerHTML = insights.length ? insights.map((insight) => \`
-        <button type="button" class="row \${insight.id === state.insightId ? "active" : ""}" data-learning-insight="\${escapeAttr(insight.id)}">
+
+      const visibleKeys = new Set(visible.map((insight) => insight.library_key));
+      const collectionModels = state.learningCollections.map((collection) => {
+        const allItems = state.learningCollectionItems
+          .filter((item) => item.collection_key === collection.library_key)
+          .sort((left, right) => left.position - right.position);
+        const shownItems = allItems.filter((item) => visibleKeys.has(item.insight_key));
+        const learnedCount = allItems.filter((item) => {
+          const insight = state.learningInsights.find((entry) => entry.library_key === item.insight_key);
+          return Number(insight?.consulted_count || 0) > 0;
+        }).length;
+        const rank = learnedCount > 0 && learnedCount < allItems.length ? 0 : learnedCount === allItems.length ? 2 : 1;
+        return { collection, allItems, shownItems, learnedCount, rank };
+      }).filter((model) => model.shownItems.length > 0)
+        .sort((left, right) => left.rank - right.rank || right.collection.updated_at.localeCompare(left.collection.updated_at));
+      const groupedInsightKeys = new Set(state.learningCollectionItems.map((item) => item.insight_key));
+      const standalone = visible.filter((insight) => !groupedInsightKeys.has(insight.library_key));
+      const controls = \`<div class="learning-controls">
+        <div class="segmented learning-scope" role="group" aria-label="\${escapeAttr(t("label.learningScope"))}">
+          <button type="button" data-learning-scope="all" class="\${state.learningScope === "all" ? "active" : ""}">\${escapeHtml(t("value.allProjects"))}</button>
+          <button type="button" data-learning-scope="project" class="\${state.learningScope === "project" ? "active" : ""}">\${escapeHtml(t("value.currentProject"))}</button>
+        </div>
+        <input id="learning-search" type="search" value="\${escapeAttr(state.learningFilters.query)}" placeholder="\${escapeAttr(t("placeholder.searchLearning"))}">
+        <select id="learning-status-filter">\${learningFilterOptions(["notLearned", "learned"], state.learningFilters.status, "value.anyStatus")}</select>
+        <select id="learning-source-filter">\${learningFilterOptions(sourceTypes, state.learningFilters.sourceType, "value.anySourceType")}</select>
+        <select id="learning-tag-filter">\${learningFilterOptions(tags, state.learningFilters.tag, "value.anyTag")}</select>
+        <button type="button" id="clear-learning-filters" class="ghost">\${escapeHtml(t("action.clearFilters"))}</button>
+      </div>\`;
+      const collectionsHtml = collectionModels.map(({ collection, allItems, shownItems, learnedCount }, collectionIndex) => {
+        const percent = allItems.length ? Math.round(learnedCount / allItems.length * 100) : 0;
+        const collapsed = state.collapsedLearningCollections.has(collection.library_key);
+        const chaptersId = "learning-collection-chapters-" + collectionIndex;
+        const coverageSummary = collection.coverage_summary || sourceCoverageSummary(collection.source_coverage, []);
+        const contextHtml = renderCollectionContext(collection);
+        return \`<section class="learning-collection \${collapsed ? "collapsed" : ""}" data-collection="\${escapeAttr(collection.library_key)}">
+          <div class="collection-header">
+            <button type="button" class="collection-toggle" data-collection-toggle="\${escapeAttr(collection.library_key)}" aria-expanded="\${!collapsed}" aria-controls="\${chaptersId}" aria-label="\${escapeAttr(t(collapsed ? "action.expandCollection" : "action.collapseCollection", { title: collection.title }))}">
+              <span class="collection-kicker">
+                <span>\${escapeHtml(valueLabel(collection.source_type || "other"))}\${collection.inferred ? " · " + escapeHtml(t("value.autoGrouped")) : ""}</span>
+                <span class="collection-audit-status \${coverageStatusClass(coverageSummary)}">\${escapeHtml(coverageBriefText(coverageSummary))}</span>
+              </span>
+              <span class="collection-title-line"><strong>\${escapeHtml(collection.title)}</strong><span class="collection-chevron" aria-hidden="true">▾</span></span>
+              <span class="collection-progress-row">
+                <span class="collection-progress"><span style="width: \${percent}%"></span></span>
+                <span class="collection-progress-copy subtle">\${escapeHtml(t("meta.collectionProgress", { learned: learnedCount, count: allItems.length }))}\${state.learningScope === "all" ? " · " + escapeHtml(collection.origin_project_name) : ""}</span>
+              </span>
+            </button>
+            <button type="button" class="collection-rename ghost" data-collection-rename="\${escapeAttr(collection.library_key)}">\${escapeHtml(t("action.rename"))}</button>
+          </div>
+          <div class="collection-chapters" id="\${chaptersId}" \${collapsed ? "hidden" : ""}>\${contextHtml}\${shownItems.map((item) => {
+            const insight = state.learningInsights.find((entry) => entry.library_key === item.insight_key);
+            if (!insight) return "";
+            const learned = Number(insight.consulted_count || 0) > 0;
+            return \`<button type="button" class="learning-chapter \${insight.library_key === state.insightId ? "active" : ""}" data-learning-insight="\${escapeAttr(insight.library_key)}">
+              <span class="chapter-number">\${String(item.position).padStart(2, "0")}</span>
+              <span class="chapter-copy"><span class="row-title">\${escapeHtml(insight.title)}</span><span class="subtle">\${escapeHtml(insight.summary)}</span></span>
+              <span class="chapter-state \${learned ? "learned" : ""}" aria-label="\${escapeAttr(t(learned ? "value.learned" : "value.notLearned"))}"></span>
+            </button>\`;
+          }).join("")}</div>
+        </section>\`;
+      }).join("");
+      const standaloneHtml = standalone.length ? \`<section class="learning-standalone">
+        <div class="learning-section-label">\${escapeHtml(t("title.standaloneInsights"))}</div>
+        \${standalone.map((insight) => \`<button type="button" class="row learning-standalone-row \${insight.library_key === state.insightId ? "active" : ""}" data-learning-insight="\${escapeAttr(insight.library_key)}">
           <span class="row-title">\${escapeHtml(insight.title)}</span>
           <span class="subtle">\${escapeHtml(insight.summary)}</span>
-          <span class="meta">
-            \${(insight.tags || []).map((tag) => '<span class="pill">' + escapeHtml(tag) + '</span>').join("")}
-            <span class="pill \${Number(insight.consulted_count || 0) > 0 ? "accepted" : ""}">\${escapeHtml(t(Number(insight.consulted_count || 0) > 0 ? "pill.learned" : "pill.notLearned"))}</span>
-          </span>
-          <span class="subtle">\${escapeHtml(formatDisplayDate(insight.shelved_at))}</span>
-        </button>
-      \`).join("") : '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span></div>';
+          <span class="meta"><span class="pill">\${escapeHtml(valueLabel(insight.source_type || "other"))}</span><span class="pill \${Number(insight.consulted_count || 0) > 0 ? "accepted" : ""}">\${escapeHtml(t(Number(insight.consulted_count || 0) > 0 ? "pill.learned" : "pill.notLearned"))}</span></span>
+        </button>\`).join("")}
+      </section>\` : "";
+      const empty = insights.length
+        ? '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningMatchesTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningMatches")) + '</span></div>'
+        : '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span></div>';
+      el("candidates").innerHTML = controls + '<div class="learning-catalog">' + (visible.length ? collectionsHtml + standaloneHtml : empty) + '</div>';
+
       document.querySelectorAll("[data-learning-insight]").forEach((button) => {
         button.addEventListener("click", () => {
           state.insightId = button.dataset.learningInsight;
@@ -834,15 +1076,75 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           revealCompactDetail();
         });
       });
+      document.querySelectorAll("[data-learning-scope]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          if (state.learningScope === button.dataset.learningScope) return;
+          state.learningScope = button.dataset.learningScope;
+          state.insightId = null;
+          await loadLearningInsights();
+        });
+      });
+      document.querySelectorAll("[data-collection-toggle]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const collectionKey = button.dataset.collectionToggle;
+          const collection = learningCollection(collectionKey);
+          const collapsed = button.getAttribute("aria-expanded") === "true";
+          if (collapsed) state.collapsedLearningCollections.add(collectionKey);
+          else state.collapsedLearningCollections.delete(collectionKey);
+          button.setAttribute("aria-expanded", String(!collapsed));
+          button.setAttribute("aria-label", t(collapsed ? "action.expandCollection" : "action.collapseCollection", { title: collection?.title || "" }));
+          const card = button.closest(".learning-collection");
+          card?.classList.toggle("collapsed", collapsed);
+          const chapters = card?.querySelector(".collection-chapters");
+          if (chapters) chapters.hidden = collapsed;
+        });
+      });
+      document.querySelectorAll("[data-collection-rename]").forEach((button) => {
+        button.addEventListener("click", () => renameLearningCollection(button.dataset.collectionRename));
+      });
+      el("learning-search").addEventListener("input", (event) => {
+        state.learningFilters.query = event.target.value;
+        renderLearningShelf();
+        renderLearningDetail();
+        requestAnimationFrame(() => {
+          const input = el("learning-search");
+          input?.focus();
+          input?.setSelectionRange(input.value.length, input.value.length);
+        });
+      });
+      [["learning-status-filter", "status"], ["learning-source-filter", "sourceType"], ["learning-tag-filter", "tag"]].forEach(([id, key]) => {
+        el(id).addEventListener("change", (event) => {
+          state.learningFilters[key] = event.target.value;
+          renderLearningShelf();
+          renderLearningDetail();
+        });
+      });
+      el("clear-learning-filters").addEventListener("click", () => {
+        state.learningFilters = { query: "", status: "", sourceType: "", tag: "" };
+        renderLearningShelf();
+        renderLearningDetail();
+      });
     }
 
     function currentLearningInsight() {
-      return state.learningInsights.find((insight) => insight.id === state.insightId) || null;
+      return state.learningInsights.find((insight) => insight.library_key === state.insightId) || null;
+    }
+
+    function currentLearningContext() {
+      const insight = currentLearningInsight();
+      if (!insight) return { insight: null, membership: null, collection: null, items: [], index: -1 };
+      const membership = learningMembership(insight.library_key);
+      const collection = membership ? learningCollection(membership.collection_key) : null;
+      const items = membership
+        ? state.learningCollectionItems.filter((item) => item.collection_key === membership.collection_key).sort((left, right) => left.position - right.position)
+        : [];
+      return { insight, membership, collection, items, index: items.findIndex((item) => item.insight_key === insight.library_key) };
     }
 
     function renderLearningDetail() {
       if (state.mainView !== "learning") return;
-      const insight = currentLearningInsight();
+      const context = currentLearningContext();
+      const insight = context.insight;
       el("detail-title").textContent = t("title.learningDetail");
       el("detail-meta").textContent = insight ? insight.title : (state.projectRoot ? t("meta.selectInsight") : t("meta.selectProject"));
       if (!state.projectRoot) {
@@ -854,12 +1156,24 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         return;
       }
       const learned = Number(insight.consulted_count || 0) > 0;
+      const previous = context.index > 0 ? context.items[context.index - 1] : null;
+      const next = context.index >= 0 && context.index < context.items.length - 1 ? context.items[context.index + 1] : null;
+      const breadcrumb = context.collection
+        ? \`<div class="learning-breadcrumb"><span>\${escapeHtml(context.collection.title)}</span><strong>\${escapeHtml(t("meta.chapterPosition", { position: context.index + 1, count: context.items.length }))}</strong></div>\`
+        : \`<div class="learning-breadcrumb"><span>\${escapeHtml(t("title.standaloneInsights"))}</span></div>\`;
+      const coveragePanel = context.collection
+        ? renderSourceCoveragePanel(context.collection.source_coverage, context.collection.coverage_summary, insight.source_unit_refs || [])
+        : "";
       el("detail").innerHTML = \`
         <div class="scroll">
           <div class="section learning-intro">
+            \${breadcrumb}
             <div class="title learning-title">\${escapeHtml(insight.title)}</div>
             <div class="learning-summary">\${escapeHtml(insight.summary)}</div>
-            <div class="meta">\${(insight.tags || []).map((tag) => '<span class="pill">' + escapeHtml(tag) + '</span>').join("")}</div>
+            <div class="meta">
+              \${(insight.tags || []).map((tag) => '<span class="pill">' + escapeHtml(tag) + '</span>').join("")}
+              \${state.learningScope === "all" ? '<span class="pill scope">' + escapeHtml(insight.origin_project_name) + '</span>' : ''}
+            </div>
           </div>
           <div class="section">
             <div class="title">\${escapeHtml(t("label.body"))}</div>
@@ -869,20 +1183,82 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
             <div class="title">\${escapeHtml(t("label.sourceRefs"))}</div>
             <div class="source-list">\${renderSourceReferences(insight.source_refs)}</div>
           </div>
+          \${coveragePanel}
           <div class="section">
             <div class="detail-kv">
               \${kv(t("label.shelvedAt"), formatDisplayDate(insight.shelved_at))}
               \${kv(t("label.learningStatus"), t(learned ? "value.learned" : "value.notLearned"))}
               \${kv(t("label.lastConsultedAt"), learned ? formatDisplayDate(insight.last_consulted_at) : t("value.never"))}
+              \${kv(t("label.sourceType"), valueLabel(insight.source_type || context.collection?.source_type || "other"))}
             </div>
+            \${context.collection ? \`<div class="collection-edit-actions">
+              <button type="button" id="move-learning-earlier" class="ghost" \${context.index <= 0 ? "disabled" : ""}>\${escapeHtml(t("action.moveEarlier"))}</button>
+              <button type="button" id="move-learning-later" class="ghost" \${context.index < 0 || context.index >= context.items.length - 1 ? "disabled" : ""}>\${escapeHtml(t("action.moveLater"))}</button>
+            </div>\` : ""}
           </div>
         </div>
-        <div class="actions">
+        <div class="actions learning-actions">
+          <div class="learning-navigation">
+            <button type="button" id="previous-learning" class="ghost" \${previous ? "" : "disabled"}>\${escapeHtml(t("action.previousChapter"))}</button>
+            <button type="button" id="next-learning" class="ghost" \${next ? "" : "disabled"}>\${escapeHtml(t("action.nextChapter"))}</button>
+          </div>
           <button type="button" id="consult-insight" class="primary" \${state.insightConsulting || learned ? "disabled" : ""}>\${escapeHtml(t(learned ? "action.learned" : "action.markLearned"))}</button>
           <span class="action-hint">\${escapeHtml(t(learned ? "hint.learnedRecorded" : "hint.markLearnedExplicit"))}</span>
         </div>
       \`;
       if (!learned) el("consult-insight").addEventListener("click", consultLearningInsight);
+      if (previous) el("previous-learning").addEventListener("click", () => selectLearningInsight(previous.insight_key));
+      if (next) el("next-learning").addEventListener("click", () => selectLearningInsight(next.insight_key));
+      if (context.collection) {
+        if (context.index > 0) el("move-learning-earlier").addEventListener("click", () => moveLearningInsight(-1));
+        if (context.index >= 0 && context.index < context.items.length - 1) el("move-learning-later").addEventListener("click", () => moveLearningInsight(1));
+      }
+    }
+
+    function selectLearningInsight(insightKey) {
+      if (!insightKey) return;
+      const membership = learningMembership(insightKey);
+      if (membership) state.collapsedLearningCollections.delete(membership.collection_key);
+      state.insightId = insightKey;
+      renderLearningShelf();
+      renderLearningDetail();
+      revealCompactDetail();
+    }
+
+    async function renameLearningCollection(collectionKey) {
+      const collection = learningCollection(collectionKey);
+      if (!collection) return;
+      const title = prompt(t("prompt.renameCollection"), collection.title)?.trim();
+      if (!title || title === collection.title) return;
+      try {
+        await api("/api/learning/collection/update", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: collection.origin_project_root, id: collection.id, title })
+        });
+        await loadLearningInsights();
+        showStatus(t("status.collectionUpdated"));
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    }
+
+    async function moveLearningInsight(delta) {
+      const context = currentLearningContext();
+      const targetIndex = context.index + delta;
+      if (!context.collection || context.index < 0 || targetIndex < 0 || targetIndex >= context.items.length) return;
+      const reordered = context.items.map((item) => item.insight_key);
+      [reordered[context.index], reordered[targetIndex]] = [reordered[targetIndex], reordered[context.index]];
+      const ids = reordered.map((key) => state.learningInsights.find((insight) => insight.library_key === key)?.id).filter(Boolean);
+      try {
+        await api("/api/learning/collection/reorder", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: context.collection.origin_project_root, id: context.collection.id, insightIds: ids })
+        });
+        await loadLearningInsights();
+        showStatus(t("status.collectionReordered"));
+      } catch (error) {
+        showStatus(error.message, true);
+      }
     }
 
     async function consultLearningInsight() {
@@ -893,9 +1269,9 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       try {
         const data = await api("/api/insight/consult", {
           method: "POST",
-          body: JSON.stringify({ projectRoot: state.projectRoot, id: insight.id })
+          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id })
         });
-        state.learningInsights = state.learningInsights.map((item) => item.id === data.insight.id ? data.insight : item);
+        state.learningInsights = state.learningInsights.map((item) => item.library_key === data.insight.library_key ? { ...item, ...data.insight } : item);
         renderLearningShelf();
         showStatus(t("status.insightConsulted"));
       } catch (error) {
@@ -1465,6 +1841,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     function renderInsightCandidateDetail(candidate) {
       state.candidateDirty = false;
       const payload = candidate.destination_payload || {};
+      const sourceCoverage = candidateSourceCoverage(candidate);
       const disabled = candidate.status !== "proposed" ? "disabled" : "";
       const committed = candidate.delivery_state === "committed";
       el("detail").innerHTML = \`
@@ -1478,6 +1855,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
             <div class="learning-summary">\${escapeHtml(String(payload.summary || ""))}</div>
             \${candidate.rationale ? '<div class="insight-rationale">' + escapeHtml(candidate.rationale) + '</div>' : ''}
           </div>
+          \${renderCollectionContext(payload.collection)}
+          \${renderSourceCoveragePanel(sourceCoverage.manifest, sourceCoverage.summary, sourceCoverage.current_refs)}
           \${committed ? \`
             <div class="section">
               <div class="title">\${escapeHtml(t("label.body"))}</div>
@@ -1495,6 +1874,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
                 \${textarea("insight_summary", t("label.summary"), payload.summary || "", disabled)}
                 \${textarea("insight_body", t("label.body"), payload.body || "", disabled, "learning-editor")}
                 \${textarea("insight_source_refs", t("label.sourceRefs"), (payload.source_refs || []).join("\\n"), disabled)}
+                \${textarea("insight_source_unit_refs", t("label.sourceUnits"), (payload.source_unit_refs || []).join("\\n"), disabled)}
               </div>
             </form>
           \`}
@@ -1797,11 +2177,13 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       if (!formElement) return candidate?.destination_payload || {};
       const form = new FormData(formElement);
       return {
+        ...(candidate?.destination_payload || {}),
         title: String(form.get("insight_title") || "").trim(),
         summary: String(form.get("insight_summary") || "").trim(),
         body: String(form.get("insight_body") || "").trim(),
         tags: splitReviewInput(form.get("insight_tags")),
-        source_refs: splitReviewInput(form.get("insight_source_refs"))
+        source_refs: splitReviewInput(form.get("insight_source_refs")),
+        source_unit_refs: splitReviewInput(form.get("insight_source_unit_refs"))
       };
     }
 
@@ -1989,6 +2371,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.trapKey = null;
         state.trapDetails = {};
         state.learningInsights = [];
+        state.learningCollections = [];
+        state.learningCollectionItems = [];
         state.insightId = null;
         state.embeddingStatus = null;
         state.embeddingSettings = null;

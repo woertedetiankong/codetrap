@@ -1,11 +1,17 @@
 import { parseCandidateKind, type CandidateKind } from "../domain/candidate";
 import { parseExecutor, type Executor } from "../domain/learning";
 import type { CandidateTrap } from "../domain/session";
+import {
+  normalizeCollectionContextSections,
+  normalizeSourceCoverage,
+  normalizeSourceUnitRefs,
+} from "../domain/source-coverage";
 import type { TrapOperations } from "./trap-operations";
-import { SessionOperations } from "./session-operations";
+import { SessionOperations, type SessionCaptureRequest } from "./session-operations";
 import { SessionStore } from "./session-store";
 import { LearningStore } from "./learning-store";
 import { Phase2Store } from "./phase2-store";
+import { normalizeInsightCollectionBatches } from "./insight-collection-batch";
 
 export class Phase2Operations {
   private readonly sessions: SessionOperations;
@@ -19,35 +25,69 @@ export class Phase2Operations {
   }
 
   propose(input: Record<string, unknown>) {
-    const kind = parseCandidateKind(requiredText(input.kind, "kind"));
-    if (!isPhase2Kind(kind)) {
-      throw new Error("phase2 propose requires project_convention, docs_guidance, search_eval_case, or insight.");
+    const prepared = prepareProposal(input);
+    assertSourceCoverageBatch([prepared]);
+    return this.sessions.captureCandidate(prepared.request);
+  }
+
+  proposeBatch(input: Record<string, unknown>) {
+    const proposals = recordArray(input.proposals, "proposals");
+    if (proposals.length === 0) throw new Error("proposals must contain at least one proposal.");
+    const goal = optionalText(input.goal) ?? `Phase 2 proposal batch: ${proposals.length} candidates`;
+    const prepared = proposals.map((proposal) => prepareProposal(proposal, goal));
+    assertSourceCoverageBatch(prepared);
+
+    const batchSession = this.sessions.startBatchSession(goal);
+    if (!batchSession) {
+      throw new Error("phase2 propose-batch requires no active session; close the current session and retry.");
     }
-    const title = requiredText(input.title, "title");
-    const rationale = optionalText(input.rationale) ?? `Proposed ${kind} destination.`;
-    const payload = recordValue(input.payload, "payload");
-    return this.sessions.captureCandidate({
-      goal: optionalText(input.goal) ?? `Phase 2 proposal: ${title}`,
-      trap: {
-        title,
-        category: kind === "project_convention" ? "convention" : "other",
-        scope: "project",
-        context: optionalText(input.context) ?? rationale,
-        mistake: optionalText(input.mistake) ?? "Leaving this reviewed knowledge only in session history makes it non-durable.",
-        fix: optionalText(input.fix) ?? "Commit the authorized payload to its purpose-specific Phase 2 destination.",
-        severity: optionalText(input.severity) ?? "warning",
-        tags: stringArray(input.tags),
-      },
-      candidateKind: kind,
-      sourceAgent: optionalText(input.source_agent) ?? "unknown",
-      rationale,
-      sourceManifestRefs: stringArray(input.source_refs),
-      destinationPayload: payload,
-    });
+    const candidates: CandidateTrap[] = [];
+    try {
+      for (const proposal of prepared) {
+        const captured = this.sessions.captureCandidate(proposal.request);
+        if (captured.suppressed) {
+          throw new Error(`Batch proposal ${proposal.title} is suppressed; no partial batch was kept.`);
+        }
+        candidates.push(captured.candidate);
+      }
+      const closed = this.sessions.closeSession(batchSession.id, false);
+      return {
+        success: true,
+        session: closed.session,
+        candidates,
+        candidate_count: candidates.length,
+      };
+    } catch (error) {
+      try {
+        this.sessions.deleteSession(batchSession.id);
+      } catch {
+        // Best effort: preserve the original validation or capture failure.
+      }
+      throw error;
+    }
   }
 
   edit(sessionId: string, candidateId: string, payload: Record<string, unknown>) {
     const before = this.sessions.getCandidate(candidateId, sessionId).candidate;
+    if (before.candidate_kind === "insight") {
+      const previousCollection = optionalRecordValue(before.destination_payload?.collection);
+      const nextCollection = optionalRecordValue(payload.collection);
+      const legacyCollectionEdit = Boolean(previousCollection)
+        && !previousCollection?.source_coverage
+        && Boolean(nextCollection)
+        && !nextCollection?.source_coverage;
+      if (!legacyCollectionEdit) validateInsightSourceCoverage(payload);
+      const batch = this.sessions.candidateDocument(sessionId).candidates
+        .filter((candidate) => candidate.candidate_kind === "insight")
+        .filter((candidate) => candidate.review_decision !== "rejected" && candidate.review_decision !== "suppressed")
+        .map((candidate) => ({
+          kind: "insight" as const,
+          title: candidate.trap.title,
+          payload: candidate.id === candidateId ? payload : candidate.destination_payload ?? {},
+          request: {} as SessionCaptureRequest,
+        }));
+      assertSourceCoverageBatch(batch);
+    }
     const edited = this.sessions.editDestinationCandidate(sessionId, candidateId, payload);
     if (before.authorization && !edited.authorization) {
       this.phase2.appendEvent({ type: "authorization_invalidated", candidate_id: candidateId });
@@ -177,6 +217,13 @@ export class Phase2Operations {
 
 type Phase2Kind = Extract<CandidateKind, "project_convention" | "docs_guidance" | "search_eval_case" | "insight">;
 
+type PreparedProposal = {
+  kind: Phase2Kind;
+  title: string;
+  payload: Record<string, unknown>;
+  request: SessionCaptureRequest;
+};
+
 function isPhase2Kind(kind: CandidateKind | undefined): kind is Phase2Kind {
   return kind === "project_convention" || kind === "docs_guidance" || kind === "search_eval_case" || kind === "insight";
 }
@@ -187,6 +234,51 @@ function phase2Kind(candidate: CandidateTrap): Phase2Kind {
     throw new Error(`Candidate ${candidate.id} is not a committable Phase 2 destination.`);
   }
   return kind;
+}
+
+function prepareProposal(input: Record<string, unknown>, goalOverride?: string): PreparedProposal {
+  const kind = parseCandidateKind(requiredText(input.kind, "kind"));
+  if (!isPhase2Kind(kind)) {
+    throw new Error("phase2 propose requires project_convention, docs_guidance, search_eval_case, or insight.");
+  }
+  const title = requiredText(input.title, "title");
+  const rationale = optionalText(input.rationale) ?? `Proposed ${kind} destination.`;
+  const payload = recordValue(input.payload, "payload");
+  if (kind === "insight") validateInsightSourceCoverage(payload);
+  return {
+    kind,
+    title,
+    payload,
+    request: {
+      goal: goalOverride ?? optionalText(input.goal) ?? `Phase 2 proposal: ${title}`,
+      trap: {
+        title,
+        category: kind === "project_convention" ? "convention" : "other",
+        scope: "project",
+        context: optionalText(input.context) ?? rationale,
+        mistake: optionalText(input.mistake) ?? "Leaving this reviewed knowledge only in session history makes it non-durable.",
+        fix: optionalText(input.fix) ?? "Commit the authorized payload to its purpose-specific Phase 2 destination.",
+        severity: optionalText(input.severity) ?? "warning",
+        tags: stringArray(input.tags),
+      },
+      candidateKind: kind,
+      sourceAgent: optionalText(input.source_agent) ?? "unknown",
+      rationale,
+      sourceManifestRefs: stringArray(input.source_refs),
+      destinationPayload: payload,
+    },
+  };
+}
+
+function assertSourceCoverageBatch(proposals: PreparedProposal[]): void {
+  const insightProposals = proposals.filter((proposal) => proposal.kind === "insight");
+  const issues = normalizeInsightCollectionBatches(
+    insightProposals.map((proposal) => ({ payload: proposal.payload }))
+  );
+  if (issues.length > 0) throw new Error(issues[0].message);
+  for (const proposal of insightProposals) {
+    proposal.request.destinationPayload = proposal.payload;
+  }
 }
 
 function requiredText(value: unknown, field: string): string {
@@ -200,6 +292,35 @@ function optionalText(value: unknown): string | null {
 function recordValue(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${field} must be an object.`);
   return value as Record<string, unknown>;
+}
+function recordArray(value: unknown, field: string): Record<string, unknown>[] {
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array.`);
+  return value.map((item, index) => recordValue(item, `${field}[${index}]`));
+}
+function optionalRecordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function validateInsightSourceCoverage(payload: Record<string, unknown>): void {
+  const collection = optionalRecordValue(payload.collection);
+  const manifest = normalizeSourceCoverage(
+    collection?.source_coverage,
+    "payload.collection.source_coverage"
+  );
+  if (collection && !manifest) {
+    throw new Error("payload.collection.source_coverage is required for new learning collections.");
+  }
+  normalizeCollectionContextSections(
+    collection?.context_sections,
+    manifest,
+    "payload.collection.context_sections"
+  );
+  const refs = normalizeSourceUnitRefs(payload.source_unit_refs, manifest, "payload.source_unit_refs");
+  if (manifest && refs.length === 0) {
+    throw new Error("payload.source_unit_refs must identify at least one learned source unit when source_coverage is present.");
+  }
 }
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean) : [];

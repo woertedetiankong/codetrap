@@ -3,6 +3,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixturePathKey, runCli, tempHome, tempProjectDir, type CliResult } from "./helpers";
 import { CANDIDATE_SCHEMA_VERSION } from "../domain/candidate";
+import { TrapStore } from "../lib/store";
+import { TrapOperations } from "../lib/trap-operations";
+import { Phase2Operations } from "../lib/phase2-operations";
+import { Phase2Store } from "../lib/phase2-store";
 
 // `learn` reads the *client* home, which is separate from the codetrap home the
 // CLI harness isolates. CODETRAP_CLIENT_HOME points it at a fixture instead of
@@ -67,10 +71,18 @@ describe("Phase 1C — learn CLI", () => {
     expect(prompt).toContain("用ASCII流程图结合通俗易懂的例子讲解");
     expect(prompt).toContain("concrete, plain-language example");
     expect(prompt).toContain("This format applies only to insights");
+    expect(prompt).toContain("`collection.position`");
+    expect(prompt).toContain("`candidate_kind: insight`");
+    expect(prompt).toContain("source_coverage");
+    expect(prompt).toContain("source_unit_refs");
+    expect(prompt).toContain("context_sections");
+    expect(prompt).toContain("sampled");
 
     // §3.2: pointers and capped excerpts, never the transcript.
     const pack = JSON.parse(readFileSync(review.evidence_pack_path, "utf-8"));
     expect(pack.items.length).toBeGreaterThan(0);
+    expect(pack.source_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(prompt).toContain(pack.source_fingerprint);
     for (const item of pack.items) expect(item.excerpt.length).toBeLessThanOrEqual(500);
 
     // Nothing reached the trap store or the candidate inbox.
@@ -244,6 +256,221 @@ describe("Phase 1C — learn CLI", () => {
     // Phase 1B approval bind a destination the user never saw.
     expect(candidate.candidate_kind).toBe("unclassified");
     expect(candidate.destination_hint).toBe("insight");
+  });
+
+  test("a study insight keeps conversation collection metadata through staging", () => {
+    const { cwd, home, clientHome } = project("codetrap-1c-insight-collection-");
+    writeClaudeSession(clientHome, "s1", cwd);
+    const review = JSON.parse(
+      learnCli(["learn", "review", "--source", "claude-code-sessions", "--json"], cwd, home, clientHome).stdout
+    );
+    const pack = JSON.parse(readFileSync(review.evidence_pack_path, "utf-8"));
+    writeFileSync(join(review.review_dir, "lesson-candidates.json"), JSON.stringify([{
+      title: "Understand tool approval",
+      candidate_kind: "insight",
+      trigger: "When learning how an agent tool call becomes authorized.",
+      lesson: "A proposal and an authorized write are separate states.",
+      recommended_action: "proposal -> review -> approval -> apply\n\nExample: reading a draft does not save it.",
+      rationale: "The separation is the core trust model.",
+      tags: ["authorization"],
+      source_type: "conversation",
+      topics: ["Agent safety"],
+      source_unit_refs: ["approval-boundary"],
+      collection: {
+        id: "conversation-s1",
+        title: "Agent authorization basics",
+        source_type: "conversation",
+        context_sections: [{
+          id: "review-background",
+          title: "Review background",
+          body: "This review came from a bounded conversation sample.",
+          source_unit_refs: ["review-background"],
+        }],
+        source_coverage: {
+          version: 1,
+          mode: "sampled",
+          source_fingerprint: pack.source_fingerprint,
+          units: [
+            { id: "approval-boundary", title: "Tool approval boundary", disposition: "learn" },
+            { id: "review-background", title: "Review background", disposition: "learn" },
+          ],
+        },
+        position: 1,
+      },
+      evidence: [{ ref: pack.items[0].ref }],
+    }]));
+
+    const applied = JSON.parse(
+      learnCli(["learn", "stage", "--review-dir", review.review_dir, "--apply", "--json"], cwd, home, clientHome).stdout
+    );
+    const candidate = JSON.parse(
+      learnCli(["session", "candidates", applied.staged[0].session_id, "--json"], cwd, home, clientHome).stdout
+    ).candidates[0];
+    expect(candidate.candidate_kind).toBe("insight");
+    expect(candidate.destination_payload).toMatchObject({
+      title: "Understand tool approval",
+      source_type: "conversation",
+      topics: ["Agent safety"],
+      source_unit_refs: ["approval-boundary"],
+      collection: {
+        id: "conversation-s1",
+        title: "Agent authorization basics",
+        position: 1,
+        context_sections: [expect.objectContaining({
+          id: "review-background",
+          source_unit_refs: ["review-background"],
+        })],
+      },
+    });
+    expect(candidate.destination_payload.source_refs).toEqual([pack.items[0].ref]);
+  });
+
+  test("stamps one contract on a multi-chapter conversation before Web edit and reverse apply", () => {
+    const { cwd, home, clientHome } = project("codetrap-1c-conversation-batch-");
+    writeClaudeSession(clientHome, "s1", cwd);
+    const reviewResult = learnCli(
+      ["learn", "review", "--source", "claude-code-sessions", "--json"],
+      cwd, home, clientHome
+    );
+    expect(reviewResult.exitCode, reviewResult.stderr).toBe(0);
+    const review = JSON.parse(reviewResult.stdout);
+    const pack = JSON.parse(readFileSync(review.evidence_pack_path, "utf-8"));
+    expect(pack.items.length).toBeGreaterThanOrEqual(2);
+    const sourceCoverage = {
+      version: 1,
+      mode: "sampled",
+      source_fingerprint: pack.source_fingerprint,
+      units: [
+        { id: "timeout", title: "Timeout symptom", disposition: "learn" },
+        { id: "override", title: "Timeout override", disposition: "learn" },
+      ],
+    };
+    const candidates = ([
+      [2, "Override the timeout", "override", "configuration", pack.items[1].ref],
+      [1, "Recognize the timeout", "timeout", "diagnosis", pack.items[0].ref],
+    ] as const).map(([position, title, sourceUnit, topic, evidenceRef]) => ({
+      title,
+      candidate_kind: "insight",
+      trigger: "When learning why an agent command stops early.",
+      lesson: `${title} is one part of the same conversation lesson.`,
+      recommended_action: `${sourceUnit} -> explain -> apply`,
+      rationale: "Both chapters belong in one ordered learning collection.",
+      source_type: "conversation",
+      topics: [topic],
+      source_unit_refs: [sourceUnit],
+      collection: {
+        id: "conversation-timeout-guide",
+        title: "Conversation timeout guide",
+        source_coverage: sourceCoverage,
+        position,
+      },
+      evidence: [{ ref: evidenceRef }],
+    }));
+    writeFileSync(join(review.review_dir, "lesson-candidates.json"), JSON.stringify(candidates));
+
+    const stageResult = learnCli(
+      ["learn", "stage", "--review-dir", review.review_dir, "--apply", "--json"],
+      cwd, home, clientHome
+    );
+    expect(stageResult.exitCode, `${stageResult.stderr}\n${stageResult.stdout}`).toBe(0);
+    const staged = JSON.parse(stageResult.stdout);
+    expect(staged.rejected).toEqual([]);
+    expect(staged.staged).toHaveLength(2);
+    const sessionId = staged.staged[0].session_id;
+    const sessionResult = learnCli(
+      ["session", "candidates", sessionId, "--json"],
+      cwd, home, clientHome
+    );
+    expect(sessionResult.exitCode, sessionResult.stderr).toBe(0);
+    const stagedCandidates = JSON.parse(sessionResult.stdout).candidates;
+    const expectedRefs = [pack.items[0].ref, pack.items[1].ref];
+    for (const candidate of stagedCandidates) {
+      expect(candidate.destination_payload.collection).toMatchObject({
+        id: "conversation-timeout-guide",
+        source_type: "conversation",
+        source_refs: expectedRefs,
+        topics: ["diagnosis", "configuration"],
+      });
+    }
+
+    const traps = new TrapOperations(new TrapStore(cwd, undefined, home));
+    const phase2 = new Phase2Operations(cwd, traps);
+    expect(() => phase2.edit(
+      sessionId,
+      stagedCandidates[0].id,
+      stagedCandidates[0].destination_payload
+    )).not.toThrow();
+
+    const reverseReadingOrder = [...stagedCandidates].sort((left: any, right: any) =>
+      right.destination_payload.collection.position - left.destination_payload.collection.position
+    );
+    for (const candidate of reverseReadingOrder) {
+      const approved = learnCli(
+        ["session", "approve", candidate.id, "--session", sessionId, "--executor", "user", "--json"],
+        cwd, home, clientHome
+      );
+      expect(approved.exitCode, `${approved.stderr}\n${approved.stdout}`).toBe(0);
+      const applied = learnCli(
+        ["phase2", "apply", candidate.id, "--session", sessionId, "--executor", "user", "--json"],
+        cwd, home, clientHome
+      );
+      expect(applied.exitCode, `${applied.stderr}\n${applied.stdout}`).toBe(0);
+    }
+
+    const library = new Phase2Store(cwd).learningLibrary();
+    expect(library.collections).toHaveLength(1);
+    expect(library.collection_items).toHaveLength(2);
+    expect(library.collections[0]).toMatchObject({
+      id: "conversation-timeout-guide",
+      source_refs: expectedRefs,
+      topics: ["diagnosis", "configuration"],
+      coverage_summary: { status: "sampled", covered_units: 2, learn_units: 2 },
+    });
+  });
+
+  test("rejects every candidate in a study collection when one learnable source unit is unaccounted for", () => {
+    const { cwd, home, clientHome } = project("codetrap-1c-insight-gap-");
+    writeClaudeSession(clientHome, "s1", cwd);
+    const review = JSON.parse(
+      learnCli(["learn", "review", "--source", "claude-code-sessions", "--json"], cwd, home, clientHome).stdout
+    );
+    const pack = JSON.parse(readFileSync(review.evidence_pack_path, "utf-8"));
+    const manifest = {
+      version: 1,
+      mode: "sampled",
+      source_fingerprint: pack.source_fingerprint,
+      units: [
+        { id: "unit-1", title: "First sampled idea", disposition: "learn" },
+        { id: "unit-2", title: "Second sampled idea", disposition: "learn" },
+      ],
+    };
+    const candidates = [1, 2].map((position) => ({
+      title: `Partial lesson ${position}`,
+      candidate_kind: "insight",
+      trigger: "When reviewing a sampled conversation.",
+      lesson: "Only the first source unit was assigned.",
+      recommended_action: "sample -> inventory -> account",
+      rationale: "A partial batch must not look complete.",
+      source_type: "conversation",
+      source_unit_refs: ["unit-1"],
+      collection: {
+        id: "conversation-gap",
+        title: "Conversation gap",
+        source_type: "conversation",
+        source_coverage: manifest,
+        position,
+      },
+      evidence: [{ ref: pack.items[0].ref }],
+    }));
+    writeFileSync(join(review.review_dir, "lesson-candidates.json"), JSON.stringify(candidates));
+
+    const dry = JSON.parse(
+      learnCli(["learn", "stage", "--review-dir", review.review_dir, "--json"], cwd, home, clientHome).stdout
+    );
+    expect(dry.rejected).toHaveLength(2);
+    expect(dry.rejected.every((entry: { errors: string[] }) =>
+      entry.errors.some((error) => error.includes("unresolved learn units: unit-2"))
+    )).toBe(true);
   });
 
   test("review artifacts are gitignored at creation", () => {

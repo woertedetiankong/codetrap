@@ -575,9 +575,47 @@ codetrap phase2 migrate-insights          # dry run for v2 insight hints
 codetrap phase2 migrate-insights --apply
 ```
 
-The Web console exposes the same project-local shelf under **Learning**. Learning
-candidates use a purpose-specific editor instead of trap-only severity and
-mistake/fix fields. **Approve and add to Learning** records the approval and
+The Web console exposes the project-backed shelf under **Learning**. It can show
+the current project or aggregate every project registered in the console; each
+project file remains the source of truth, so the all-project view does not create
+a second writable library. Insights from one article or AI conversation can
+share a collapsible source collection with a recommended order, progress,
+previous/next navigation, and user-controlled reordering. Existing flat shelves remain
+readable: two or more ungrouped insights with the same primary source are
+grouped on read and are persisted as a collection only after an explicit rename
+or reorder. Search, source type, tag, and learned-state filters keep a growing
+shelf navigable.
+
+New source-derived collections also carry an auditable source-unit inventory.
+The agent first inventories the article or captured conversation sample, then
+routes core knowledge and examples through Insight `source_unit_refs`.
+Substantive background or dated facts can instead live in collection
+`context_sections`, where they remain readable and count toward coverage
+without becoming artificial chapters. `skip` is reserved for explicitly
+excluded material such as page chrome or non-content, with a reason.
+Multi-Insight sources are submitted atomically with
+`codetrap phase2 propose-batch`, which rejects inconsistent manifests, gapped
+order, and source units that disappear from both chapters and collection
+context before creating the review session. Coverage is never a model-authored
+`complete` flag: the shelf derives it from the Insights and source context
+actually stored. Partially applied or rejected collections remain usable but
+read **incomplete**; fully accounted articles, intentional curated subsets,
+sampled conversations, and legacy unknown coverage remain distinct. Collapsed
+cards keep the only visible ratio for study progress and summarize audit state
+in plain language; detailed unit counts, reasons, and fingerprints stay behind
+progressive disclosure. A prompt such as "do not omit anything" can guide
+extraction, but the inventory, fingerprint, batch validator, durable
+destinations, and unresolved-unit ledger are what make omissions reviewable.
+
+Once a source-audited collection exists, an individual Insight write cannot
+replace its manifest, source context, or collection metadata, and cannot occupy
+an existing chapter position. Every Web draft mutation uses the same coverage
+validation as the CLI, while the store repeats the invariant checks before any
+durable write. Appending or replacing a re-audited collection therefore needs a
+future explicit collection operation rather than an ambiguous second batch.
+
+Learning candidates use a purpose-specific editor instead of trap-only severity
+and mistake/fix fields. **Approve and add to Learning** records the approval and
 shelves the current revision in one action; **Approve for Agent** keeps the
 two-step workflow available. Fenced code and ASCII diagrams render as code
 blocks, source links remain visible, and dates are localized. Merely opening an
@@ -585,12 +623,13 @@ insight is read-only; **Mark learned** is an idempotent state change, so retries
 and repeated clicks do not inflate a counter. If the shelf is empty, the page
 shows a ready-to-send Agent request that asks for an ASCII flow diagram and a
 plain-language example. The bundled external-capture and learning-review skills
-apply that teaching format only to user-study insights; concise runtime traps
-stay action-oriented. Confirmed traps are never copied into the shelf
-automatically, and saving or marking an insight does not train the model. The
-Library keeps only actionable health filters (current, past the runtime's
-validation window, and never marked useful) rather than duplicating traps in a
-separate analytics dashboard.
+apply that teaching format only to user-study insights and attach source type,
+topics, and shared collection positions when one source yields several study
+notes; concise runtime traps stay action-oriented. Confirmed traps are never
+copied into the shelf automatically, and saving or marking an insight does not
+train the model. The Library keeps only actionable health filters (current, past
+the runtime's validation window, and never marked useful) rather than
+duplicating traps in a separate analytics dashboard.
 
 Validation refreshes `last_validated`; stale active lessons receive a visible
 `stale_currency` ranking penalty. Graduation archives a mechanized lesson from
@@ -917,8 +956,8 @@ The same skill bundle installs for **both** Codex and Claude Code from `plugins/
 - `codetrap-search` — search existing lessons.
 - `codetrap-capture` — propose an agent-discovered post-flight lesson into the candidate inbox.
 - `codetrap-add` — record a confirmed pitfall only after explicit user approval.
-- `codetrap-capture-external` — extract concise Agent pitfalls, user-study insights, or both from an external article, post, repository, issue, paper, or reference; insight bodies use an ASCII flow diagram and a plain-language example, and Codetrap stores only user-confirmed lessons.
-- `codetrap-learning-review` — look back over recent sessions and stage reusable lessons; runs only on explicit invocation.
+- `codetrap-capture-external` — extract concise Agent pitfalls, user-study insights, or both from an external article, post, repository, issue, paper, or reference; study extraction uses a two-pass source inventory, explicit skip reasons, atomic batch validation, an ASCII flow diagram, and a plain-language example, and Codetrap stores only user-confirmed lessons.
+- `codetrap-learning-review` — look back over recent sessions and stage reusable lessons from a fingerprinted evidence sample with an explicit source-unit account; runs only on explicit invocation and never claims full-conversation coverage from sampled history.
 
 The plugin skill directory is the single source of truth for skill packaging in both clients. The repo does not keep a duplicate root `skills/` tree.
 

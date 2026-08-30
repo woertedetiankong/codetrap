@@ -6,6 +6,7 @@ import { candidateContentHash, migrateCandidate } from "../lib/candidate-envelop
 import type { CandidateTrap } from "../domain/session";
 import { openDatabase } from "../db/connection";
 import { TrapRepository } from "../db/repository";
+import { Phase2Store } from "../lib/phase2-store";
 
 function runJson(args: string[], cwd: string, home: string): any {
   const result = runCli([...args, "--json"], cwd, home);
@@ -165,6 +166,417 @@ describe("Phase 2 low-risk destinations", () => {
     });
   });
 
+  test("groups legacy insights lazily and materializes only after an explicit collection edit", () => {
+    const cwd = tempProjectDir("codetrap-p2-legacy-collections-");
+    const phase2Dir = join(cwd, ".codetrap", "phase2");
+    mkdirSync(phase2Dir, { recursive: true });
+    const path = join(phase2Dir, "insights.json");
+    const legacy = {
+      version: 1,
+      insights: [
+        legacyInsight("ins-second", "Second", "2026-08-29T02:00:00.000Z", ["https://example.com/guide/?utm_source=test"]),
+        legacyInsight("ins-first", "First", "2026-08-29T01:00:00.000Z", ["https://example.com/guide"]),
+        legacyInsight("ins-alone", "Alone", "2026-08-29T03:00:00.000Z", ["manual:note"]),
+      ],
+    };
+    const before = `${JSON.stringify(legacy, null, 2)}\n`;
+    writeFileSync(path, before);
+
+    const store = new Phase2Store(cwd);
+    const library = store.learningLibrary();
+    expect(library.collections).toHaveLength(1);
+    expect(library.collections[0]).toMatchObject({
+      title: "Guide",
+      source_type: "article",
+      inferred: true,
+      coverage_summary: { status: "unknown" },
+    });
+    expect(library.collection_items.map((item) => item.insight_id)).toEqual(["ins-first", "ins-second"]);
+    expect(readFileSync(path, "utf-8")).toBe(before);
+
+    const renamed = store.updateCollection(library.collections[0].id, { title: "Example guide", topics: ["Web", "web"] });
+    expect(renamed).toMatchObject({ title: "Example guide", topics: ["Web"] });
+    const persisted = JSON.parse(readFileSync(path, "utf-8"));
+    expect(persisted.version).toBe(2);
+    expect(persisted.collections[0].inferred).toBeUndefined();
+    expect(store.reorderCollection(renamed.id, ["ins-second", "ins-first"]).map((item) => item.insight_id))
+      .toEqual(["ins-second", "ins-first"]);
+    expect(() => store.reorderCollection(renamed.id, ["ins-first", "ins-first"]))
+      .toThrow("every member exactly once");
+  });
+
+  test("shelves explicit source collections with stable requested positions", () => {
+    const cwd = tempProjectDir("codetrap-p2-explicit-collections-");
+    const home = tempHome();
+    const collection = {
+      id: "col-prompt-cache",
+      title: "Prompt caching",
+      summary: "A source-ordered guide.",
+      source_type: "article",
+      source_refs: ["https://example.com/prompt-cache"],
+      topics: ["AI engineering"],
+      context_sections: [{
+        id: "source-background",
+        title: "Source background",
+        body: "Published during the provider's first rollout.",
+        source_unit_refs: ["source-background"],
+      }],
+      source_coverage: {
+        version: 1,
+        mode: "full_source",
+        source_fingerprint: `sha256:${"a".repeat(64)}`,
+        units: [
+          { id: "exact-prefixes", title: "Exact prefixes", disposition: "learn" },
+          { id: "cache-placement", title: "Cache placement", disposition: "learn" },
+          { id: "source-background", title: "Source background", disposition: "learn" },
+        ],
+      },
+    };
+    const proposals = ([[2, "Cache placement", "cache-placement"], [1, "Exact prefixes", "exact-prefixes"]] as const)
+      .map(([position, title, sourceUnit]) => proposal("insight", title, {
+          title,
+          summary: `${title} summary`,
+          body: `${title} -> example`,
+          tags: ["prompt-cache"],
+          source_refs: ["https://example.com/prompt-cache"],
+          source_type: "article",
+          topics: ["context engineering"],
+          source_unit_refs: [sourceUnit],
+          collection: { ...collection, position },
+        }));
+    const captured = runJson([
+      "phase2", "propose-batch", "--input-json", JSON.stringify({ goal: "Prompt caching study collection", proposals }),
+    ], cwd, home);
+    for (const [index, candidate] of captured.candidates.entries()) {
+      runJson(["phase2", "apply", candidate.id, "--session", captured.session.id, "--executor", "user"], cwd, home);
+      expect(new Phase2Store(cwd).learningLibrary().collections[0].coverage_summary).toMatchObject({
+        status: index === 0 ? "incomplete" : "complete",
+        covered_units: index + 2,
+        learn_units: 3,
+      });
+    }
+    const library = new Phase2Store(cwd).learningLibrary();
+    expect(library.collections).toEqual([expect.objectContaining({
+      id: "col-prompt-cache",
+      title: "Prompt caching",
+      source_type: "article",
+      topics: ["AI engineering"],
+      context_sections: [expect.objectContaining({
+        id: "source-background",
+        source_unit_refs: ["source-background"],
+      })],
+      coverage_summary: expect.objectContaining({ status: "complete", covered_units: 3, learn_units: 3 }),
+    })]);
+    const titlesById = new Map(library.insights.map((insight) => [insight.id, insight.title]));
+    const orderedTitles = library.collection_items
+      .sort((left, right) => left.position - right.position)
+      .map((item) => titlesById.get(item.insight_id));
+    expect(orderedTitles).toEqual(["Exact prefixes", "Cache placement"]);
+  });
+
+  test("normalizes omitted collection topics once for the whole audited batch", () => {
+    const cwd = tempProjectDir("codetrap-p2-batch-topics-");
+    const home = tempHome();
+    const sourceCoverage = {
+      version: 1,
+      mode: "full_source",
+      source_fingerprint: `sha256:${"d".repeat(64)}`,
+      units: [
+        { id: "cache", title: "Cache mechanics", disposition: "learn" },
+        { id: "pricing", title: "Cache pricing", disposition: "learn" },
+      ],
+    };
+    const proposals = ([
+      [1, "Cache mechanics", "cache", "caching"],
+      [2, "Cache pricing", "pricing", "pricing"],
+    ] as const).map(([position, title, sourceUnit, topic]) => proposal("insight", title, {
+      title,
+      summary: `${title} summary`,
+      body: `${title} -> example`,
+      source_refs: ["https://example.com/cache"],
+      source_type: "article",
+      topics: [topic],
+      source_unit_refs: [sourceUnit],
+      collection: {
+        id: "col-template-default",
+        title: "Caching guide",
+        position,
+        source_coverage: sourceCoverage,
+      },
+    }));
+
+    const captured = runJson([
+      "phase2", "propose-batch", "--input-json", JSON.stringify({ goal: "Template-shaped batch", proposals }),
+    ], cwd, home);
+    expect(captured.candidates.map((item: any) => item.destination_payload.collection.topics))
+      .toEqual([["caching", "pricing"], ["caching", "pricing"]]);
+
+    for (const candidate of captured.candidates) {
+      runJson(["phase2", "apply", candidate.id, "--session", captured.session.id, "--executor", "user"], cwd, home);
+    }
+    const library = new Phase2Store(cwd).learningLibrary();
+    expect(library.collections).toEqual([expect.objectContaining({
+      id: "col-template-default",
+      topics: ["caching", "pricing"],
+      coverage_summary: expect.objectContaining({ status: "complete", covered_units: 2 }),
+    })]);
+    expect(library.collection_items).toHaveLength(2);
+  });
+
+  test("rejects explicitly conflicting collection topics before creating a batch session", () => {
+    const cwd = tempProjectDir("codetrap-p2-explicit-topic-conflict-");
+    const home = tempHome();
+    const sourceCoverage = {
+      version: 1,
+      mode: "full_source",
+      source_fingerprint: `sha256:${"7".repeat(64)}`,
+      units: [
+        { id: "first", title: "First section", disposition: "learn" },
+        { id: "second", title: "Second section", disposition: "learn" },
+      ],
+    };
+    const proposals = ([
+      [1, "first", "caching"],
+      [2, "second", "pricing"],
+    ] as const).map(([position, sourceUnit, topic]) => proposal("insight", `${sourceUnit} lesson`, {
+      title: `${sourceUnit} lesson`,
+      summary: `${sourceUnit} summary`,
+      body: `${sourceUnit} -> example`,
+      source_refs: ["https://example.com/conflict"],
+      source_type: "article",
+      topics: [topic],
+      source_unit_refs: [sourceUnit],
+      collection: {
+        id: "col-explicit-conflict",
+        title: "Explicit conflict",
+        topics: [topic],
+        position,
+        source_coverage: sourceCoverage,
+      },
+    }));
+
+    const refused = runCli([
+      "phase2", "propose-batch", "--input-json", JSON.stringify({ proposals }), "--json",
+    ], cwd, home);
+    expect(refused.exitCode).toBe(1);
+    expect(JSON.parse(refused.stdout).error).toContain("must use identical topics");
+    expect(existsSync(join(cwd, ".codetrap", "sessions"))).toBe(false);
+  });
+
+  test("derives one collection id from batch-wide refs instead of silently splitting", () => {
+    const cwd = tempProjectDir("codetrap-p2-batch-derived-id-");
+    const home = tempHome();
+    const sourceCoverage = {
+      version: 1,
+      mode: "full_source",
+      source_fingerprint: `sha256:${"e".repeat(64)}`,
+      units: [
+        { id: "first", title: "First section", disposition: "learn" },
+        { id: "second", title: "Second section", disposition: "learn" },
+      ],
+    };
+    const proposals = ([
+      [2, "Second section", "second", "https://example.com/guide#second"],
+      [1, "First section", "first", "https://example.com/guide#first"],
+    ] as const).map(([position, title, sourceUnit, sourceRef]) => proposal("insight", title, {
+      title,
+      summary: `${title} summary`,
+      body: `${title} -> example`,
+      source_refs: [sourceRef],
+      source_type: "article",
+      topics: [sourceUnit],
+      source_unit_refs: [sourceUnit],
+      collection: {
+        title: "Guide without an explicit id",
+        position,
+        source_coverage: sourceCoverage,
+      },
+    }));
+
+    const captured = runJson([
+      "phase2", "propose-batch", "--input-json", JSON.stringify({ goal: "Derived collection identity", proposals }),
+    ], cwd, home);
+    const normalizedCollections = captured.candidates.map((item: any) => item.destination_payload.collection);
+    expect(new Set(normalizedCollections.map((collection: any) => collection.id)).size).toBe(1);
+    expect(normalizedCollections.map((collection: any) => collection.source_refs)).toEqual([
+      ["https://example.com/guide#first", "https://example.com/guide#second"],
+      ["https://example.com/guide#first", "https://example.com/guide#second"],
+    ]);
+
+    for (const candidate of captured.candidates) {
+      runJson(["phase2", "apply", candidate.id, "--session", captured.session.id, "--executor", "user"], cwd, home);
+    }
+    const library = new Phase2Store(cwd).learningLibrary();
+    expect(library.collections).toHaveLength(1);
+    expect(library.collection_items).toHaveLength(2);
+    expect(library.collections[0].coverage_summary).toMatchObject({ status: "complete", covered_units: 2 });
+  });
+
+  test("lets legacy staged chapters inherit one existing audited collection contract", () => {
+    const cwd = tempProjectDir("codetrap-p2-legacy-audited-batch-");
+    const store = new Phase2Store(cwd);
+    const sourceCoverage = {
+      version: 1,
+      mode: "full_source",
+      source_fingerprint: `sha256:${"f".repeat(64)}`,
+      units: [
+        { id: "first", title: "First section", disposition: "learn" },
+        { id: "second", title: "Second section", disposition: "learn" },
+      ],
+    };
+    const legacyCandidate = (
+      id: string,
+      position: number,
+      sourceUnit: string,
+      sourceRef: string,
+      topic: string
+    ) => ({
+      ...candidate("insight", {
+        title: `${sourceUnit} chapter`,
+        summary: `${sourceUnit} summary`,
+        body: `${sourceUnit} -> example`,
+        source_refs: [sourceRef],
+        source_type: "article",
+        topics: [topic],
+        source_unit_refs: [sourceUnit],
+        collection: {
+          title: "Legacy audited guide",
+          position,
+          source_coverage: sourceCoverage,
+        },
+      }),
+      id,
+    });
+
+    store.apply(
+      "session-legacy-audited",
+      legacyCandidate("cand-legacy-1", 1, "first", "https://example.com/legacy#first", "first-topic"),
+      new Date("2026-08-30T03:00:00.000Z")
+    );
+    expect(() => store.apply(
+      "session-legacy-audited",
+      legacyCandidate("cand-legacy-2", 2, "second", "https://example.com/legacy#second", "second-topic"),
+      new Date("2026-08-30T03:01:00.000Z")
+    )).not.toThrow();
+
+    const library = store.learningLibrary();
+    expect(library.collections).toHaveLength(1);
+    expect(library.collection_items).toHaveLength(2);
+    expect(library.collections[0].coverage_summary).toMatchObject({ status: "complete", covered_units: 2 });
+  });
+
+  test("rejects occupied positions and audited source-contract replacement at the store boundary", () => {
+    const cwd = tempProjectDir("codetrap-p2-collection-guards-");
+    const store = new Phase2Store(cwd);
+    const collection = {
+      id: "col-guarded",
+      title: "Guarded source",
+      summary: "One audited source contract.",
+      source_type: "article",
+      source_refs: ["https://example.com/guarded"],
+      topics: ["guardrails"],
+      context_sections: [{
+        id: "source-background",
+        title: "Source background",
+        body: "Published during the first rollout.",
+        source_unit_refs: ["background"],
+      }],
+      source_coverage: {
+        version: 1,
+        mode: "full_source",
+        source_fingerprint: `sha256:${"c".repeat(64)}`,
+        units: [
+          { id: "core", title: "Core lesson", disposition: "learn" },
+          { id: "background", title: "Source background", disposition: "learn" },
+        ],
+      },
+    };
+    const first = candidate("insight", {
+      title: "Core lesson",
+      summary: "Core summary",
+      body: "core -> learned",
+      source_refs: collection.source_refs,
+      source_unit_refs: ["core"],
+      collection: { ...collection, position: 1 },
+    });
+    store.apply("session-guarded", first, new Date("2026-08-30T02:00:00.000Z"));
+    const shelfPath = join(cwd, ".codetrap", "phase2", "insights.json");
+    const before = readFileSync(shelfPath, "utf-8");
+
+    const colliding = {
+      ...candidate("insight", {
+        title: "Duplicate position",
+        summary: "Must not occupy chapter one twice.",
+        body: "duplicate -> reject",
+        source_refs: collection.source_refs,
+        source_unit_refs: ["core"],
+        collection: { ...collection, position: 1 },
+      }),
+      id: "cand-002",
+    };
+    expect(() => store.apply("session-guarded", colliding, new Date("2026-08-30T02:01:00.000Z")))
+      .toThrow(/position 1.*already occupied/i);
+    expect(readFileSync(shelfPath, "utf-8")).toBe(before);
+
+    const reducedContract = {
+      ...candidate("insight", {
+        title: "Reduced contract",
+        summary: "Must not shrink the audited manifest.",
+        body: "shrink -> reject",
+        source_refs: collection.source_refs,
+        source_unit_refs: ["core"],
+        collection: {
+          ...collection,
+          position: 2,
+          context_sections: [],
+          source_coverage: {
+            ...collection.source_coverage,
+            units: [{ id: "core", title: "Core lesson", disposition: "learn" }],
+          },
+        },
+      }),
+      id: "cand-003",
+    };
+    expect(() => store.apply("session-guarded", reducedContract, new Date("2026-08-30T02:02:00.000Z")))
+      .toThrow(/source contract.*cannot be replaced/i);
+    expect(readFileSync(shelfPath, "utf-8")).toBe(before);
+    expect(store.learningLibrary().collections[0]).toMatchObject({
+      context_sections: [expect.objectContaining({ id: "source-background" })],
+      coverage_summary: expect.objectContaining({ status: "complete", covered_units: 2, learn_units: 2 }),
+    });
+  });
+
+  test("refuses a source-covered collection with an unexplained unit before creating a review session", () => {
+    const cwd = tempProjectDir("codetrap-p2-source-gap-");
+    const home = tempHome();
+    const input = proposal("insight", "Only the first section", {
+      title: "Only the first section",
+      summary: "The second source unit is missing.",
+      body: "first -> learned",
+      source_unit_refs: ["first"],
+      collection: {
+        id: "col-gap",
+        title: "Gap example",
+        position: 1,
+        source_coverage: {
+          version: 1,
+          mode: "full_source",
+          source_fingerprint: `sha256:${"b".repeat(64)}`,
+          units: [
+            { id: "first", title: "First", disposition: "learn" },
+            { id: "second", title: "Second", disposition: "learn" },
+          ],
+        },
+      },
+    });
+    const refused = runCli([
+      "phase2", "propose", "--input-json", JSON.stringify(input), "--json",
+    ], cwd, home);
+    expect(refused.exitCode).toBe(1);
+    expect(JSON.parse(refused.stdout).error).toContain("unresolved learn units: second");
+    expect(existsSync(join(cwd, ".codetrap", "sessions"))).toBe(false);
+  });
+
   test("graduation visibly removes a lesson from default recall and keeps history", () => {
     const cwd = tempProjectDir("codetrap-p2-graduate-");
     const home = tempHome();
@@ -242,5 +654,19 @@ function candidate(kind: any, payload: Record<string, unknown>): CandidateTrap {
     },
     evidence: [], candidate_kind: kind, destination_payload: payload,
     review_decision: "pending", delivery_state: "draft", revision: 1,
+  };
+}
+
+function legacyInsight(id: string, title: string, shelvedAt: string, sourceRefs: string[]) {
+  return {
+    id,
+    title,
+    summary: `${title} summary`,
+    body: `${title} body`,
+    tags: ["shared"],
+    source_refs: sourceRefs,
+    shelved_at: shelvedAt,
+    consulted_count: 0,
+    last_consulted_at: null,
   };
 }
