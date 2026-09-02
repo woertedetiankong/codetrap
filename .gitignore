@@ -16,6 +16,7 @@ artifacts/
 
 # Local agent/editor configuration
 .claude/
+/.codex/hooks.json
 .mcp.json
 
 # Secrets

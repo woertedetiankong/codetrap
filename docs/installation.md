@@ -265,11 +265,98 @@ The packaged template is the source of truth for exact agent behavior. It tells 
 
 For a quick manual check, agents can run `codetrap search "<task keywords>" --mode hybrid --json` from the project cwd.
 
+Observation Runs are optional after setup. Preview and explicitly apply the
+project-local automatic integration for either client:
+
+```bash
+codetrap observe enable codex
+codetrap observe enable codex --apply
+codetrap observe enable claude
+codetrap observe enable claude --apply
+codetrap observe status --json
+```
+
+The preview is read-only. Apply merges `UserPromptSubmit`, `Stop`, and
+`SessionEnd` command hooks into `.codex/hooks.json` or
+`.claude/settings.json`, preserving unrelated configuration and backing up an
+existing file. Codex will ask you to review and trust new project hooks.
+
+Both clients use the same metadata-only contract. Automatic Runs ignore prompt
+text, replies, transcript paths/files, diffs, tool bodies, secrets, and hidden
+reasoning. When exactly one Run is active, normal `search`/`useful` calls attach
+to it; the explicit `--run-id`, `--device-id`, and optional stable `--event-id`
+contract remains available for ambiguous or custom integrations. See
+[Metadata-only Observation Runs](../README.md#metadata-only-observation-runs)
+for the complete example and privacy boundary.
+
+`codetrap observe status --json` and `codetrap observe current --json` include
+Hook capacity health. A killed Agent may leave retryable active state; inspect
+stale entries with the read-only default before applying recovery:
+
+```bash
+codetrap observe recover --older-than-days 7 --json
+codetrap observe recover --older-than-days 7 --apply --json
+```
+
+Apply records `cancelled`/`partial` completion evidence before removing state.
+Failed writes stay retryable, and Codetrap never deletes an entry merely because
+it is old. The Impact Overview repeats the warning and the preview command when
+operator attention is needed.
+
+If `.codetrap/observations/agent-hook-state.json` is unreadable or has an
+unsupported version, `status` reports Hook health as `unavailable` without
+hiding integration or Ledger data. `current` reports active counts as unknown,
+and `recover`, including `--apply`, refuses mutation. Restore a valid backup or
+inspect the file first; Codetrap does not automatically reset unknown Run state.
+
+Preview disabling before applying it. Historical evidence is retained:
+
+```bash
+codetrap observe disable codex
+codetrap observe disable codex --apply
+codetrap observe disable claude --apply
+```
+
+Run `codetrap web --open` and choose **Impact** to inspect the resulting local
+Overview, Run timelines, and Evals calibration bench. Evals keeps deterministic
+Search Eval metrics separate from observed feedback/validation ratios and shows
+unconfirmed review candidates that link back to their source Run. From a candidate,
+the user can author an exact query and expected fixture IDs, save a no-write preview,
+and explicitly accept, reject, or roll back the case. A project gets
+retrieval metrics only when it checks in `src/tests/fixtures/search-eval.json`;
+missing fixtures remain visibly unconfigured. Merely opening Impact or Evals is
+read-only: when no ledger exists it shows an opt-in empty state without creating
+project identity, observation directories, SQLite files, or Eval cases. Only the
+labelled accept action writes the reviewed case, and rollback restores the exact
+previous fixture.
+
+The **Controlled comparison** lane can run two local, deterministic profiles
+against the checked-in fixture: FTS-only versus the case's configured retrieval
+policy, or expected traps unavailable versus available. Choose a trial count and
+seed, click **Run controlled comparison**, then inspect regressions, changed cases,
+side-by-side metrics, fixture SHA, configuration fingerprint, and saved history.
+The runner uses immutable in-memory snapshots, makes zero model calls, and writes
+results only to ignored `.codetrap/evals/` storage. It does not modify the fixture,
+run commands in the source worktree, or measure full Codex/Claude behavior.
+
+Impact, Evals, selected Runs, and selected review candidates use refresh-safe
+local hash routes. These routes intentionally omit the absolute project path and
+are not remote Team share links. If the launch token is missing or expired, the
+console replaces the unusable workspace with a persistent recovery screen that
+points back to `codetrap web --open`.
+
+For a project with no Run, **Impact → Overview** can preview a five-event sample
+timeline without writing anything. The sample is browser-memory only, disappears
+on reload, and does not contribute to Overview or Evals. The adjacent connection
+guide presents automatic preview/apply commands first and retains a short Agent
+instruction for explicit capture. Automatic capture is still metadata-only; it
+does not scan transcripts.
+
 ## Optional: Local Hugging Face Embeddings
 
 codetrap works with no embedding provider. SQLite FTS still works and hybrid
-search reports that it fell back to FTS. Local semantic search has two built-in
-q8 choices and does not require Ollama, Python, or a model server:
+search reports that it fell back to FTS. Local semantic search now has two
+built-in q8 choices and does not require Ollama, Python, or a model server:
 
 | Choice | Hugging Face model | Dimensions | Approx. download |
 |---|---|---:|---:|
@@ -356,6 +443,19 @@ request for a two-pass coverage account plus study material explained with an
 ASCII flow diagram and a plain-language example; the bundled external-capture
 and learning-review skills use the same contract. This is local memory and
 study tracking, not model training.
+
+Personal Learning Impact state is stored separately from shared Insight prose.
+The Web view offers **Not started**, **In progress**, and **Learned**, explicit
+**Helpful** / **Unclear** / **Outdated** feedback, and an optional link to an
+existing local Observation Run. Repeating the same choice is idempotent, and no
+Observation Ledger is enabled merely by viewing or updating Learning.
+
+**Create Agent experience candidate** opens an editable, deterministic local
+Trigger/Mistake/Fix draft. Preview performs zero model calls and no durable
+write; sending it stages only a pending Candidate Inbox item. It never invokes
+Codex or Claude Code and never copies an Insight directly into confirmed Agent
+Library memory. Accept, reject, conflict handling, receipts, supersede, and
+rollback continue through the existing review workflow.
 
 Open the `Embeddings` view to inspect the active provider/profile, compare the
 default and high-quality local cards, see cache and project/global freshness,

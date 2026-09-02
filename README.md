@@ -1284,10 +1284,21 @@ an old tab explains that its credential expired and directs the user to the
 newest tab instead of showing a bare `Unauthorized` error. The console polls for
 candidate/session changes made by agents or other terminals, but pauses
 application of external updates while a candidate form has unsaved edits. Open
-`Embeddings` to compare the two local cards, see download/cache state, save a
-selection, switch providers, and reindex project or global embeddings. The web
-console does not save Jina API keys; Jina still reads `JINA_API_KEY` from the
-environment.
+the blue `Impact` view to see real local Observation Overview totals, browse
+Runs, inspect a privacy-allowlisted evidence timeline, and open the Evals
+calibration bench for project-local deterministic retrieval metrics,
+denominator-visible observed rates, and governed candidates linked back to
+their Runs. Opening Impact or Evals is read-only and does not create or enable
+an Observation Ledger. A fixture changes only after the user authors an exact
+Eval case and clicks the labelled accept action; draft preview, rejection, and
+ordinary browsing do not write it, and rollback restores its exact previous
+bytes. The page labels incomplete evidence and distinguishes deterministic
+checks, observed facts, human labels, confirmed ground truth, and causal claims.
+Open `Embeddings` to compare the two local cards, see download/cache state, save
+a selection, switch providers, and reindex project or global embeddings. Jina
+remains an optional cloud provider via `codetrap embeddings use jina` plus
+`JINA_API_KEY`; when selected, trap passages and semantic/hybrid queries are
+sent to Jina for embedding.
 
 Then search normally:
 
