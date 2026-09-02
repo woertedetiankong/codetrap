@@ -1,7 +1,7 @@
 # codetrap Mature Product Roadmap v2.3: Agent Experience Compiler
 
 Date: 2026-06-22 (v1)
-Updated: 2026-08-28 (v2.3 implementation status)
+Updated: 2026-09-02 (v2.3 implementation status)
 Status: Product direction / long-term roadmap — authoritative parent plan
 Scope: Parent plan for codetrap mature product evolution
 Clients served: **Codex and Claude Code, symmetrically** (Cursor and others: future)
@@ -13,7 +13,7 @@ handoff) — see §19.
 
 ## Status Dashboard
 
-> Updated: 2026-08-29
+> Updated: 2026-09-02
 
 | Milestone | Status | Updated | Evidence | Note |
 |---|---|---|---|---|
@@ -27,17 +27,88 @@ handoff) — see §19.
 | Existing Skill improvement loop | **Done** | 2026-08-28 | [handoff](tasks/2026-08-28-existing-skill-improvement/handoff.md) | Resource-preserving, exact-base Skill patches now pass through static validation, file-level preview, content-bound approval, symmetric install, behavior outcomes, and rollback. |
 | Improvement-loop review hardening | **Done** | 2026-08-28 | [handoff](tasks/2026-08-28-review-hardening/handoff.md) | Independent-review findings in retention, strict inputs, provenance, live-owner locking, portable metadata, bounded snapshot history, and partial-failure recovery are closed with 437 passing tests. |
 | Phase 3 storage lifecycle foundation | **Done** | 2026-08-29 | [handoff](tasks/2026-08-29-phase3-storage-lifecycle/handoff.md) | Read-only usage diagnostics and governed orphan snapshot GC pass with 441 tests; the store remains explicitly single-host. |
-
-### Needs your judgment
-
-- Review the pending locking/storage candidates and accept, edit, reject, or
-  supersede each explicitly. Leaving them pending does not affect runtime, but
-  the project-memory decision remains unresolved
-  ([detail](tasks/2026-08-29-phase3-storage-lifecycle/handoff.md)).
-
+| Learning collections and ordered study | **Done** | 2026-08-29 | [handoff](tasks/2026-08-29-learning-collections/handoff.md) | Source collections, stable study order, progress, filters, and registered-project aggregation pass with 445 tests and real Chrome verification. |
+| Learning source coverage | **Done** | 2026-08-30 | [handoff](tasks/2026-08-29-learning-source-coverage/handoff.md) | Source manifests/context, atomic omission checks, immutable audited collection contracts, and content-first cards pass with 453 tests and real-article verification. |
+| Impact, Evals, and team observability design | **Done (design + prototype)** | 2026-08-30 | [handoff](tasks/2026-08-30-impact-evals-design/handoff.md) | User-value-first Impact, Learning feedback, local observation ledger, Team Hub, privacy, and controlled-eval contracts are decision-complete; implementation is tracked by the following milestones. |
+| Observation Ledger v1 foundation | **Done** | 2026-08-30 | [handoff](tasks/2026-08-30-observation-ledger-v1/handoff.md) | Versioned events, a separate append-only SQLite ledger, strict metadata boundaries, deterministic resource closure, and rebuildable Run/Overview projections pass 465 repository tests. |
+| Observation adapters and real run path | **Done** | 2026-08-30 | [handoff](tasks/2026-08-30-observation-adapters/handoff.md) | Symmetric metadata-only Codex/Claude inputs plus explicit CLI/MCP search, exposure, validation and feedback evidence pass 473 repository tests; project-local automatic hooks were delivered in the later opt-in milestone. |
+| Impact Overview and Runs Web slice | **Done** | 2026-08-30 | [handoff](tasks/2026-08-30-impact-overview-runs/handoff.md) | Real local Overview/Run evidence has read-only APIs and a blue privacy-allowlisted production UI; controlled execution remains separate and automatic hooks were delivered later. |
+| Observational Evals v1 | **Done** | 2026-08-30 | [handoff](tasks/2026-08-30-observational-evals-v1/handoff.md) | Project-local deterministic retrieval, denominator-visible observed outcomes, and Run-linked unconfirmed review candidates pass 485 repository tests. |
+| Web UX recovery and routing | **Done** | 2026-08-30 | [handoff](tasks/2026-08-30-web-ux-recovery-routing/handoff.md) | Persistent auth recovery, refresh-safe local routes, stable Impact state navigation, and warning-aware review actions pass 491 tests plus direct OpenCLI checks. |
+| Observation first-run onboarding | **Done** | 2026-08-30 | [handoff](tasks/2026-08-30-observation-first-run-onboarding/handoff.md) | Browser-memory five-event preview and plain-language Agent handoff make empty Overview/Runs explorable without writing synthetic evidence; 492 tests and OpenCLI verification pass. |
+| Opt-in Agent observation | **Done** | 2026-08-30 | [handoff](tasks/2026-08-30-opt-in-agent-observation/handoff.md) | Project-local Codex/Claude turn hooks, strict metadata allowlisting, retry-safe Run identity, fail-closed single-active-Run attachment, reversible setup, and a real OpenCLI Run journey pass. |
+| Governed Eval candidates | **Done** | 2026-08-31 | [handoff](tasks/2026-08-31-governed-eval-candidates/handoff.md) | Human calibration now turns metadata-only signals into explicit, previewed, content-bound fixture cases with reject/rollback, exact-byte recovery, and OpenCLI-verified privacy and UX. |
+| Controlled Eval runner v1 | **Done** | 2026-08-31 | [handoff](tasks/2026-08-31-controlled-eval-runner/handoff.md) | Zero-cost deterministic retrieval/memory comparisons now preserve immutable fixture identity, local result history, reproducibility evidence, and regression-first UX; real Agent/worktree/model trials remain permissioned future work. |
+| Learning Impact | **Done** | 2026-08-31 | [handoff](tasks/2026-08-31-learning-impact/handoff.md) | Personal progress, feedback, Run context, deterministic editable drafting, and governed Inbox promotion are separate from Insight content and confirmed memory; tests and OpenCLI pass. |
+| Observation reliability hardening | **Done** | 2026-09-02 | [handoff](tasks/2026-09-02-observation-reliability-hardening/handoff.md) | Active Evals drafts and old Run links survive refresh; Hook health and deferred updates are visible; recovery is preview-first and failure-closed; corrupt Hook state cannot hide healthy Ledger data; project-bound responses cannot cross-contaminate views; healthy controlled history survives corrupt artifacts. |
 
 ### Closed decisions by date
 
+- 2026-08-31 Learning Impact stores reversible personal progress, content
+  feedback, and an optional Run link outside shared Insight content. Creating an
+  Agent experience uses a deterministic editable local draft, makes zero model
+  calls, and can only stage a pending Candidate Inbox item; confirmed memory still
+  requires the existing explicit review lifecycle
+  ([detail](tasks/2026-08-31-learning-impact/handoff.md)).
+- 2026-08-31 The reviewed candidate backlog is resolved: 16 distinct lessons
+  entered project memory, four duplicates were merged into stronger canonical
+  traps, and three narrow presentation/test details were rejected. That review
+  batch left no pending candidates; Learning Impact validation later staged one
+  new Windows fixture-isolation candidate for explicit review
+  (`2026-08-31-capture-launch-compiled-windows-cli-fixtures-from-an-explicit-te` /
+  `cand-001`).
+
+- 2026-08-31 Controlled Evals v1 compares fixed retrieval or confirmed-memory
+  variants over immutable fixture snapshots. It records seed, trials, suite SHA,
+  repository and configuration identities and keeps results separate from
+  observed rates. It makes no model calls and does not claim end-to-end Agent
+  impact; real Agent/worktree trials remain explicitly permissioned
+  ([detail](tasks/2026-08-31-controlled-eval-runner/handoff.md)).
+
+- 2026-08-31 Observation candidates are questions, not ground truth. A user must
+  author the exact query and fixture expectations; draft preview is non-mutating,
+  accept is a content-bound reversible Phase 2 commit, and rejection requires no
+  sensitive query ([detail](tasks/2026-08-31-governed-eval-candidates/handoff.md)).
+
+- 2026-08-30 Automatic Observation is project-local, opt-in, turn-scoped, and metadata-only. `UserPromptSubmit` starts a Run, `Stop` completes it, `SessionEnd` closes unfinished work as partial, exact hook retries are idempotent, and concurrent active Runs fail closed instead of receiving guessed search/validation evidence ([detail](tasks/2026-08-30-opt-in-agent-observation/handoff.md)).
+
+- 2026-08-30 First-run Observation examples stay in browser memory and never enter the append-only evidence ledger or metrics. Empty-state UX explains explicit capture, offers an Agent-ready instruction, and every browser-visible development slice now requires OpenCLI postcondition verification ([detail](tasks/2026-08-30-observation-first-run-onboarding/handoff.md)).
+
+- 2026-08-30 Observational Evals does not manufacture one “impact score.”
+  Checked-in deterministic retrieval, real-Run association, and review-required
+  candidates keep separate denominators and claims; projected candidates remain
+  unconfirmed until a future governed workflow writes a fixture case
+  ([detail](tasks/2026-08-30-observational-evals-v1/handoff.md)).
+- 2026-08-30 Impact is the evidence layer over two separate content products:
+  Learning remains human-facing and Library remains Agent-facing. The top-level
+  Impact surface leads with user value, then exposes Runs, Evals, and Team.
+  Learning can explicitly create an Agent experience candidate, but that action
+  neither calls Codex/Claude nor writes directly to runtime memory
+  ([design](impact-evals-design.zh-CN.md)).
+- 2026-08-30 Team observability uses local clients plus a self-hostable Team Hub.
+  Structured metadata may sync automatically; sensitive bodies require preview
+  and explicit sharing, personal details remain private by default, and member
+  rankings are prohibited. Tests and human feedback outrank model judges, and
+  causal claims require confirmation or controlled evaluation
+  ([detail](tasks/2026-08-30-impact-evals-design/implementation-log.md)).
+- 2026-08-30 Learning completeness is derived, never asserted by the model.
+  Source-derived collections inventory meaningful units before drafting, route
+  reusable knowledge to ordered Insights and substantive background to visible
+  collection context, and reserve skips for excluded non-content with reasons.
+  Each source enters review as one validated batch. Partial shelves remain usable
+  and visibly incomplete; sampled session evidence and unaudited legacy shelves
+  cannot claim full-source coverage
+  ([detail](tasks/2026-08-29-learning-source-coverage/handoff.md)).
+- 2026-08-30 An Insight write cannot redefine an existing audited collection.
+  Web mutations reuse Phase 2 validation, and the store independently rejects
+  source-contract replacement and occupied positions. Append versus re-audit
+  remains an explicit future operation
+  ([detail](tasks/2026-08-29-learning-source-coverage/handoff.md)).
+- 2026-08-29 Learning remains project-backed: the Web console aggregates only
+  registered projects, while same-source legacy notes form read-only inferred
+  collections until an explicit rename or reorder materializes them. Source
+  collections and future cross-source learning paths remain separate concepts
+  ([detail](tasks/2026-08-29-learning-collections/handoff.md)).
 - 2026-08-29 Phase 3 GC treats every active, reverted, and legacy inline commit
   reference as live. Status/dry-run are read-only; apply rechecks under the
   single-host lock, deletes only verified unreachable objects, and leaves a
@@ -139,6 +210,11 @@ handoff) — see §19.
 - Phase 3 filesystem coordination is single-host. A team pilot should use
   Git/PR review plus per-device local apply; shared service identity, leases,
   and rollout receipts remain a later architecture decision.
+- Metadata-only local Observation and Evals now have fail-closed Web projections
+  and opt-in turn hooks, but sensitive bodies, Team Hub ingestion, and controlled
+  execution remain unimplemented. Do not widen the current privacy boundary or
+  make causal/longitudinal claims from the small local sample
+  ([design](impact-evals-design.zh-CN.md)).
 
 What changed in v2:
 

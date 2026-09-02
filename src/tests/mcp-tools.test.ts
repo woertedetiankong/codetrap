@@ -4,8 +4,71 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleResourceRead, handleToolCall } from "../mcp/server";
 import { TrapStore } from "../lib/store";
+import { openObservationLedger } from "../lib/observation-ledger";
 
 describe("MCP tool payloads", () => {
+  test("search and useful accept the same Observation context as the CLI", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-observation-"));
+    mkdirSync(join(cwd, ".codetrap"));
+    const store = new TrapStore(cwd, undefined);
+    const added = store.add({
+      title: "Keep MCP observation symmetric",
+      category: "convention",
+      scope: "project",
+      context: "When MCP clients search and report usefulness.",
+      mistake: "Recording CLI evidence but losing MCP evidence.",
+      fix: "Use one Observation context contract for both transports.",
+    });
+
+    const started = await handleToolCall(store, "record_observation", {
+      kind: "start",
+      input: {
+        run_id: "run-mcp-1",
+        event_id: "event-mcp-start",
+        device_id: "device-mcp",
+        actor_ref: null,
+        source_ref: "mcp",
+        source_client: "codex",
+        source_session_ref: "opaque-session",
+        repository_revision: null,
+        branch: null,
+        model_provider: null,
+        model_name: null,
+        completeness: "partial",
+      },
+    });
+    expect(JSON.parse(started.content[0].text)).toMatchObject({ success: true, inserted: 1 });
+
+    const searchResponse = await handleToolCall(store, "search_traps", {
+      query: "MCP SECRET QUERY observation symmetric",
+      scope: "project",
+      mode: "fts",
+      run_id: "run-mcp-1",
+      device_id: "device-mcp",
+      event_id: "event-mcp-search",
+    });
+    expect(JSON.parse(searchResponse.content[0].text).results).toHaveLength(1);
+    const usefulResponse = await handleToolCall(store, "mark_trap_useful", {
+      id: added.id,
+      scope: "project",
+      run_id: "run-mcp-1",
+      device_id: "device-mcp",
+      event_id: "event-mcp-useful",
+    });
+    expect(JSON.parse(usefulResponse.content[0].text)).toMatchObject({ success: true, useful_count: 1 });
+
+    const ledger = openObservationLedger(cwd);
+    const events = ledger.listEvents({ runId: "run-mcp-1" });
+    expect(events.map((event) => event.type)).toEqual([
+      "run/started",
+      "trap/search-completed",
+      "trap/exposed",
+      "trap/feedback-recorded",
+    ]);
+    expect(JSON.stringify(events)).not.toContain("MCP SECRET QUERY");
+    ledger.close();
+  });
+
   test("search_traps returns compact cards and get_trap returns details", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "codetrap-mcp-"));
     mkdirSync(join(cwd, ".codetrap"));
@@ -352,6 +415,8 @@ describe("MCP self-describing contract", () => {
     expect(instructions).toContain("capture_candidate");
     expect(instructions).toContain("reserved for the human");
     expect(instructions).toContain("only when the user explicitly asks");
+    expect(instructions).toContain("record_observation");
+    expect(instructions).toContain("Never place prompt, diff, tool body, full path, secret, or raw reasoning");
 
     await client.close();
     await server.close();

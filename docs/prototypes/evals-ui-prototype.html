@@ -1,0 +1,1385 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codetrap Evals Prototype</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f3f1e8;
+      --paper-deep: #e9e5d8;
+      --surface: rgba(255, 254, 248, 0.92);
+      --surface-solid: #fffef8;
+      --ink: #18201c;
+      --ink-soft: #4f5c55;
+      --muted: #7b867f;
+      --line: #d3d6ca;
+      --line-dark: #aeb6ad;
+      --moss: #185c4b;
+      --moss-dark: #0c3c31;
+      --moss-pale: #d9e8df;
+      --lime: #b7d869;
+      --amber: #b56b1e;
+      --amber-pale: #f4e3c5;
+      --red: #a64235;
+      --red-pale: #f4d9d4;
+      --blue: #315f7c;
+      --blue-pale: #dbe8ef;
+      --shadow: 0 22px 70px rgba(40, 53, 45, 0.12);
+      --mono: "Cascadia Mono", "SFMono-Regular", Consolas, "Microsoft YaHei UI", monospace;
+      --serif: Georgia, "Noto Serif SC", "Songti SC", serif;
+      --sans: "Aptos", "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 83% -15%, rgba(183, 216, 105, 0.24), transparent 31rem),
+        radial-gradient(circle at 12% 100%, rgba(49, 95, 124, 0.10), transparent 34rem),
+        linear-gradient(rgba(24, 32, 28, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(24, 32, 28, 0.025) 1px, transparent 1px),
+        var(--paper);
+      background-size: auto, auto, 28px 28px, 28px 28px, auto;
+      font-family: var(--sans);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.22;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.11'/%3E%3C/svg%3E");
+      mix-blend-mode: multiply;
+      z-index: 20;
+    }
+
+    button, select, input { font: inherit; }
+    button { color: inherit; }
+    a { color: inherit; }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 90px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      padding: 18px 12px;
+      background: #132b25;
+      color: #f7f4e9;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      z-index: 5;
+    }
+
+    .mark {
+      width: 50px;
+      height: 50px;
+      margin: 0 auto 25px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 16px 7px 16px 7px;
+      background: var(--lime);
+      color: var(--moss-dark);
+      box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.18);
+      font: 800 20px/1 var(--serif);
+      transform: rotate(-2deg);
+    }
+
+    .rail-nav { display: grid; gap: 8px; }
+
+    .rail-button {
+      position: relative;
+      display: grid;
+      justify-items: center;
+      gap: 5px;
+      width: 100%;
+      padding: 11px 5px 10px;
+      border: 0;
+      border-radius: 12px;
+      background: transparent;
+      color: #adc1b9;
+      cursor: pointer;
+      transition: color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+
+    .rail-button:hover { color: white; background: rgba(255, 255, 255, 0.07); transform: translateY(-1px); }
+    .rail-button.active { color: #11251f; background: var(--lime); }
+    .rail-button.active::before {
+      content: "";
+      position: absolute;
+      left: -12px;
+      top: 13px;
+      width: 4px;
+      height: 29px;
+      background: #fffef8;
+      border-radius: 0 4px 4px 0;
+    }
+
+    .rail-icon { width: 20px; height: 20px; }
+    .rail-label { font-size: 10px; letter-spacing: 0.04em; }
+
+    .rail-foot {
+      margin-top: auto;
+      padding-top: 18px;
+      text-align: center;
+      color: #7f9a90;
+      font: 9px/1.5 var(--mono);
+      letter-spacing: 0.08em;
+    }
+
+    .workspace { min-width: 0; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      min-height: 66px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 10px clamp(18px, 3vw, 44px);
+      background: rgba(243, 241, 232, 0.82);
+      border-bottom: 1px solid rgba(174, 182, 173, 0.65);
+      backdrop-filter: blur(16px);
+    }
+
+    .product-name {
+      font: 700 18px/1 var(--serif);
+      letter-spacing: -0.02em;
+    }
+
+    .project-picker {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      color: var(--ink-soft);
+      font-size: 13px;
+    }
+
+    .project-picker strong { color: var(--ink); font-weight: 650; }
+    .project-picker .slash { color: var(--line-dark); }
+
+    .topbar-end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+    .prototype-badge,
+    .sync-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid var(--line-dark);
+      border-radius: 999px;
+      background: rgba(255, 254, 248, 0.78);
+      color: var(--ink-soft);
+      font: 10px/1 var(--mono);
+      letter-spacing: 0.055em;
+      text-transform: uppercase;
+    }
+
+    .prototype-badge { border-color: #c48b48; background: var(--amber-pale); color: #784410; }
+    .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--moss); box-shadow: 0 0 0 4px rgba(24, 92, 75, 0.12); }
+
+    .content {
+      width: min(1540px, 100%);
+      margin: 0 auto;
+      padding: 27px clamp(18px, 3vw, 44px) 70px;
+    }
+
+    .subnav {
+      display: flex;
+      gap: 5px;
+      width: fit-content;
+      margin-bottom: 31px;
+      padding: 4px;
+      background: rgba(255, 254, 248, 0.68);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 7px 24px rgba(40, 53, 45, 0.05);
+    }
+
+    .subnav button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 14px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .subnav button.active { background: var(--ink); color: #fffef8; }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(310px, 430px);
+      align-items: end;
+      gap: clamp(30px, 6vw, 90px);
+      margin-bottom: 30px;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      color: var(--moss);
+      font: 700 10px/1 var(--mono);
+      letter-spacing: 0.17em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before { content: ""; width: 34px; height: 2px; background: var(--lime); box-shadow: 9px 0 0 var(--moss); }
+
+    h1 {
+      max-width: 780px;
+      margin: 0;
+      font: 500 clamp(38px, 5.1vw, 76px)/0.98 var(--serif);
+      letter-spacing: -0.055em;
+    }
+
+    h1 em { color: var(--moss); font-style: italic; }
+
+    .hero-copy {
+      margin: 21px 0 0;
+      max-width: 690px;
+      color: var(--ink-soft);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .hero-aside {
+      position: relative;
+      padding: 19px 20px 18px 23px;
+      border-left: 3px solid var(--lime);
+      background: rgba(255, 254, 248, 0.63);
+    }
+
+    .hero-aside::after {
+      content: "EVIDENCE / 证据";
+      position: absolute;
+      right: 12px;
+      top: -9px;
+      padding: 3px 6px;
+      background: var(--paper);
+      color: var(--muted);
+      font: 9px/1 var(--mono);
+      letter-spacing: 0.08em;
+    }
+
+    .hero-aside strong { display: block; margin-bottom: 8px; font: 600 17px/1.3 var(--serif); }
+    .hero-aside p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.65; }
+
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    .mode-switch {
+      display: flex;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    .mode-switch button {
+      padding: 8px 12px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .mode-switch button.active { background: var(--moss-pale); color: var(--moss-dark); font-weight: 700; }
+
+    .filter-button,
+    .primary-button,
+    .ghost-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 36px;
+      padding: 8px 13px;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+    }
+
+    .filter-button,
+    .ghost-button { border: 1px solid var(--line); background: var(--surface); color: var(--ink-soft); font-size: 12px; }
+    .primary-button { border: 1px solid var(--moss-dark); background: var(--moss); color: white; font-size: 12px; font-weight: 700; box-shadow: 4px 4px 0 var(--moss-dark); }
+    .primary-button:hover { transform: translate(-1px, -1px); box-shadow: 6px 6px 0 var(--moss-dark); }
+    .ghost-button:hover, .filter-button:hover { background: var(--surface-solid); transform: translateY(-1px); }
+    .action-spacer { flex: 1; }
+
+    .experiment-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font: 10px/1 var(--mono);
+    }
+
+    .summary-board {
+      overflow: hidden;
+      margin-bottom: 20px;
+      border: 1px solid var(--line-dark);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      animation: rise 520ms cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .board-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 47px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, rgba(217, 232, 223, 0.78), rgba(255, 254, 248, 0.35));
+    }
+
+    .board-head strong { font: 650 14px/1.2 var(--serif); }
+    .board-head .revision { color: var(--muted); font: 10px/1 var(--mono); }
+    .board-head .board-status { margin-left: auto; }
+
+    .status-pill,
+    .kind-pill,
+    .fact-pill {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 5px 8px;
+      border-radius: 999px;
+      font: 700 9px/1 var(--mono);
+      letter-spacing: 0.045em;
+      text-transform: uppercase;
+    }
+
+    .status-pill.good { background: var(--moss-pale); color: var(--moss-dark); }
+    .status-pill.warn { background: var(--amber-pale); color: #75420d; }
+    .status-pill.bad { background: var(--red-pale); color: #792d25; }
+    .kind-pill { background: var(--blue-pale); color: var(--blue); }
+    .fact-pill { padding: 4px 7px; background: #eceee8; color: #56615a; }
+    .fact-pill.human { background: var(--amber-pale); color: #75420d; }
+    .fact-pill.eval { background: var(--moss-pale); color: var(--moss-dark); }
+    .fact-pill.model { background: var(--blue-pale); color: var(--blue); }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1fr);
+      min-height: 238px;
+    }
+
+    .variant {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 108px;
+      gap: 20px;
+      align-items: center;
+      padding: 28px clamp(20px, 3vw, 38px);
+    }
+
+    .variant + .delta-column + .variant { background: linear-gradient(120deg, rgba(183, 216, 105, 0.11), transparent 70%); }
+
+    .variant-label { margin-bottom: 12px; color: var(--muted); font: 700 10px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+    .variant-title { margin: 0 0 8px; font: 600 clamp(20px, 2.2vw, 29px)/1.1 var(--serif); }
+    .variant-copy { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+
+    .metric-pair { display: flex; gap: 23px; margin-top: 24px; }
+    .metric-pair strong { display: block; font: 600 24px/1 var(--serif); }
+    .metric-pair span { display: block; margin-top: 5px; color: var(--muted); font: 9px/1.3 var(--mono); text-transform: uppercase; }
+
+    .score-ring {
+      --score: 50;
+      position: relative;
+      width: 94px;
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: conic-gradient(var(--ring-color, var(--moss)) calc(var(--score) * 1%), #dde0d7 0);
+      box-shadow: inset 0 0 0 1px rgba(24, 32, 28, 0.08);
+    }
+
+    .score-ring::before { content: ""; width: 72px; height: 72px; position: absolute; border-radius: 50%; background: var(--surface-solid); }
+    .score-ring span { position: relative; font: 600 20px/1 var(--serif); }
+    .score-ring small { position: absolute; top: 56px; color: var(--muted); font: 8px/1 var(--mono); }
+
+    .delta-column {
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 8px;
+      padding: 20px 8px;
+      border-inline: 1px dashed var(--line-dark);
+      background: rgba(243, 241, 232, 0.72);
+      text-align: center;
+    }
+
+    .delta-arrow { color: var(--moss); font: 30px/1 var(--serif); }
+    .delta-value { color: var(--moss-dark); font: 700 24px/1 var(--serif); }
+    .delta-label { max-width: 80px; color: var(--muted); font: 9px/1.4 var(--mono); text-transform: uppercase; }
+
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      border-top: 1px solid var(--line);
+      background: rgba(237, 239, 233, 0.65);
+    }
+
+    .strip-item { padding: 13px 16px; border-right: 1px solid var(--line); }
+    .strip-item:last-child { border-right: 0; }
+    .strip-item strong { display: block; font: 650 15px/1 var(--serif); }
+    .strip-item span { display: block; margin-top: 5px; color: var(--muted); font: 9px/1.35 var(--mono); text-transform: uppercase; }
+
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(350px, 0.65fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: 0 10px 34px rgba(40, 53, 45, 0.07);
+      animation: rise 580ms 80ms cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 52px;
+      padding: 11px 15px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-header h2 { margin: 0; font: 600 17px/1 var(--serif); }
+    .panel-header small { color: var(--muted); font: 9px/1 var(--mono); }
+    .panel-header-end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+    .case-table { width: 100%; border-collapse: collapse; }
+    .case-table th { padding: 10px 12px; background: rgba(237, 239, 233, 0.65); border-bottom: 1px solid var(--line); color: var(--muted); font: 700 9px/1 var(--mono); letter-spacing: 0.07em; text-align: left; text-transform: uppercase; }
+    .case-table td { padding: 13px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; font-size: 12px; }
+    .case-row { cursor: pointer; transition: background 140ms ease; }
+    .case-row:hover { background: rgba(217, 232, 223, 0.38); }
+    .case-row.selected { background: linear-gradient(90deg, rgba(183, 216, 105, 0.24), rgba(255, 254, 248, 0.3)); box-shadow: inset 3px 0 var(--moss); }
+    .case-row:last-child td { border-bottom: 0; }
+    .case-title { display: block; margin-bottom: 4px; font-weight: 700; color: var(--ink); }
+    .case-id { color: var(--muted); font: 9px/1 var(--mono); }
+
+    .trial-cell { min-width: 112px; }
+    .trial-mark { display: flex; align-items: center; gap: 7px; }
+    .trial-icon { width: 17px; height: 17px; display: grid; place-items: center; border-radius: 50%; font: 800 10px/1 var(--mono); }
+    .trial-icon.pass { background: var(--moss-pale); color: var(--moss-dark); }
+    .trial-icon.fail { background: var(--red-pale); color: var(--red); }
+    .trial-icon.unknown { background: #e7e8e3; color: var(--muted); }
+    .trial-score { color: var(--ink-soft); font: 10px/1 var(--mono); }
+
+    .delta-chip { display: inline-flex; padding: 5px 7px; border-radius: 6px; background: var(--moss-pale); color: var(--moss-dark); font: 700 9px/1 var(--mono); }
+    .delta-chip.flat { background: #e8e9e4; color: var(--muted); }
+    .delta-chip.regress { background: var(--red-pale); color: var(--red); }
+
+    .detail-panel { position: sticky; top: 85px; overflow: hidden; }
+    .detail-body { padding: 18px; }
+    .detail-kicker { margin-bottom: 7px; color: var(--muted); font: 700 9px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+    .detail-title { margin: 0; font: 600 24px/1.12 var(--serif); }
+    .detail-summary { margin: 11px 0 17px; color: var(--ink-soft); font-size: 12px; line-height: 1.58; }
+
+    .evidence-stack { display: grid; gap: 8px; margin-bottom: 18px; }
+    .evidence-line { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; padding: 9px 10px; border: 1px solid var(--line); background: rgba(255, 254, 248, 0.7); }
+    .evidence-line p { margin: 0; color: var(--ink-soft); font-size: 11px; line-height: 1.48; }
+    .evidence-state { font: 800 11px/1 var(--mono); }
+    .evidence-state.pass { color: var(--moss); }
+    .evidence-state.fail { color: var(--red); }
+
+    .mini-heading { display: flex; align-items: center; gap: 8px; margin: 18px 0 9px; font: 700 10px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    .mini-heading::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+
+    .trace-mini { display: grid; gap: 4px; padding: 11px 0 5px; }
+    .trace-row { display: grid; grid-template-columns: 58px 1fr 38px; align-items: center; gap: 7px; min-height: 25px; }
+    .trace-label { color: var(--muted); font: 8px/1 var(--mono); text-transform: uppercase; }
+    .trace-track { position: relative; height: 9px; border-radius: 2px; background: #e5e7e0; overflow: hidden; }
+    .trace-segment { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+    .trace-segment.search { left: 7%; width: 18%; background: var(--blue); }
+    .trace-segment.agent { left: 27%; width: 49%; background: var(--moss); }
+    .trace-segment.test { left: 78%; width: 18%; background: var(--amber); }
+    .trace-time { color: var(--muted); font: 8px/1 var(--mono); text-align: right; }
+
+    .review-box { padding: 12px; border: 1px solid #d0b27f; background: linear-gradient(135deg, rgba(244, 227, 197, 0.72), rgba(255, 254, 248, 0.75)); }
+    .review-box p { margin: 0 0 10px; color: #64451e; font-size: 11px; line-height: 1.5; }
+    .review-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .review-actions button { padding: 6px 8px; border: 1px solid rgba(117, 66, 13, 0.25); border-radius: 7px; background: rgba(255,255,255,.56); color: #704311; font-size: 10px; cursor: pointer; }
+    .review-actions button.active { background: #6f4b1e; color: white; }
+
+    .detail-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 16px; }
+
+    .model-judge {
+      margin-top: 11px;
+      border: 1px dashed #91a8b6;
+      background: rgba(219, 232, 239, 0.48);
+    }
+
+    .model-judge summary { padding: 10px; color: var(--blue); font: 700 10px/1.3 var(--mono); cursor: pointer; }
+    .model-judge p { margin: 0; padding: 0 11px 11px; color: var(--ink-soft); font-size: 10px; line-height: 1.55; }
+
+    .modal-backdrop,
+    .trace-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(12, 28, 23, 0.58);
+      backdrop-filter: blur(8px);
+    }
+
+    .modal-backdrop.open,
+    .trace-backdrop.open { display: flex; }
+
+    .modal {
+      width: min(620px, 100%);
+      border: 1px solid #87928b;
+      background: var(--surface-solid);
+      box-shadow: 16px 16px 0 rgba(12, 60, 49, 0.42), 0 30px 90px rgba(0,0,0,.25);
+      animation: pop 180ms ease-out both;
+    }
+
+    .modal-head { display: flex; align-items: start; gap: 18px; padding: 21px 22px 16px; border-bottom: 1px solid var(--line); }
+    .modal-head h2 { margin: 0; font: 600 25px/1.1 var(--serif); }
+    .modal-head p { margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .close-button { margin-left: auto; width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 50%; background: transparent; cursor: pointer; }
+    .modal-body { display: grid; gap: 15px; padding: 20px 22px; }
+
+    .field { display: grid; gap: 6px; }
+    .field label { color: var(--ink-soft); font: 700 9px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+    .field input, .field select { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line-dark); background: #fbfaf4; color: var(--ink); outline: none; }
+    .field input:focus, .field select:focus { border-color: var(--moss); box-shadow: 0 0 0 3px rgba(24, 92, 75, .12); }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    .safety-note { padding: 11px 12px; border-left: 3px solid var(--amber); background: var(--amber-pale); color: #634015; font-size: 10px; line-height: 1.55; }
+    .modal-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 15px 22px 20px; }
+
+    .trace-backdrop { justify-content: flex-end; padding: 0; }
+    .trace-drawer { width: min(680px, 100%); height: 100%; overflow: auto; background: #102a23; color: #f5f1e4; box-shadow: -25px 0 80px rgba(0,0,0,.3); animation: slideIn 220ms ease-out both; }
+    .trace-drawer .modal-head { position: sticky; top: 0; background: rgba(16,42,35,.94); border-color: rgba(255,255,255,.13); backdrop-filter: blur(12px); z-index: 2; }
+    .trace-drawer .modal-head p { color: #9fb3aa; }
+    .trace-drawer .close-button { border-color: rgba(255,255,255,.25); color: white; }
+    .trace-content { padding: 24px; }
+    .trace-event { position: relative; display: grid; grid-template-columns: 90px 18px 1fr; gap: 12px; padding-bottom: 24px; }
+    .trace-event:not(:last-child)::after { content: ""; position: absolute; left: 98px; top: 19px; bottom: 0; width: 1px; background: rgba(183,216,105,.35); }
+    .trace-event time { color: #91a69d; font: 9px/1.5 var(--mono); text-align: right; }
+    .trace-node { width: 11px; height: 11px; margin-top: 3px; border: 2px solid var(--lime); border-radius: 50%; background: #102a23; z-index: 1; }
+    .trace-card { padding: 12px 13px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); }
+    .trace-card strong { display: block; margin-bottom: 6px; font: 600 14px/1.2 var(--serif); }
+    .trace-card p { margin: 0; color: #b6c5bf; font-size: 10px; line-height: 1.6; }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 26px;
+      z-index: 50;
+      max-width: min(440px, calc(100vw - 32px));
+      padding: 11px 15px;
+      border: 1px solid #0b3b30;
+      border-radius: 9px;
+      background: #173f35;
+      color: white;
+      box-shadow: 0 15px 50px rgba(0,0,0,.22);
+      font-size: 11px;
+      transform: translate(-50%, 20px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+    @keyframes slideIn { from { transform: translateX(40px); opacity: .4; } to { transform: none; opacity: 1; } }
+
+    @media (max-width: 1120px) {
+      .workspace-grid { grid-template-columns: 1fr; }
+      .detail-panel { position: static; }
+      .hero { grid-template-columns: 1fr; align-items: start; }
+      .hero-aside { max-width: 700px; }
+    }
+
+    @media (max-width: 820px) {
+      .app-shell { grid-template-columns: 64px minmax(0, 1fr); }
+      .rail { padding-inline: 7px; }
+      .mark { width: 42px; height: 42px; }
+      .rail-label { display: none; }
+      .topbar { padding-inline: 15px; }
+      .project-picker .branch, .sync-badge { display: none; }
+      .comparison { grid-template-columns: 1fr; }
+      .delta-column { grid-template-columns: auto auto auto; border-inline: 0; border-block: 1px dashed var(--line-dark); }
+      .delta-arrow { transform: rotate(90deg); }
+      .summary-strip { grid-template-columns: repeat(2, 1fr); }
+      .strip-item { border-bottom: 1px solid var(--line); }
+      .variant { padding: 22px 20px; }
+      .case-table th:nth-child(4), .case-table td:nth-child(4), .case-table th:nth-child(5), .case-table td:nth-child(5) { display: none; }
+    }
+
+    @media (max-width: 560px) {
+      html { scroll-padding-bottom: 76px; }
+      .app-shell { display: block; padding-bottom: 68px; }
+      .rail {
+        position: fixed;
+        inset: auto 0 0;
+        width: 100%;
+        height: 68px;
+        padding: 6px 8px 5px;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        border-right: 0;
+        z-index: 12;
+      }
+      .mark, .rail-foot { display: none; }
+      .rail-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; width: 100%; }
+      .rail-button { gap: 2px; padding: 6px 3px 5px; border-radius: 9px; }
+      .rail-button.active::before {
+        left: 28%;
+        top: -6px;
+        width: 44%;
+        height: 3px;
+        border-radius: 0 0 4px 4px;
+      }
+      .rail-icon { width: 18px; height: 18px; }
+      .rail-label { display: block; font-size: 9px; }
+      .content { padding: 20px 12px 34px; }
+      .topbar { min-height: 58px; }
+      .product-name { font-size: 15px; }
+      .prototype-badge { display: none; }
+      .subnav { width: 100%; overflow-x: auto; }
+      .subnav button { flex: 1 0 auto; }
+      .hero { gap: 20px; margin-bottom: 24px; }
+      h1 { max-width: 100%; font-size: 38px; line-height: 1.02; letter-spacing: -0.045em; }
+      .hero-copy { margin-top: 16px; }
+      .hero-aside { padding-inline: 18px 14px; }
+      .action-row { align-items: stretch; }
+      .mode-switch { width: 100%; }
+      .mode-switch button { flex: 1; }
+      .action-spacer { display: none; }
+      .primary-button, .filter-button { flex: 1; }
+      .variant { grid-template-columns: 1fr 84px; gap: 8px; }
+      .score-ring { width: 76px; }
+      .score-ring::before { width: 58px; height: 58px; }
+      .score-ring small { top: 46px; }
+      .metric-pair { gap: 14px; }
+      .summary-strip { grid-template-columns: 1fr 1fr; }
+      .case-table th:nth-child(1), .case-table td:nth-child(1) { display: none; }
+      .case-table td, .case-table th { padding-inline: 8px; }
+      .field-grid { grid-template-columns: 1fr; }
+      .detail-actions { grid-template-columns: 1fr; }
+    }
+
+    /* DeepSeek Harness-inspired direction: dense neutral shell, blue focus,
+       compact trajectory rows, and evidence on demand. */
+    :root {
+      --paper: #f7f8fa;
+      --surface: #ffffff;
+      --surface-solid: #ffffff;
+      --ink: #111318;
+      --ink-soft: #525866;
+      --muted: #8a919f;
+      --line: rgba(24, 30, 42, 0.10);
+      --line-dark: rgba(24, 30, 42, 0.16);
+      --moss: #4176e6;
+      --moss-dark: #2f62cf;
+      --moss-pale: #eef4ff;
+      --lime: #4176e6;
+      --blue: #4176e6;
+      --blue-pale: #eef4ff;
+      --green: #1f9d62;
+      --amber: #c87a14;
+      --amber-pale: #fff6e7;
+      --red: #dc4545;
+      --red-pale: #fff0f0;
+      --shadow: 0 8px 24px rgba(20, 28, 43, 0.045);
+      --sans: "Segoe UI Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --serif: var(--sans);
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, "PingFang SC", monospace;
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before { display: none; }
+    .app-shell { grid-template-columns: 232px minmax(0, 1fr); }
+    .rail {
+      padding: 14px 10px;
+      border-right: 1px solid var(--line);
+      background: #f5f6f8;
+      color: var(--ink);
+    }
+    .mark {
+      width: 32px;
+      height: 32px;
+      margin: 2px 7px 18px;
+      border: 0;
+      border-radius: 9px;
+      background: #111722;
+      color: white;
+      box-shadow: none;
+      font: 700 15px/1 var(--mono);
+      transform: none;
+    }
+    .rail-nav { gap: 3px; }
+    .rail-button {
+      display: flex;
+      min-height: 36px;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 10px;
+      padding: 0 10px;
+      border-radius: 6px;
+      color: var(--ink-soft);
+    }
+    .rail-button:hover { background: rgba(38, 77, 142, .06); color: var(--ink); transform: none; }
+    .rail-button.active { background: rgba(65, 118, 230, .10); color: var(--moss-dark); }
+    .rail-button.active::before { left: 0; top: 8px; width: 2px; height: 20px; border-radius: 0 2px 2px 0; background: var(--blue); }
+    .rail-icon { width: 16px; height: 16px; }
+    .rail-label { font-size: 12px; letter-spacing: 0; }
+    .rail-foot { color: var(--muted); font-size: 9px; }
+    .topbar {
+      min-height: 56px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .91);
+      backdrop-filter: blur(14px);
+    }
+    .product-name { font: 650 15px/1 var(--sans); }
+    .project-picker { font-size: 12px; }
+    .prototype-badge, .sync-badge { min-height: 24px; padding: 3px 7px; border-radius: 4px; background: var(--surface); font-size: 9px; }
+    .prototype-badge { border-color: var(--line); background: #f3f5f8; color: var(--muted); }
+    .sync-dot { background: #1f9d62; box-shadow: 0 0 0 3px #e8f7ef; }
+    .content { width: 100%; padding: 20px 24px 40px; }
+    .subnav { margin-bottom: 20px; padding: 2px; gap: 2px; border-radius: 6px; background: #f0f2f5; box-shadow: none; }
+    .subnav button { min-height: 27px; padding: 0 11px; border-radius: 4px; font-size: 11px; }
+    .subnav button.active { background: white; color: var(--ink); box-shadow: 0 1px 3px rgba(18,24,38,.08); }
+    .hero { grid-template-columns: minmax(0, 1fr) minmax(300px, 420px); align-items: start; gap: 32px; margin-bottom: 18px; }
+    .eyebrow { margin-bottom: 7px; color: var(--blue); font-size: 9px; letter-spacing: .09em; }
+    .eyebrow::before { width: 20px; height: 1px; background: var(--blue); box-shadow: none; }
+    h1 { max-width: none; font: 650 25px/1.25 var(--sans); letter-spacing: -.025em; }
+    h1 em { color: var(--blue); font-style: normal; font-weight: 650; }
+    .hero-copy { max-width: 720px; margin: 7px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+    .hero-aside { padding: 11px 13px; border: 1px solid var(--line); border-left: 2px solid var(--blue); border-radius: 5px; background: #fff; }
+    .hero-aside::after { display: none; }
+    .hero-aside strong { margin-bottom: 4px; font: 600 12px/1.35 var(--sans); }
+    .hero-aside p { font-size: 10px; line-height: 1.5; }
+    .action-row { gap: 7px; margin-bottom: 13px; }
+    .mode-switch { padding: 2px; border-radius: 6px; background: #f0f2f5; }
+    .mode-switch button { min-height: 27px; padding: 0 9px; border-radius: 4px; font-size: 10px; }
+    .mode-switch button.active { background: white; color: var(--ink); box-shadow: 0 1px 3px rgba(18,24,38,.08); }
+    .filter-button, .primary-button, .ghost-button { min-height: 32px; padding: 0 10px; border-radius: 6px; font-size: 11px; box-shadow: none; }
+    .primary-button { border-color: var(--blue); background: var(--blue); }
+    .primary-button:hover { background: var(--moss-dark); transform: none; }
+    .filter-button:hover, .ghost-button:hover { border-color: var(--muted); transform: none; }
+    .summary-board { margin-bottom: 13px; border-color: var(--line); border-radius: 8px; box-shadow: var(--shadow); }
+    .board-head { min-height: 42px; padding: 0 14px; background: #fafbfc; }
+    .board-head strong { font: 600 12px/1 var(--sans); }
+    .revision { color: var(--muted); font-size: 9px; }
+    .status-pill { border-radius: 10px; font-size: 9px; }
+    .comparison { grid-template-columns: minmax(0,1fr) 96px minmax(0,1fr); min-height: 160px; }
+    .variant { grid-template-columns: 1fr 72px; gap: 12px; padding: 17px 18px; }
+    .variant-title { margin: 5px 0 4px; font: 650 17px/1.25 var(--sans); }
+    .variant-copy { max-width: 460px; font-size: 10px; line-height: 1.5; }
+    .variant-label { font-size: 8px; letter-spacing: .08em; }
+    .metric-pair { margin-top: 14px; gap: 20px; }
+    .metric-pair strong { font: 650 18px/1 var(--mono); }
+    .score-ring { width: 65px; }
+    .score-ring::before { width: 49px; height: 49px; }
+    .score-ring span { font: 650 14px/1 var(--mono); }
+    .score-ring small { top: 39px; font-size: 6px; }
+    .delta-column { padding: 10px; background: #fafbfc; }
+    .delta-arrow { font-size: 17px; color: var(--blue); }
+    .delta-value { font: 650 17px/1 var(--mono); color: var(--blue); }
+    .delta-label { font-size: 7px; }
+    .summary-strip { grid-template-columns: repeat(5,1fr); }
+    .strip-item { min-height: 50px; padding: 10px 13px; }
+    .strip-item strong { font: 650 13px/1.2 var(--mono); }
+    .strip-item span { margin-top: 4px; font-size: 8px; }
+    .workspace-grid { grid-template-columns: minmax(0, 1.65fr) minmax(300px, .75fr); gap: 13px; }
+    .panel { border-color: var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+    .panel-header { min-height: 42px; padding: 0 13px; background: #fafbfc; }
+    .panel-header h2 { font: 600 12px/1 var(--sans); }
+    .panel-header small { font-size: 9px; }
+    .kind-pill { border-radius: 4px; background: var(--blue-pale); color: var(--blue); }
+    .case-table th { height: 30px; padding: 0 10px; background: #f5f6f8; font: 550 9px/1 var(--sans); letter-spacing: 0; text-transform: none; }
+    .case-table td { height: 43px; padding: 6px 10px; font-size: 10px; }
+    .case-row:hover { background: rgba(38,77,142,.06); }
+    .case-row.selected { background: rgba(65,118,230,.10); box-shadow: inset 2px 0 var(--blue); }
+    .task-name { font-size: 10px; }
+    .task-meta { margin-top: 3px; font-size: 8px; }
+    .trial-icon { width: 17px; height: 17px; }
+    .delta-chip { border-radius: 4px; background: #e8f7ef; color: #1f7f52; }
+    .detail-panel { top: 72px; }
+    .detail-body { padding: 14px; }
+    .detail-title { font: 650 16px/1.3 var(--sans); }
+    .detail-summary { margin: 7px 0 12px; font-size: 10px; }
+    .evidence-stack { gap: 6px; margin-bottom: 13px; }
+    .evidence-line { padding: 7px 8px; border-radius: 5px; background: #fff; }
+    .evidence-line p { font-size: 9px; }
+    .fact-pill.eval { background: #e8f7ef; color: #1f7f52; }
+    .mini-heading { margin: 13px 0 7px; font-size: 8px; }
+    .trace-mini { gap: 2px; padding: 6px 0 2px; }
+    .trace-row { min-height: 21px; }
+    .trace-track { background: #edf0f4; }
+    .trace-segment.agent { background: var(--violet, #8064d8); }
+    .review-box { padding: 9px; border-color: var(--line); border-radius: 6px; background: #fafbfc; }
+    .review-box p { color: var(--ink-soft); font-size: 9px; }
+    .review-actions button { padding: 5px 7px; border-color: var(--line); border-radius: 5px; background: white; color: var(--ink-soft); font-size: 9px; }
+    .review-actions button.active { border-color: var(--blue); background: var(--blue-pale); color: var(--blue); }
+    .model-judge { border: 1px solid var(--line); border-radius: 5px; background: #f7f9fc; }
+    .model-judge summary { color: var(--blue); font-size: 9px; }
+    .modal-backdrop, .trace-backdrop { background: rgba(10,15,25,.42); backdrop-filter: blur(3px); }
+    .modal { border-color: var(--line-dark); border-radius: 10px; box-shadow: 0 18px 56px rgba(0,0,0,.22); }
+    .modal-head { padding: 16px 17px 13px; }
+    .modal-head h2 { font: 650 16px/1.25 var(--sans); }
+    .close-button { width: 28px; height: 28px; border-radius: 6px; }
+    .modal-body { gap: 12px; padding: 15px 17px; }
+    .field label { font: 600 9px/1 var(--sans); letter-spacing: 0; text-transform: none; }
+    .field input, .field select { min-height: 33px; border-radius: 5px; background: white; }
+    .field input:focus, .field select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(65,118,230,.12); }
+    .safety-note { border-left-color: var(--amber); border-radius: 4px; }
+    .modal-foot { padding: 11px 17px 15px; }
+    .trace-drawer { width: min(760px, 100%); background: white; color: var(--ink); box-shadow: -18px 0 56px rgba(0,0,0,.18); }
+    .trace-drawer .modal-head { background: rgba(255,255,255,.94); border-color: var(--line); }
+    .trace-drawer .modal-head p { color: var(--muted); }
+    .trace-drawer .close-button { border-color: var(--line); color: var(--ink); }
+    .trace-content { padding: 0; }
+    .trace-toolbar { display: flex; height: 32px; align-items: center; gap: 3px; padding: 0 7px; border-bottom: 1px solid var(--line); }
+    .trace-toggle { display: inline-flex; height: 21px; align-items: center; padding: 0 6px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-size: 9px; }
+    .trace-toggle.active, .trace-toggle:hover { background: rgba(38,77,142,.06); color: var(--ink); }
+    .trace-search { width: 150px; height: 22px; margin-left: auto; padding: 0 7px; border: 1px solid var(--line); border-radius: 4px; outline: 0; background: #f8f9fb; font: 9px/1 var(--mono); }
+    .trace-search:focus { border-color: var(--blue); background: white; }
+    .trace-overview { display: grid; height: 58px; grid-template-columns: 46px minmax(0,1fr); border-bottom: 1px solid var(--line); background: #f5f6f8; }
+    .trace-lane-labels { position: relative; border-right: 1px solid var(--line); color: var(--muted); font: 8px/1 var(--mono); }
+    .trace-lane-labels span { position: absolute; right: 5px; }
+    .trace-lane-labels span:nth-child(1) { top: 10px; }
+    .trace-lane-labels span:nth-child(2) { top: 25px; }
+    .trace-lane-labels span:nth-child(3) { top: 40px; }
+    .trace-lanes { position: relative; overflow: hidden; background: repeating-linear-gradient(90deg,transparent 0,transparent calc(20% - 1px),var(--line) 20%); }
+    .trace-span { position: absolute; height: 8px; border-radius: 2px; opacity: .9; }
+    .trace-span.user { top: 9px; left: 2%; width: 7%; background: var(--blue); }
+    .trace-span.search { top: 39px; left: 12%; width: 10%; background: var(--amber); }
+    .trace-span.agent { top: 24px; left: 25%; width: 47%; background: #8064d8; }
+    .trace-span.test { top: 39px; left: 74%; width: 20%; background: var(--green); }
+    .trace-columns { display: grid; height: 29px; grid-template-columns: 82px 20px minmax(0,1fr) 64px; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--line); background: #f5f6f8; color: var(--muted); font-size: 9px; }
+    .trace-columns span:last-child { text-align: right; }
+    .trace-event { grid-template-columns: 82px 12px minmax(0,1fr); gap: 8px; min-height: 38px; padding: 0 14px; align-items: center; border-bottom: 1px solid var(--line); }
+    .trace-event:not(:last-child)::after { left: 101px; top: 23px; bottom: -16px; background: rgba(65,118,230,.22); }
+    .trace-event time { color: var(--muted); font-size: 8px; }
+    .trace-node { width: 8px; height: 8px; margin: 0; border: 2px solid var(--blue); background: white; }
+    .trace-card { padding: 9px 10px; border: 0; background: transparent; }
+    .trace-card strong { margin-bottom: 3px; font: 600 10px/1.3 var(--sans); }
+    .trace-card p { color: var(--ink-soft); font: 9px/1.5 var(--mono); }
+    .toast { border: 0; border-radius: 6px; background: #242a35; box-shadow: 0 12px 40px rgba(0,0,0,.2); }
+
+    @media (max-width: 1180px) {
+      .app-shell { grid-template-columns: 70px minmax(0,1fr); }
+      .rail-button { justify-content: center; padding: 0; }
+      .rail-label { display: none; }
+      .mark { margin-inline: auto; }
+      .workspace-grid { grid-template-columns: minmax(0,1fr) 300px; }
+    }
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; gap: 12px; }
+      .comparison { grid-template-columns: 1fr; }
+      .delta-column { grid-template-columns: auto auto 1fr; border-inline: 0; border-block: 1px solid var(--line); }
+      .delta-arrow { transform: rotate(90deg); }
+      .workspace-grid { grid-template-columns: 1fr; }
+      .detail-panel { position: static; }
+    }
+    @media (max-width: 560px) {
+      .app-shell { display: block; padding-bottom: 60px; }
+      .rail { height: 60px; padding: 5px 7px; background: #f5f6f8; }
+      .rail-nav { grid-template-columns: repeat(5,1fr); gap: 3px; }
+      .rail-button { min-height: 49px; flex-direction: column; gap: 2px; }
+      .rail-label { display: block; font-size: 9px; }
+      .rail-button.active::before { top: -5px; left: 30%; width: 40%; height: 2px; }
+      .content { padding: 16px 10px 28px; }
+      .topbar { padding-inline: 12px; }
+      .hero { margin-bottom: 14px; }
+      h1 { font-size: 21px; }
+      .summary-strip { grid-template-columns: 1fr 1fr; }
+      .variant { grid-template-columns: 1fr 62px; }
+      .trace-drawer { width: 100%; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="rail" aria-label="主导航">
+      <div class="mark" aria-label="Codetrap">C</div>
+      <nav class="rail-nav">
+        <button class="rail-button" type="button" data-rail="review" aria-label="审核">
+          <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5h16M4 12h11M4 18.5h8"/><path d="m17 16 2 2 3-4"/></svg>
+          <span class="rail-label">审核</span>
+        </button>
+        <button class="rail-button" type="button" data-rail="library" aria-label="库">
+          <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Z"/><path d="M8 20a3 3 0 0 1 0-6h11"/></svg>
+          <span class="rail-label">库</span>
+        </button>
+        <button class="rail-button" type="button" data-rail="learning" aria-label="学习">
+          <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 6 9-3 9 3-9 3-9-3Z"/><path d="M7 8v6c3 2 7 2 10 0V8M21 7v7"/></svg>
+          <span class="rail-label">学习</span>
+        </button>
+        <button class="rail-button active" type="button" data-rail="impact" aria-label="成效" aria-current="page">
+          <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V9M10 19V5M16 19v-7M22 19V2"/><path d="M2 19h22"/></svg>
+          <span class="rail-label">成效</span>
+        </button>
+        <button class="rail-button" type="button" data-rail="embeddings" aria-label="嵌入">
+          <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="6" r="2"/><circle cx="16" cy="17" r="4"/><path d="m9.5 8.5 3 2M8.5 10l4.5 4M16 8v5"/></svg>
+          <span class="rail-label">嵌入</span>
+        </button>
+      </nav>
+      <div class="rail-foot">LOCAL<br>FIRST</div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="product-name">codetrap</div>
+        <div class="project-picker" aria-label="当前项目">
+          <strong>codetrap</strong><span class="slash">/</span><span class="branch">main · d4bb3f3</span>
+        </div>
+        <div class="topbar-end">
+          <span class="prototype-badge">Prototype · 假数据</span>
+          <span class="sync-badge"><span class="sync-dot"></span>仅本地</span>
+        </div>
+      </header>
+
+      <main class="content">
+        <nav class="subnav" aria-label="Impact 视图">
+          <button type="button" data-subview="overview">Overview</button>
+          <button type="button" data-subview="runs">Runs</button>
+          <button class="active" type="button" data-subview="evals" aria-current="page">Evals</button>
+          <button type="button" data-subview="team">Team</button>
+        </nav>
+
+        <section class="hero">
+          <div>
+            <div class="eyebrow">Controlled evaluation / 受控评测</div>
+            <h1>这次变化，<em>真的更好吗？</em></h1>
+            <p class="hero-copy">把同一组任务分别交给 Baseline 和 Candidate。测试结果是硬证据，人工评审负责语境，模型评分只做辅助。</p>
+          </div>
+          <aside class="hero-aside">
+            <strong>结论必须能回到证据。</strong>
+            <p>当前实验有 18 个 case、36 次隔离 trial。Candidate 提升 4 个 case，未发现确定性回归；样本仍小，不外推到所有任务。</p>
+          </aside>
+        </section>
+
+        <div class="action-row">
+          <div class="mode-switch" aria-label="评测模式">
+            <button class="active" type="button" data-mode="controlled">受控实验</button>
+            <button type="button" data-mode="observational">真实使用观测</button>
+          </div>
+          <button class="filter-button" type="button" id="suite-filter">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+            Suite：HTTP reliability
+          </button>
+          <span class="experiment-meta">EXP-024 · 2026-08-30 · n=18</span>
+          <span class="action-spacer"></span>
+          <button class="ghost-button" type="button" id="export-button">导出摘要</button>
+          <button class="primary-button" type="button" id="new-experiment">＋ 新建实验</button>
+        </div>
+
+        <section class="summary-board" aria-labelledby="experiment-title">
+          <header class="board-head">
+            <strong id="experiment-title">Timeout guardrail · Trap #42 rev.3</strong>
+            <span class="revision">固定模型 / 固定权限 / 隔离 worktree</span>
+            <span class="status-pill good board-status">无确定性回归</span>
+          </header>
+
+          <div class="comparison">
+            <article class="variant baseline">
+              <div>
+                <div class="variant-label">A · Baseline</div>
+                <h2 class="variant-title">不提供目标 Trap</h2>
+                <p class="variant-copy">Codex 读取相同任务、工具和仓库版本，但看不到 HTTP timeout 经验。</p>
+                <div class="metric-pair">
+                  <div><strong>11/18</strong><span>测试通过</span></div>
+                  <div><strong>4</strong><span>人工修正</span></div>
+                </div>
+              </div>
+              <div class="score-ring" style="--score:61.1;--ring-color:var(--amber)"><span>61%</span><small>PASS</small></div>
+            </article>
+
+            <div class="delta-column" aria-label="差异">
+              <span class="delta-arrow">→</span>
+              <strong class="delta-value">+22.2</strong>
+              <span class="delta-label">百分点 / 95% CI 未计算</span>
+            </div>
+
+            <article class="variant candidate">
+              <div>
+                <div class="variant-label">B · Candidate</div>
+                <h2 class="variant-title">提供 Trap #42 rev.3</h2>
+                <p class="variant-copy">在编码前展示 timeout、取消信号和失败路径测试的行动卡。</p>
+                <div class="metric-pair">
+                  <div><strong>15/18</strong><span>测试通过</span></div>
+                  <div><strong>1</strong><span>人工修正</span></div>
+                </div>
+              </div>
+              <div class="score-ring" style="--score:83.3"><span>83%</span><small>PASS</small></div>
+            </article>
+          </div>
+
+          <div class="summary-strip">
+            <div class="strip-item"><strong>4 improved</strong><span>Candidate 独有通过</span></div>
+            <div class="strip-item"><strong>0 regressed</strong><span>Baseline 独有通过</span></div>
+            <div class="strip-item"><strong>+12.8 s</strong><span>中位运行开销</span></div>
+            <div class="strip-item"><strong>+3.4%</strong><span>Token 开销</span></div>
+            <div class="strip-item"><strong>6 / 8</strong><span>人工确认 Helpful</span></div>
+          </div>
+        </section>
+
+        <div class="workspace-grid">
+          <section class="panel" aria-labelledby="cases-heading">
+            <header class="panel-header">
+              <h2 id="cases-heading">Cases / 案例结果</h2>
+              <small>按差异优先排序</small>
+              <div class="panel-header-end">
+                <span class="kind-pill">18 cases</span>
+              </div>
+            </header>
+            <div style="overflow-x:auto">
+              <table class="case-table">
+                <thead>
+                  <tr><th>Case</th><th>任务</th><th>Baseline</th><th>Candidate</th><th>差异</th></tr>
+                </thead>
+                <tbody id="case-rows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <aside class="panel detail-panel" aria-labelledby="detail-title">
+            <header class="panel-header">
+              <h2>证据检查</h2>
+              <span class="panel-header-end fact-pill eval">受控评测</span>
+            </header>
+            <div class="detail-body">
+              <div class="detail-kicker" id="detail-id">CASE HTTP-004</div>
+              <h2 class="detail-title" id="detail-title">请求挂起时主动取消</h2>
+              <p class="detail-summary" id="detail-summary">Candidate 增加了 AbortSignal.timeout，并通过超时清理断言；Baseline 在 30 秒后被 runner 终止。</p>
+
+              <div class="evidence-stack" id="evidence-stack"></div>
+
+              <div class="mini-heading">Run timing</div>
+              <div class="trace-mini" aria-label="运行耗时轨迹">
+                <div class="trace-row"><span class="trace-label">Codetrap</span><span class="trace-track"><i class="trace-segment search"></i></span><span class="trace-time">0.42s</span></div>
+                <div class="trace-row"><span class="trace-label">Agent</span><span class="trace-track"><i class="trace-segment agent"></i></span><span class="trace-time">31.2s</span></div>
+                <div class="trace-row"><span class="trace-label">Tests</span><span class="trace-track"><i class="trace-segment test"></i></span><span class="trace-time">6.8s</span></div>
+              </div>
+
+              <div class="mini-heading">人工判断</div>
+              <div class="review-box">
+                <p>这条 Trap 是否改善了该 case？反馈会作为人工标签保存，不会覆盖测试结果。</p>
+                <div class="review-actions" id="review-actions">
+                  <button type="button" data-review="helpful">Helpful</button>
+                  <button type="button" data-review="irrelevant">Irrelevant</button>
+                  <button type="button" data-review="harmful">Harmful</button>
+                  <button type="button" data-review="unclear">证据不足</button>
+                </div>
+              </div>
+
+              <details class="model-judge">
+                <summary>模型辅助评分 · 0.86 · 展开依据</summary>
+                <p>Judge 认为 Candidate 明确处理了超时和资源清理。但此分数仅作为辅助：模型 `judge-v2`，提示版本 `eval-judge-7`，不能覆盖确定性断言。</p>
+              </details>
+
+              <div class="detail-actions">
+                <button class="primary-button" type="button" id="open-trace">打开运行轨迹</button>
+                <button class="ghost-button" type="button" id="create-case">复制 Case</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="experiment-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <form class="modal" id="experiment-form">
+      <div class="modal-head">
+        <div><h2 id="modal-title">新建受控实验</h2><p>Baseline 与 Candidate 会在隔离 worktree 中运行。原型不会真的启动 Agent。</p></div>
+        <button class="close-button" type="button" data-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label for="experiment-name">实验名称</label><input id="experiment-name" value="Timeout guardrail rev.4" required></div>
+        <div class="field-grid">
+          <div class="field"><label for="suite">Eval Suite</label><select id="suite"><option>HTTP reliability · 18 cases</option><option>File safety · 12 cases</option></select></div>
+          <div class="field"><label for="model">固定模型</label><select id="model"><option>codex / gpt-5.x</option><option>claude-code / sonnet</option></select></div>
+        </div>
+        <div class="field-grid">
+          <div class="field"><label for="baseline">Baseline</label><select id="baseline"><option>不注入目标 trap</option><option>Trap #42 rev.2</option></select></div>
+          <div class="field"><label for="candidate">Candidate</label><select id="candidate"><option>Trap #42 rev.3</option><option>Trap #42 rev.4 draft</option></select></div>
+        </div>
+        <div class="safety-note">运行前还会显示预计模型费用、权限、允许写入路径和清理策略，并要求再次确认。真实工作区不会参与对照实验。</div>
+      </div>
+      <div class="modal-foot"><button class="ghost-button" type="button" data-close>取消</button><button class="primary-button" type="submit">预览运行计划</button></div>
+    </form>
+  </div>
+
+  <div class="trace-backdrop" id="trace-backdrop" role="dialog" aria-modal="true" aria-labelledby="trace-title">
+    <aside class="trace-drawer">
+      <div class="modal-head">
+        <div><h2 id="trace-title">Candidate Run / HTTP-004</h2><p>事实轨迹 · 敏感正文未载入 · run-cand-024-004</p></div>
+        <button class="close-button" type="button" data-trace-close aria-label="关闭">×</button>
+      </div>
+      <div class="trace-toolbar" aria-label="轨迹工具栏">
+        <button class="trace-toggle active" type="button">☷ Table</button>
+        <button class="trace-toggle" type="button">≡ Turns</button>
+        <button class="trace-toggle active" type="button">◷ Actual time</button>
+        <input class="trace-search" type="search" placeholder="Search trajectory" aria-label="搜索轨迹">
+      </div>
+      <div class="trace-overview" aria-label="轨迹时间轴">
+        <div class="trace-lane-labels"><span>User</span><span>Agent</span><span>Tools</span></div>
+        <div class="trace-lanes"><i class="trace-span user"></i><i class="trace-span search"></i><i class="trace-span agent"></i><i class="trace-span test"></i></div>
+      </div>
+      <div class="trace-columns"><span>Time</span><span></span><span>Event</span><span>Duration</span></div>
+      <div class="trace-content" id="trace-content"></div>
+    </aside>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const cases = [
+      {
+        id: "HTTP-004",
+        title: "请求挂起时主动取消",
+        summary: "Candidate 增加了 AbortSignal.timeout，并通过超时清理断言；Baseline 在 30 秒后被 runner 终止。",
+        baseline: ["fail", "TIMEOUT"], candidate: ["pass", "4/4"], delta: "improved",
+        evidence: [
+          ["observed", "Baseline runner 在 30.0s 超时，未执行资源清理断言。", "fail"],
+          ["observed", "Candidate 包含 AbortSignal.timeout(8000)。", "pass"],
+          ["eval", "timeout、abort 和 finally cleanup 共 4 项测试通过。", "pass"]
+        ]
+      },
+      {
+        id: "HTTP-011",
+        title: "重试不得重复创建资源",
+        summary: "两个版本都设置了重试，但 Candidate 从 Trap 中采用幂等 key，通过重复请求断言。",
+        baseline: ["fail", "2/3"], candidate: ["pass", "3/3"], delta: "improved",
+        evidence: [
+          ["observed", "Baseline 第二次请求创建了重复记录。", "fail"],
+          ["observed", "Candidate 发送稳定 Idempotency-Key。", "pass"],
+          ["eval", "重复调用只产生一个资源。", "pass"]
+        ]
+      },
+      {
+        id: "HTTP-015",
+        title: "超时错误保留 cause",
+        summary: "Candidate 保留原始异常 cause，让调用方能够区分网络超时和业务失败。",
+        baseline: ["fail", "1/2"], candidate: ["pass", "2/2"], delta: "improved",
+        evidence: [
+          ["observed", "Baseline 抛出无 cause 的通用 Error。", "fail"],
+          ["observed", "Candidate 使用 Error options 传递 cause。", "pass"],
+          ["eval", "错误链和用户文案断言同时通过。", "pass"]
+        ]
+      },
+      {
+        id: "HTTP-017",
+        title: "流式响应中断清理",
+        summary: "Candidate 在流关闭时释放 reader，消除了一个只在取消路径出现的资源泄漏。",
+        baseline: ["fail", "LEAK"], candidate: ["pass", "5/5"], delta: "improved",
+        evidence: [
+          ["observed", "Baseline 取消后 reader.locked 仍为 true。", "fail"],
+          ["observed", "Candidate finally 中调用 releaseLock。", "pass"],
+          ["eval", "五个流取消和清理断言通过。", "pass"]
+        ]
+      },
+      {
+        id: "HTTP-002",
+        title: "正常 200 响应解析",
+        summary: "目标 Trap 对正常解析路径没有产生可观察变化，两个版本均通过。",
+        baseline: ["pass", "3/3"], candidate: ["pass", "3/3"], delta: "flat",
+        evidence: [
+          ["observed", "Baseline 正确解析 JSON。", "pass"],
+          ["observed", "Candidate 正确解析 JSON。", "pass"],
+          ["eval", "无差异；该 case 防止新增回归。", "pass"]
+        ]
+      },
+      {
+        id: "HTTP-008",
+        title: "401 不应自动重试",
+        summary: "两个版本都识别永久认证失败，Candidate 没有引入额外调用。",
+        baseline: ["pass", "2/2"], candidate: ["pass", "2/2"], delta: "flat",
+        evidence: [
+          ["observed", "Baseline 只发送一次请求。", "pass"],
+          ["observed", "Candidate 只发送一次请求。", "pass"],
+          ["eval", "调用次数和错误类型一致。", "pass"]
+        ]
+      }
+    ];
+
+    const traceEvents = [
+      ["00:00.000", "任务开始", "固定 repo d4bb3f3、权限 workspace-write、模型路由 codex/gpt-5.x。"],
+      ["00:00.126", "Codetrap 搜索", "hybrid 查询命中 Trap #42 rev.3，rank=1；正文未共享。"],
+      ["00:00.421", "Trap 展示", "行动卡要求 timeout、取消信号和失败路径测试。"],
+      ["00:03.902", "Agent 编辑", "修改 src/http/client.ts；本原型只显示路径指纹。"],
+      ["00:31.210", "执行验证", "timeout、abort、cleanup、error cause 共 4 项断言。"],
+      ["00:38.044", "运行完成", "4/4 tests passed；结果属于 observed fact。"]
+    ];
+
+    const rows = document.getElementById("case-rows");
+    let selectedCase = cases[0];
+    let toastTimer;
+
+    function trialMarkup([state, score]) {
+      const icon = state === "pass" ? "✓" : state === "fail" ? "×" : "?";
+      return `<span class="trial-mark"><i class="trial-icon ${state}">${icon}</i><span class="trial-score">${score}</span></span>`;
+    }
+
+    function renderRows() {
+      rows.innerHTML = cases.map((item) => `
+        <tr class="case-row ${item.id === selectedCase.id ? "selected" : ""}" data-case="${item.id}" tabindex="0" aria-selected="${item.id === selectedCase.id}">
+          <td><span class="case-id">${item.id}</span></td>
+          <td><span class="case-title">${item.title}</span><span class="case-id">isolated worktree · 2 trials</span></td>
+          <td class="trial-cell">${trialMarkup(item.baseline)}</td>
+          <td class="trial-cell">${trialMarkup(item.candidate)}</td>
+          <td><span class="delta-chip ${item.delta === "flat" ? "flat" : item.delta === "regressed" ? "regress" : ""}">${item.delta === "improved" ? "+ improved" : item.delta === "regressed" ? "− regress" : "= same"}</span></td>
+        </tr>`).join("");
+
+      document.querySelectorAll(".case-row").forEach((row) => {
+        const select = () => selectCase(row.dataset.case);
+        row.addEventListener("click", select);
+        row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); } });
+      });
+    }
+
+    function evidenceLabel(kind) {
+      if (kind === "eval") return ["受控评测", "eval"];
+      if (kind === "human") return ["用户确认", "human"];
+      if (kind === "model") return ["模型辅助", "model"];
+      return ["事实", ""];
+    }
+
+    function selectCase(id) {
+      selectedCase = cases.find((item) => item.id === id) || cases[0];
+      document.getElementById("detail-id").textContent = `CASE ${selectedCase.id}`;
+      document.getElementById("detail-title").textContent = selectedCase.title;
+      document.getElementById("detail-summary").textContent = selectedCase.summary;
+      document.getElementById("evidence-stack").innerHTML = selectedCase.evidence.map(([kind, text, state]) => {
+        const [label, className] = evidenceLabel(kind);
+        return `<div class="evidence-line"><span class="fact-pill ${className}">${label}</span><p>${text}</p><span class="evidence-state ${state}">${state === "pass" ? "✓" : "×"}</span></div>`;
+      }).join("");
+      document.querySelectorAll("#review-actions button").forEach((button) => button.classList.remove("active"));
+      document.getElementById("trace-title").textContent = `Candidate Run / ${selectedCase.id}`;
+      renderRows();
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
+    }
+
+    function openModal(id) { document.getElementById(id).classList.add("open"); document.body.style.overflow = "hidden"; }
+    function closeOverlays() { document.querySelectorAll(".modal-backdrop,.trace-backdrop").forEach((el) => el.classList.remove("open")); document.body.style.overflow = ""; }
+
+    document.getElementById("new-experiment").addEventListener("click", () => openModal("experiment-modal"));
+    document.querySelectorAll("[data-close],[data-trace-close]").forEach((button) => button.addEventListener("click", closeOverlays));
+    document.querySelectorAll(".modal-backdrop,.trace-backdrop").forEach((backdrop) => backdrop.addEventListener("click", (event) => { if (event.target === backdrop) closeOverlays(); }));
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeOverlays(); });
+
+    document.getElementById("experiment-form").addEventListener("submit", (event) => {
+      event.preventDefault(); closeOverlays(); showToast("已生成运行计划预览（原型不会启动 Agent）");
+    });
+
+    document.getElementById("open-trace").addEventListener("click", () => {
+      document.getElementById("trace-content").innerHTML = traceEvents.map(([time, title, copy]) => `<div class="trace-event"><time>${time}</time><span class="trace-node"></span><div class="trace-card"><strong>${title}</strong><p>${copy}</p></div></div>`).join("");
+      openModal("trace-backdrop");
+    });
+
+    document.getElementById("review-actions").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      document.querySelectorAll("#review-actions button").forEach((item) => item.classList.toggle("active", item === button));
+      showToast(`已在本地标记 ${selectedCase.id}：${button.textContent}`);
+    });
+
+    document.getElementById("export-button").addEventListener("click", () => showToast("已生成脱敏摘要预览（假数据）"));
+    document.getElementById("create-case").addEventListener("click", () => showToast(`已复制 ${selectedCase.id} 为新草稿`));
+    document.getElementById("suite-filter").addEventListener("click", () => showToast("原型仅内置 HTTP reliability suite"));
+
+    document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => {
+      document.querySelectorAll("[data-mode]").forEach((item) => item.classList.toggle("active", item === button));
+      showToast(button.dataset.mode === "controlled" ? "已切换到受控实验" : "真实使用观测会展示相关性证据，不做因果宣称");
+    }));
+
+    document.querySelectorAll("[data-subview]").forEach((button) => button.addEventListener("click", () => {
+      if (button.dataset.subview !== "evals") showToast(`${button.textContent} 不在本次 Evals 原型范围内`);
+    }));
+
+    document.querySelectorAll("[data-rail]").forEach((button) => button.addEventListener("click", () => {
+      if (button.dataset.rail !== "impact") showToast(`${button.getAttribute("aria-label")} 页面不在本次原型范围内`);
+    }));
+
+    selectCase(selectedCase.id);
+
+    const prototypeParams = new URL(window.location.href).searchParams;
+    if (prototypeParams.has("trace-preview")) document.getElementById("open-trace").click();
+
+    // Browser-native smoke mode lets the repository verify interactions even
+    // when Playwright cannot attach to the locally installed browser.
+    if (prototypeParams.has("smoke")) {
+      const checks = [];
+      document.querySelector('[data-case="HTTP-011"]').click();
+      checks.push(document.getElementById("detail-title").textContent === "重试不得重复创建资源");
+      document.getElementById("open-trace").click();
+      checks.push(document.getElementById("trace-backdrop").classList.contains("open"));
+      checks.push(document.querySelectorAll("#trace-content .trace-event").length === 6);
+      document.querySelector("[data-trace-close]").click();
+      document.getElementById("new-experiment").click();
+      checks.push(document.getElementById("experiment-modal").classList.contains("open"));
+      document.querySelector("[data-close]").click();
+      document.querySelector('[data-review="helpful"]').click();
+      checks.push(document.querySelector('[data-review="helpful"]').classList.contains("active"));
+      document.body.dataset.smoke = checks.every(Boolean) ? "passed" : "failed";
+      document.body.dataset.smokeChecks = checks.join(",");
+      document.body.dataset.smokeRows = String(document.querySelectorAll(".case-row").length);
+      document.body.dataset.horizontalOverflow = String(Math.max(0, document.documentElement.scrollWidth - window.innerWidth));
+    }
+  </script>
+</body>
+</html>

@@ -97,6 +97,7 @@ function showHelp(): void {
   console.log("  phase2                Manage authorized patches, insights, currency, and learning metrics");
   console.log("  phase3                Govern cross-client skills and inspect bounded snapshot storage");
   console.log("  improver              Turn correlated human feedback into reviewable candidates");
+  console.log("  observe               Record Runs or manage opt-in Codex/Claude observation");
   console.log("  web                   Start local review and trap library console");
   console.log("  export                Export traps as JSON");
   console.log("  import <file.json>    Import traps from JSON");
@@ -128,10 +129,13 @@ function showHelp(): void {
   console.log("  --open                  Open the authenticated web console URL in the default browser");
   console.log("  --json                  JSON output (all commands); errors become { success: false, error }");
   console.log("  --input-json <json|->   JSON input; use - to read from stdin safely");
+  console.log("  --run-id <id>           Attach search/useful evidence to an Observation Run");
+  console.log("  --device-id <id>        Opaque device id paired with --run-id");
+  console.log("  --event-id <id>         Stable id for idempotent Observation retries");
   console.log("  --output-json           Alias for --json output (kept for compatibility)");
   console.log("  --from-project-path <path>  Source project path for scope repair/migration");
   console.log("  --to-project-path <path>    Destination project path for scope repair/migration");
-  console.log("  --dry-run|--apply       Preview setup/scope migration, or apply scope migration");
+  console.log("  --dry-run|--apply       Preview setup/migration; apply migration or Observation integration");
   console.log("  --mcp                  With setup, also run: <codex|claude> mcp add codetrap -- codetrap serve");
   console.log("  --codex-home <path>    With setup codex, override CODEX_HOME/default ~/.codex");
   console.log("  --claude-home <path>   With setup claude, override CLAUDE_CONFIG_DIR/default ~/.claude");

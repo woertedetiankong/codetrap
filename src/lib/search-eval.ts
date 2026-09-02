@@ -112,7 +112,7 @@ export function recordDogfoodCase(fixturePath: string, jsonInput: string | undef
   if (!jsonInput) throw new Error("record requires --json '<record>'.");
 
   const fixture = readEvalFixture(fixturePath);
-  const query = normalizeRecord(JSON.parse(jsonInput) as unknown, fixture);
+  const query = normalizeDogfoodCase(JSON.parse(jsonInput) as unknown, fixture);
   fixture.queries.push(query);
   writeEvalFixture(fixturePath, fixture);
   return {
@@ -405,7 +405,7 @@ function aggregateMetrics(cases: EvalCaseReport[]): Pick<SearchEvalMetrics, "rec
   };
 }
 
-function normalizeRecord(value: unknown, fixture: EvalFixture): EvalQuery {
+export function normalizeDogfoodCase(value: unknown, fixture: EvalFixture): EvalQuery {
   if (!isRecord(value)) throw new Error("record JSON must be an object.");
   const query = stringField(value, "query");
   const mode = searchModeField(value, "mode");

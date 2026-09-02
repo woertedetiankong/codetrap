@@ -285,7 +285,8 @@ describe("CLI JSON contract", () => {
       pending_count: 1,
       reviewed_count: 0,
       pending_session_count: 1,
-      high_quality_pending_count: 1,
+      high_quality_pending_count: 0,
+      needs_edit_count: 1,
       next_session_id: captured.session_id,
     });
     expect(doctor.next_actions).toEqual(expect.arrayContaining([

@@ -315,10 +315,15 @@ export function candidateReviewCounts(candidates: CandidateTrap[]): CandidateRev
     accepted_count: accepted.length,
     rejected_count: rejected.length,
     high_quality_pending_count: pendingTraps.filter((candidate) =>
-      candidate.quality_score >= 0.8 && candidate.quality.suggested_action === "accept"
+      candidate.quality_score >= 0.8 && effectiveSuggestedAction(candidate) === "accept"
     ).length,
-    needs_edit_count: pendingTraps.filter((candidate) => candidate.quality.suggested_action === "edit").length,
+    needs_edit_count: pendingTraps.filter((candidate) => effectiveSuggestedAction(candidate) === "edit").length,
   };
+}
+
+function effectiveSuggestedAction(candidate: CandidateTrap): CandidateTrap["quality"]["suggested_action"] {
+  const suggested = candidate.quality.suggested_action;
+  return suggested === "accept" && candidate.quality.warnings.length > 0 ? "edit" : suggested;
 }
 
 export function sessionCandidateReviewSummary(

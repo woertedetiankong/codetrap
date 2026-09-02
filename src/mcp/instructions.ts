@@ -15,4 +15,6 @@ Human review gate: accepting or rejecting a candidate is reserved for the human,
 
 Learning review (mining work history for lessons) runs only when the user explicitly asks for it. Never scan session history in the background, and never escalate an ordinary search into a history review.
 
+Observation runs are explicit and metadata-only. When the user or client integration starts a Run with record_observation, pass the same run_id and device_id to search_traps and mark_trap_useful so retrieval, exposure, and human feedback join that Run; use record_observation again for validation and completion. Never place prompt, diff, tool body, full path, secret, or raw reasoning in observation input. Observation failure must not be presented as failure of the primary coding operation.
+
 Health: call doctor (with cwd) to check project scope, embedding/search health, pending candidate reviews, and per-client integration status.`;

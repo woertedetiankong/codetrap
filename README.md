@@ -191,7 +191,7 @@ codetrap/
 |---|---|
 | `init` | Initialize `.codetrap/` in current project |
 | `add` | Record a confirmed trap (`--input-json` structured input, `--json` JSON output; interactive mode is not implemented) |
-| `search <query>` | Search traps (--mode fts\|semantic\|hybrid, --category, --scope, --status, --limit, --path, --module, --owner, --no-rerank, --ranking-signals, --json; query can come from stdin) |
+| `search <query>` | Search traps (--mode fts\|semantic\|hybrid, --category, --scope, --status, --limit, --path, --module, --owner, --no-rerank, --ranking-signals, --json; optional `--run-id` + `--device-id` records search/exposure metadata; query can come from stdin) |
 | `list` | List traps (--category, --scope, --status, --path, --module, --owner, --limit, --json) |
 | `show <id>` | Show full trap details (--json) |
 | `edit <id>` | Edit a trap (`--input-json` input, `--json` output) |
@@ -216,13 +216,157 @@ quotes.
 | `embeddings` | Manage embedding profiles (`status`, `list`, `use ollama|jina`, `reindex`) |
 | `learn` | Review your own Codex or Claude Code history for reusable lessons (`sources`, `review`, `evidence-pack`, `reviews`, `stage`, `delete`); read-only against history, writes only a review directory |
 | `improver` | Capture correlated human feedback, inspect or delete stored events, dry-run or stage evidence-weighted candidates, record behavior outcomes, and summarize loop metrics |
-| `useful` | Record that a recalled trap actually helped — the signal that separates lessons that work from lessons that merely exist |
+| `useful` | Record that a recalled trap actually helped; optional `--run-id` + `--device-id` attaches the human label to an Observation Run |
+| `observe` | Explicitly record metadata-only Run start, validation, trap feedback/miss, and completion events |
 | `pack` | Export a user-curated context pack of committed lessons for planning time (`pack export --traps 1,2,3`) |
 | `session` | Start a development session, append notes, capture post-flight candidates, promote explicit structured trap notes into candidates, approve/accept/reject/roll back candidates, migrate candidate records between schema versions, inspect authorization receipts and suppressed lessons, and clean up session files |
 | `phase2` | Review-bound low-risk destinations: conventions/docs/eval patches, insight shelf, lesson validation/graduation, longitudinal metrics, and retrieve-vs-curate decisions |
 | `phase3` | High-side-effect Skill candidates: propose a preset or an exact-base improvement, preview file changes for exact Codex/Claude targets, install under content-and-path-bound approval, inspect commits, and roll back safely |
-| `web` | Start the local review, trap library health, learning-only Insight Shelf, and Embeddings console |
+| `web` | Start the local Review, Library, Learning, Embeddings, and real-data Impact Overview/Runs/Evals console |
 | `serve` | Start MCP server |
+
+### Metadata-only Observation Runs
+
+Observation is opt-in and local. It does not scan transcripts in the background,
+does not read hidden reasoning, and does not make the trap store depend on
+telemetry. Events are written to `.codetrap/observations/ledger.sqlite`; the
+existing `traps.db` remains the business source of truth.
+
+For normal Agent work, preview the project-local integration first, then apply
+it explicitly for each client you use:
+
+```bash
+codetrap observe enable codex
+codetrap observe enable codex --apply
+
+codetrap observe enable claude
+codetrap observe enable claude --apply
+
+codetrap observe status --json
+```
+
+The preview does not change files. Apply merges three handlers into
+`.codex/hooks.json` or `.claude/settings.json` without replacing unrelated
+settings, and backs up an existing config before writing. `UserPromptSubmit`
+starts a turn-scoped Run, `Stop` completes it, and `SessionEnd` closes an
+unfinished Run as partial. Codex requires its normal project-hook trust review.
+Hook stdout is neutral JSON and recording failures never block or steer the
+Agent.
+
+Only allowlisted lifecycle metadata is used. Prompt text, assistant replies,
+transcript paths/files, diffs, tool inputs/outputs, secrets, and hidden reasoning
+are ignored. While exactly one automatic Run is active, ordinary
+`codetrap search` and `codetrap useful` calls attach to it automatically; with
+zero or multiple active Runs, Codetrap fails closed and requires explicit Run
+context. Inspect the active state and capacity health with
+`codetrap observe current --json` or `codetrap observe status --json`.
+
+If an Agent process is killed before its completion Hook runs, Codetrap keeps
+that retry state instead of silently evicting it. Preview stale entries without
+changing the ledger or state file, then apply recovery only after reviewing the
+listed Run ids:
+
+```bash
+codetrap observe recover --older-than-days 7 --json
+codetrap observe recover --older-than-days 7 --apply --json
+```
+
+Preview is the default. `--apply` records each recoverable Run as
+`cancelled`/`partial` before removing its Hook state; a failed append remains
+retryable. Age alone never triggers automatic deletion. Impact → Overview also
+shows an operator warning when capacity is near its limit or stale Runs exist.
+If the Hook state file is damaged or from an unsupported version, the Ledger
+and integration status remain available while health reports `unavailable`.
+Counts are reported as unknown rather than zero, and recovery refuses to change
+the file; restore a valid backup or inspect
+`.codetrap/observations/agent-hook-state.json` before retrying.
+
+Disable future automatic Runs without deleting historical evidence:
+
+```bash
+codetrap observe disable codex
+codetrap observe disable codex --apply
+codetrap observe disable claude --apply
+```
+
+The explicit contract below remains available for custom tools and clients.
+
+Start a Run, attach real search/usefulness activity, record validation, then
+complete it:
+
+```bash
+codetrap observe start --input-json '{"run_id":"run-123","event_id":"start-123","device_id":"device-local","actor_ref":null,"source_ref":"cli","source_client":"codex","source_session_ref":"opaque-session","repository_revision":null,"branch":null,"model_provider":"openai","model_name":null,"completeness":"complete"}' --json
+
+codetrap search "HTTP timeout" --run-id run-123 --device-id device-local --event-id search-123 --json
+codetrap useful 5 --scope project --run-id run-123 --device-id device-local --event-id useful-123 --json
+
+codetrap observe validation --input-json '{"run_id":"run-123","event_id":"validation-123","device_id":"device-local","actor_ref":null,"source_ref":"cli","kind":"test","command":"bun test","status":"passed","passed":12,"failed":0,"duration_ms":820}' --json
+codetrap observe complete --input-json '{"run_id":"run-123","event_id":"complete-123","device_id":"device-local","actor_ref":null,"source_ref":"cli","status":"completed","completeness":"complete","duration_ms":42000,"input_tokens":null,"output_tokens":null}' --json
+```
+
+`event_id` is optional, but a stable value makes retries idempotent. Search
+queries, path/module hints, validation commands, missed-query text, and feedback
+notes are persisted only as SHA-256 fingerprints. Arbitrary extra fields fail
+closed. Fingerprints hide raw text but are not encryption; do not put secrets in
+IDs, `source_ref`, branch names, or other caller-controlled metadata.
+
+When observation storage fails during `search` or `useful`, the primary
+operation still succeeds and returns an `observation_write_failed` diagnostic or
+`observation_warning`. A direct `observe` command fails because recording is its
+primary operation.
+
+MCP exposes the same contract through `record_observation`; `search_traps` and
+`mark_trap_useful` accept the same `run_id`, `device_id`, and optional `event_id`.
+Codex and Claude Code use the same schema and differ only in explicit client
+metadata.
+
+If a project has no Observation Run yet, **Impact → Overview** offers an
+unsaved example timeline and a plain-language Agent handoff. The example lives
+only in browser memory, is clearly labelled as synthetic, disappears on reload,
+and never creates project identity, an Observation Ledger, or data that affects
+Overview/Evals metrics. The adjacent connection guide now shows preview/apply
+commands for opt-in automatic Codex/Claude capture and keeps the explicit Agent
+instruction as a fallback.
+
+Open `codetrap web --open`, choose **Impact**, then **Evals** to inspect four
+separate evidence tracks:
+
+- deterministic Recall@3, Recall@5, and MRR when the selected project checks in
+  `src/tests/fixtures/search-eval.json`;
+- zero-cost controlled baseline/candidate experiments over that immutable
+  fixture, with fixed profiles, a user-visible seed and trial count, regression-
+  first case evidence, and reproducibility/configuration identities;
+- observed Helpful/noise/miss/validation ratios, always with their numerator and
+  denominator;
+- governed review candidates for explicit misses, irrelevant or harmful
+  guidance, and validation failures recorded after an exposure.
+
+A missing fixture stays “not configured”; Codetrap does not substitute its
+maintainer benchmark for project data. Review candidates are unconfirmed clues,
+not ground truth. A user can inspect the source Run, author the exact query and
+expected fixture IDs, save a draft/preview without changing the fixture, then
+explicitly accept, reject, or roll back the case. Opening Evals and its GET path
+remain read-only and never launch an Agent; only the explicit accept action writes
+one validated case through the locked, content-bound, reversible Phase 2
+lifecycle. Retrieval metrics and observed outcomes remain separate because
+neither alone proves task causality.
+
+The controlled lane currently provides two deterministic profiles:
+`retrieval_policy_v1` compares FTS-only retrieval with each confirmed case's
+configured retrieval mode, while `memory_contribution_v1` compares the expected
+traps being unavailable versus available. Both sides run from in-memory fixture
+snapshots and write only immutable experiment evidence under
+`.codetrap/evals/`; the checked-in fixture and source tree are not changed.
+These v1 experiments make zero model calls and incur zero token cost. They test
+retrieval and confirmed-memory contribution, not end-to-end Codex or Claude Code
+behavior; real Agent/worktree trials require a later explicit, budgeted opt-in.
+
+The console keeps local view state in refresh-safe hash routes such as
+`#/impact/evals` and `#/impact/runs/<run-id>` without putting the absolute project
+path or launch token in the route. An expired launch link shows a persistent
+recovery page instead of a partially initialized console. Impact navigation stays
+available during loading, empty, and error states; when observation is off, the
+Overview offers a direct read-only path to any checked-in offline Evals.
 
 ### Session Mode
 
@@ -622,7 +766,23 @@ blocks, source links remain visible, and dates are localized. Merely opening an
 insight is read-only; **Mark learned** is an idempotent state change, so retries
 and repeated clicks do not inflate a counter. If the shelf is empty, the page
 shows a ready-to-send Agent request that asks for an ASCII flow diagram and a
-plain-language example. The bundled external-capture and learning-review skills
+plain-language example.
+
+Learning Impact keeps personal progress outside shared Insight content. A user
+can explicitly choose **Not started**, **In progress**, or **Learned**, record
+**Helpful**, **Unclear**, or **Outdated**, and optionally associate the Insight
+with an existing local Observation Run. Legacy consultation reads as Learned
+until an explicit personal record replaces it; opening the page never migrates
+or rewrites the Insight.
+
+**Create Agent experience candidate** prepares a deterministic local
+Trigger/Mistake/Fix draft for editing. Preview makes zero model calls and writes
+nothing. Sending the draft creates one pending Candidate Inbox item with Insight
+provenance; it does not call Codex or Claude Code, accept the candidate, or write
+confirmed Library memory. The normal review, conflict, receipt, rejection,
+supersede, and rollback workflow remains the only path into confirmed recall.
+
+The bundled external-capture and learning-review skills
 apply that teaching format only to user-study insights and attach source type,
 topics, and shared collection positions when one source yields several study
 notes; concise runtime traps stay action-oriented. Confirmed traps are never
@@ -986,6 +1146,7 @@ codetrap add_trap_evidence <id> \
 | Tool | Description |
 |---|---|
 | `search_traps` | Compact action-card search across active traps |
+| `record_observation` | Record a strict metadata-only Run start, validation, feedback/miss, or completion event |
 | `add_trap` | Record a new trap directly |
 | `mark_trap_useful` | Report that a recalled trap actually helped on this task — the usefulness signal, distinct from a view |
 | `capture_candidate` | Propose a pitfall for human review instead of writing it directly — writes a candidate to the session inbox for `session accept`/`reject` or the web console (preferred for the capture→review→accept workflow) |

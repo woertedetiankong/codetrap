@@ -18,6 +18,7 @@ import { mutationJsonPayload } from "../lib/trap-mutation-result";
 import { errorResult, jsonResult, textResult, type CommandResult } from "./command-result";
 import { buildContextPack, formatContextPackMarkdown } from "../lib/context-pack";
 import { errorFrom, errorMessage, failureMessage, jsonObjectInput, parseArgs, wantsJson } from "./command-args";
+import { observationContextFromArgs } from "../lib/observation-recorder";
 
 export async function cmdAdd(args: string[], operations: TrapOperations): Promise<CommandResult> {
   const { opts, positionals } = parseArgs(args);
@@ -127,7 +128,7 @@ export function cmdUseful(args: string[], operations: TrapOperations): CommandRe
   const details = operations.getTrapDetails(id, opts.scope);
   if (!details) return failureMessage(`Trap #${id} not found.`, args);
 
-  const marked = operations.markTrapUseful(id, details.scope);
+  const marked = operations.markTrapUseful(id, details.scope, new Date(), observationContextFromArgs(opts));
   if (!marked.success) return failureMessage(`Trap #${id} could not be marked useful.`, args);
 
   const updated = operations.getTrapDetails(id, details.scope);
@@ -138,6 +139,7 @@ export function cmdUseful(args: string[], operations: TrapOperations): CommandRe
     useful_count: updated?.trap.useful_count ?? 0,
     last_useful_at: updated?.trap.last_useful_at ?? null,
     title: details.trap.title,
+    ...(marked.observation_warning ? { observation_warning: marked.observation_warning } : {}),
   };
   if (opts.json !== undefined) return jsonResult(payload);
   return textResult(

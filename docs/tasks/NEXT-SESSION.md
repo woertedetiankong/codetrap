@@ -1,37 +1,38 @@
 # Next Session
 
-Project `D:\\llm\\codetrap\\codetrap` (codetrap). Read
-`docs/tasks/2026-08-29-phase3-storage-lifecycle/handoff.md` first.
+Project `D:\llm\codetrap\codetrap` (`codetrap`). Read
+`docs/tasks/2026-09-02-observation-reliability-hardening/handoff.md` first.
 
-Previous session: added read-only Phase 3 storage diagnostics and safe orphan
-snapshot GC; 441 tests passed, one configured browser smoke skipped, and zero
-failed.
+Previous session completed the Observation reliability follow-up: Hook capacity
+health is visible, stale recovery is preview-first and explicitly applied,
+Evals reports deferred local updates without replacing an unsaved form, old Runs
+remain directly addressable, cross-project async responses are discarded, and
+corrupt Hook state no longer hides healthy Ledger data or permits unsafe reset.
 
-Errata: the superseded 2026-08-28 handoff says `8206618` was uncommitted; it is
-now on local and remote `main`.
+Errata: None known. Full validation finished with 535 pass, 1 intentional
+environment-gated browser skip, and 0 fail. OpenCLI showed 0 console errors and
+0 failed requests.
 
-Current state: the storage-lifecycle slice is complete; live Phase 3 state
-remains v1 and its commit-file hash was unchanged by `storage`.
+Current state: the Observation/Evals reliability milestone is committed. The
+separate local Hugging Face embeddings work remains uncommitted in the dirty
+worktree. The rebuilt Web server is running on port 4737. Real and temporary Hook
+state are healthy with zero active Runs. The temporary Observation fixture
+contains one additional append-only synthetic missed-report event used for Evals
+UI validation.
 
-Environment: ignored `dist/` binaries were rebuilt; no live GC, install,
-migration, candidate decision, release, or version change occurred.
+Now do: 1. Human-review the three proposed Observation reliability candidates if
+the user wants them promoted; do not accept them automatically. 2. Choose the
+next Observation product slice with the user: longitudinal Impact or real
+controlled Agent/worktree execution. 3. Keep Team Hub deferred unless explicitly
+reprioritized.
 
-Now do:
+Red lines: recovery preview must remain read-only; never remove Hook retry state
+before completion evidence appends; never replace a dirty Evals form during
+polling; bind async Web results to their requested project; do not push, publish,
+release, globally install, accept candidates, or start Team Hub without explicit
+user direction.
 
-1. Review pending locking/storage candidates explicitly.
-2. Run one user-approved organic Skill improvement pilot before team-service work.
-
-Red lines: do not run live `phase3 gc --apply`, accept candidates, use
-`.codetrap/` as a network-share database, push, publish, release, install
-globally, change package version, or install a Skill without explicit user
-authorization.
-
-First verify:
-
-```powershell
-bun run typecheck
-bun test --timeout 30000 src/tests/phase3-hardening.test.ts src/tests/phase3.test.ts
-```
-
-Expected: typecheck exits 0 and 15 tests pass. Any mismatch means the
-storage/GC safety assumptions must be re-audited before continuing.
+First verify: `bun test src/tests/agent-observation.test.ts
+src/tests/observation-web.test.ts src/tests/web-client-script.test.ts
+src/tests/web-client-text.test.ts src/tests/web-console.test.ts` (expected 60
+pass, 0 fail), then `bun run typecheck`.

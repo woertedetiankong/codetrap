@@ -15,6 +15,7 @@ import {
 import { CODETRAP_DIR } from "./constants";
 import { withAdvisoryLock } from "./advisory-lock";
 import { readJsonFile, writeFileAtomic } from "./fs-json";
+import { normalizeDogfoodCase, parseEvalFixture } from "./search-eval";
 
 export type Phase2Snapshot = { path: string; before: string | null; after: string };
 export type Phase2Commit = {
@@ -299,12 +300,12 @@ export class Phase2Store {
       const testCase = recordValue(payload.case, "payload.case");
       return [this.textSnapshot(path, (before) => {
         if (before === null) throw new Error(`${path} does not exist.`);
-        const fixture = JSON.parse(before) as Record<string, unknown>;
-        if (!Array.isArray(fixture.cases)) throw new Error(`${path} must contain a cases array.`);
-        const cases = [...fixture.cases];
-        const key = JSON.stringify(testCase);
-        if (!cases.some((item) => JSON.stringify(item) === key)) cases.push(testCase);
-        return `${JSON.stringify({ ...fixture, cases }, null, 2)}\n`;
+        const fixture = parseEvalFixture(before, path);
+        const query = normalizeDogfoodCase(testCase, fixture);
+        const queries = [...fixture.queries];
+        const key = JSON.stringify(query);
+        if (!queries.some((item) => JSON.stringify(item) === key)) queries.push(query);
+        return `${JSON.stringify({ ...fixture, queries }, null, 2)}\n`;
       })];
     }
     if (kind === "insight") {

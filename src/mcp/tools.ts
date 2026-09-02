@@ -1,5 +1,6 @@
 import { CATEGORIES, SCOPES, SEARCH_MODES, TRAP_STATUSES } from "../lib/constants";
 import { SESSION_NOTE_KINDS } from "../domain/session";
+import { OBSERVATION_RECORD_KINDS } from "../lib/observation-recorder";
 import {
   archiveTrapInputSchema,
   supersedeTrapInputSchema,
@@ -17,8 +18,30 @@ const cwdProperty = {
   type: "string",
   description: "Optional working directory used to resolve project scope for this tool call.",
 };
+const observationContextProperties = {
+  run_id: { type: "string", description: "Optional Observation Run id; requires device_id." },
+  device_id: { type: "string", description: "Opaque device id; requires run_id." },
+  event_id: { type: "string", description: "Optional stable event id for idempotent retries." },
+  actor_ref: { type: "string", description: "Optional opaque actor reference." },
+  source_ref: { type: "string", description: "Optional opaque source reference." },
+  occurred_at: { type: "string", description: "Optional ISO-8601 occurrence timestamp." },
+};
 
 export const toolDefinitions = [
+  {
+    name: "record_observation",
+    description:
+      "Record one metadata-only Observation Run event. Use start/validation/feedback/missed/complete; input is strictly validated and arbitrary prompt, diff, tool body, path, or reasoning fields are refused.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: [...OBSERVATION_RECORD_KINDS] as string[] },
+        input: { type: "object", description: "Strict event input matching the selected kind." },
+        cwd: cwdProperty,
+      },
+      required: ["kind", "input"],
+    },
+  },
   {
     name: "search_traps",
     description:
@@ -37,6 +60,7 @@ export const toolDefinitions = [
         owner: { type: "string", description: "Optional owner/team filter" },
         rerank: { type: "boolean", description: "Whether query-aware reranking is enabled" },
         ranking_signals: { type: "boolean", description: "Include ranking signal diagnostics in returned cards" },
+        ...observationContextProperties,
         cwd: cwdProperty,
       },
       required: ["query"],
@@ -107,6 +131,7 @@ export const toolDefinitions = [
       properties: {
         id: { type: "number", description: "Trap ID that helped" },
         scope: { type: "string", enum: scopeEnum, description: "Which scope the trap is in" },
+        ...observationContextProperties,
         cwd: cwdProperty,
       },
       required: ["id"],

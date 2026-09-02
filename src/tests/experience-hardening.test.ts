@@ -7,6 +7,7 @@ import {
   sessionRenameRequestFromArgs,
 } from "../lib/command-requests";
 import { scoreCandidateTrap } from "../lib/trap-quality";
+import { candidateReviewCounts } from "../lib/session-review";
 import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
 import { TrapStore } from "../lib/store";
@@ -146,6 +147,31 @@ describe("multilingual candidate quality", () => {
     expect(chinese.score).toBe(english.score);
     expect(chinese.score).toBeGreaterThanOrEqual(0.9);
     expect(chinese.quality.warnings).toEqual([]);
+  });
+
+  test("recommends editing a high-scoring candidate while a quality warning remains", () => {
+    const candidate = scoreCandidateTrap({
+      trap: {
+        ...lesson("Keep shared workspace navigation visible in empty states"),
+        path_globs: [],
+        module: null,
+      },
+      evidence: [{ source_type: "conversation", related_files: [] }],
+    } as never);
+
+    expect(candidate.score).toBeGreaterThanOrEqual(0.8);
+    expect(candidate.quality.proper_scope).toBe(false);
+    expect(candidate.quality.warnings).toContain("scope is too loose for a project trap");
+    expect(candidate.quality.suggested_action).toBe("edit");
+    expect(candidateReviewCounts([{
+      id: "cand-warning",
+      status: "proposed",
+      candidate_kind: "pitfall_trap",
+      quality_score: candidate.score,
+      quality: { ...candidate.quality, suggested_action: "accept" },
+      trap: lesson("Keep shared workspace navigation visible in empty states"),
+      evidence: [{ source_type: "conversation", related_files: [] }],
+    }] as never)).toMatchObject({ high_quality_pending_count: 0, needs_edit_count: 1 });
   });
 });
 

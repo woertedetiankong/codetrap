@@ -97,15 +97,32 @@ describe("Phase 2 low-risk destinations", () => {
     const home = tempHome();
     const fixturePath = join(cwd, "src", "tests", "fixtures", "search-eval.json");
     mkdirSync(join(cwd, "src", "tests", "fixtures"), { recursive: true });
-    const original = '{\n  "traps": [],\n  "cases": []\n}\n';
+    const original = `${JSON.stringify({
+      traps: [{
+        title: "Run migrations with rollback coverage",
+        category: "database",
+        tags: ["migration"],
+        scope: "project",
+        context: "When changing a database schema.",
+        mistake: "Ship a migration without rollback coverage.",
+        fix: "Exercise migration and rollback together.",
+        severity: "error",
+      }],
+      queries: [],
+    }, null, 2)}\n`;
     writeFileSync(fixturePath, original);
     const captured = runJson([
       "phase2", "propose", "--input-json", JSON.stringify(proposal("search_eval_case", "Recall migration trap", {
-        case: { query: "migration rollback", mode: "fts", goldTrapIds: [1], minRecallAt5: 1 },
+        case: { query: "migration rollback", mode: "fts", judgment: "miss", goldTrapIds: [1], minRecallAt5: 1 },
       })),
     ], cwd, home);
     const applied = runJson(["phase2", "apply", captured.candidate.id, "--session", captured.session.id, "--executor", "user"], cwd, home);
-    expect(JSON.parse(readFileSync(fixturePath, "utf-8")).cases).toHaveLength(1);
+    expect(JSON.parse(readFileSync(fixturePath, "utf-8")).queries).toEqual([expect.objectContaining({
+      query: "migration rollback",
+      phaseGate: "dogfood",
+      judgment: "miss",
+      goldTrapIds: [1],
+    })]);
     runJson(["phase2", "revert", applied.commit.id], cwd, home);
     expect(readFileSync(fixturePath, "utf-8")).toBe(original);
   });

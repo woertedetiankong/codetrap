@@ -43,7 +43,7 @@ export function scoreCandidateTrap(candidate: CandidateDraft): { score: number; 
       conflict_checked: false,
       conflict_status: "none",
       staleness_risk: assessStalenessRisk(trap),
-      suggested_action: suggestedAction(score),
+      suggested_action: suggestedAction(score, warnings),
       warnings,
     },
   };
@@ -134,8 +134,8 @@ function roundScore(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function suggestedAction(score: number): CandidateQuality["suggested_action"] {
-  if (score >= 0.8) return "accept";
+function suggestedAction(score: number, warnings: string[]): CandidateQuality["suggested_action"] {
+  if (score >= 0.8 && warnings.length === 0) return "accept";
   if (score >= 0.6) return "edit";
   return "reject";
 }

@@ -33,6 +33,13 @@ import {
   searchRequestFromArgs,
   statsRequestFromArgs,
 } from "../lib/command-requests";
+import {
+  OBSERVATION_RECORD_KINDS,
+  ObservationRunRecorder,
+  observationContextFromArgs,
+  recordObservation,
+  type ObservationRecordKind,
+} from "../lib/observation-recorder";
 
 type ToolArgs = Record<string, any>;
 
@@ -41,6 +48,27 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
   const operations = new TrapOperations(scopedStore);
   try {
     switch (name) {
+      case "record_observation": {
+        const projectRoot = scopedStore.getProjectRoot();
+        if (!projectRoot) {
+          return toMcpTextError(
+            "record_observation requires a project. Pass cwd for a directory initialized with 'codetrap init'."
+          );
+        }
+        if (!(OBSERVATION_RECORD_KINDS as readonly unknown[]).includes(args.kind)) {
+          return toMcpTextError(`Invalid observation kind: ${String(args.kind)}.`);
+        }
+        if (!args.input || typeof args.input !== "object" || Array.isArray(args.input)) {
+          return toMcpTextError("record_observation input must be an object.");
+        }
+        const result = recordObservation(
+          new ObservationRunRecorder(projectRoot),
+          args.kind as ObservationRecordKind,
+          args.input
+        );
+        return toMcpTextJson(result, !result.success);
+      }
+
       case "search_traps": {
         // Honor user config/env search defaults, same as the CLI (M26).
         const { cards, diagnostics } = await operations.searchTrapCards(
@@ -145,7 +173,12 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
       case "mark_trap_useful": {
         const details = operations.getTrapDetails(args.id, args.scope);
         if (!details) return toMcpTextError("not found");
-        const marked = operations.markTrapUseful(args.id, details.scope);
+        const marked = operations.markTrapUseful(
+          args.id,
+          details.scope,
+          new Date(),
+          observationContextFromArgs(args)
+        );
         if (!marked.success) return toMcpTextError(`Trap #${args.id} could not be marked useful.`);
         const updated = operations.getTrapDetails(args.id, details.scope);
         return toMcpTextJson({
@@ -155,6 +188,7 @@ export async function handleToolCall(store: TrapStore, name: string, args: ToolA
           useful_count: updated?.trap.useful_count ?? 0,
           last_useful_at: updated?.trap.last_useful_at ?? null,
           title: details.trap.title,
+          ...(marked.observation_warning ? { observation_warning: marked.observation_warning } : {}),
         });
       }
 

@@ -1,6 +1,8 @@
 import { WEB_TEXT_JSON } from "./client-text";
 import { WEB_REVIEW_CLIENT_SCRIPT } from "./client-review";
 import { WEB_SHELL_CLIENT_SCRIPT } from "./client-shell";
+import { WEB_IMPACT_CLIENT_SCRIPT } from "./client-impact";
+import { WEB_ROUTE_CLIENT_SCRIPT } from "./client-route";
 
 export function webClientScript(textJson = WEB_TEXT_JSON): string {
   return `    const qs = new URLSearchParams(location.search);
@@ -15,6 +17,8 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
     const initialLocale = savedLocale === "zh" ? "zh" : "en";
     const savedSidebarCollapsed = localStorage.getItem("codetrap-sidebar-collapsed") === "true";
     const savedQueueCollapsed = localStorage.getItem("codetrap-queue-collapsed") === "true";
+${WEB_ROUTE_CLIENT_SCRIPT}
+    const initialRoute = parseWorkspaceRoute(location.hash);
     const EMBEDDING_DEFAULTS = {
       endpoint: "http://127.0.0.1:11434",
       model: "qwen3-embedding:0.6b",
@@ -25,7 +29,7 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
 
     const state = {
       locale: initialLocale,
-      mainView: "review",
+      mainView: initialRoute.mainView,
       projects: [],
       sessions: [],
       candidateReview: null,
@@ -46,14 +50,48 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
       learningFilters: { query: "", status: "", sourceType: "", tag: "" },
       insightId: null,
       insightConsulting: false,
+      learningRuns: [],
+      learningRunsProjectRoot: null,
+      learningDraft: null,
+      learningDraftInsightKey: null,
+      learningDraftBusy: false,
+      learningDraftError: "",
       embeddingStatus: null,
       embeddingSettings: null,
       embeddingProviderDraft: "ollama",
       embeddingOllama: { ...EMBEDDING_DEFAULTS },
       embeddingReindexing: null,
+      observationAvailability: "not_configured",
+      observationOverview: null,
+      observationHookHealth: null,
+      observationRuns: [],
+      observationRunId: initialRoute.runId,
+      observationRunDetail: null,
+      observationDemoRun: null,
+      observationGuideOpen: false,
+      observationEvals: null,
+      observationEvalsProjectRoot: null,
+      observationLoading: false,
+      observationError: "",
+      impactEventFilter: "all",
+      impactView: initialRoute.impactView,
+      evalCandidateFilter: "all",
+      evalReviewCandidateId: null,
+      evalReviewDraft: null,
+      evalReviewPreview: null,
+      evalReviewBusy: false,
+      evalReviewError: "",
+      evalExternalChangesDeferred: false,
+      controlledEvalProfile: "memory_contribution_v1",
+      controlledEvalTrials: 2,
+      controlledEvalSeed: "codetrap-controlled-v1",
+      controlledEvalExperimentId: null,
+      controlledEvalCaseFilter: "attention",
+      controlledEvalBusy: false,
+      controlledEvalError: "",
       projectRoot: null,
-      sessionId: null,
-      candidateId: null,
+      sessionId: initialRoute.sessionId,
+      candidateId: initialRoute.candidateId,
       candidateView: "inbox",
       candidateDirty: false,
       detailActionInFlight: false,
@@ -68,8 +106,66 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
     };
 
     const el = (id) => document.getElementById(id);
+    let bootstrapSucceeded = false;
+    let appliedRouteHash = location.hash;
+    let routeNavigationInFlight = false;
 ${WEB_SHELL_CLIENT_SCRIPT}
 ${WEB_REVIEW_CLIENT_SCRIPT}
+${WEB_IMPACT_CLIENT_SCRIPT}
+    function workspaceRouteFromState() {
+      return {
+        mainView: state.mainView,
+        impactView: state.impactView,
+        sessionId: state.mainView === "review" ? state.sessionId : null,
+        candidateId: state.mainView === "review" ? state.candidateId : null,
+        runId: state.mainView === "impact" && state.impactView === "runs" ? state.observationRunId : null
+      };
+    }
+
+    function syncWorkspaceRoute(replace = false) {
+      const hash = workspaceRouteHash(workspaceRouteFromState());
+      syncDocumentTitle();
+      if (hash === location.hash) {
+        appliedRouteHash = hash;
+        return;
+      }
+      const url = location.pathname + location.search + hash;
+      history[replace ? "replaceState" : "pushState"](null, "", url);
+      appliedRouteHash = hash;
+    }
+
+    async function applyWorkspaceRouteFromLocation() {
+      if (!bootstrapSucceeded || routeNavigationInFlight || location.hash === appliedRouteHash) return;
+      const route = parseWorkspaceRoute(location.hash);
+      appliedRouteHash = location.hash;
+      routeNavigationInFlight = true;
+      try {
+        state.mainView = route.mainView;
+        state.trapKey = null;
+        state.conflicts = [];
+        if (route.mainView === "review") {
+          state.sessionId = route.sessionId;
+          state.candidateId = route.candidateId;
+        } else {
+          state.candidateId = null;
+        }
+        if (route.mainView === "impact") {
+          state.impactView = route.impactView;
+          state.observationRunId = route.runId;
+          state.observationRunDetail = null;
+        }
+        renderActiveView();
+        revealCompactDetail();
+        if (state.mainView === "library") await loadTraps();
+        else if (state.mainView === "learning") await loadLearningInsights();
+        else if (state.mainView === "embeddings") await loadEmbeddings();
+        else if (state.mainView === "impact") await loadImpact();
+        else await loadSessions();
+      } finally {
+        routeNavigationInFlight = false;
+      }
+    }
+
     function t(key, params = {}) {
       const text = TEXT[state.locale]?.[key] ?? TEXT.en[key] ?? key;
       return Object.entries(params).reduce((value, [name, replacement]) =>
@@ -107,6 +203,11 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
 
     function candidateKindLabel(candidate) {
       return valueLabel(candidate?.candidate_kind || "pitfall_trap");
+    }
+
+    function effectiveCandidateSuggestedAction(candidate) {
+      const suggested = candidate?.quality?.suggested_action || "edit";
+      return suggested === "accept" && (candidate?.quality?.warnings || []).length ? "edit" : suggested;
     }
 
     function candidateTitle(candidate) {
@@ -226,6 +327,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       document.querySelector("[data-main-view='library']").textContent = t("nav.library");
       document.querySelector("[data-main-view='learning']").textContent = t("nav.learning");
       document.querySelector("[data-main-view='embeddings']").textContent = t("nav.embeddings");
+      document.querySelector("[data-main-view='impact']").textContent = t("nav.impact");
       document.querySelectorAll("[data-locale]").forEach((button) => {
         button.classList.toggle("active", button.dataset.locale === state.locale);
       });
@@ -316,6 +418,33 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       showStatus.timer = setTimeout(() => box.className = "status", 3200);
     }
 
+    function renderBootstrapFailure(error) {
+      bootstrapSucceeded = false;
+      document.documentElement.lang = state.locale === "zh" ? "zh-CN" : "en";
+      document.title = "codetrap · " + t("auth.title");
+      const appShell = el("app-shell");
+      appShell.classList.add("hidden");
+      appShell.hidden = true;
+      el("status").className = "status";
+      el("bootstrap-failure-kicker").textContent = t("auth.kicker");
+      el("bootstrap-failure-title").textContent = t("auth.title");
+      el("bootstrap-failure-copy").textContent = error?.status === 401 ? t("error.sessionExpired") : t("auth.copy");
+      el("bootstrap-command-label").textContent = t("auth.commandLabel");
+      el("bootstrap-command").textContent = "codetrap web --open";
+      el("bootstrap-privacy").textContent = t("auth.privacy");
+      el("bootstrap-retry").textContent = t("auth.retry");
+      el("bootstrap-failure").classList.remove("hidden");
+      el("bootstrap-failure").hidden = false;
+      appShell.remove();
+    }
+
+    function renderAuthorizedShell() {
+      el("bootstrap-failure").classList.add("hidden");
+      el("bootstrap-failure").hidden = true;
+      el("app-shell").classList.remove("hidden");
+      el("app-shell").hidden = false;
+    }
+
     async function bootstrap() {
       const data = await api("/api/bootstrap");
       state.projects = data.projects;
@@ -325,6 +454,9 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       renderProjects();
       await loadSessions();
       renderActiveView();
+      bootstrapSucceeded = true;
+      renderAuthorizedShell();
+      syncWorkspaceRoute(true);
     }
 
     function sessionsSignature(data) {
@@ -338,6 +470,52 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       return JSON.stringify(candidates || []);
     }
 
+    function impactContentSignature() {
+      return JSON.stringify({
+        availability: state.observationAvailability,
+        overview: state.observationOverview,
+        hookHealth: state.observationHookHealth,
+        runs: state.observationRuns,
+        runId: state.observationRunId,
+        runDetail: state.observationRunDetail,
+        evals: state.observationEvals,
+        error: state.observationError
+      });
+    }
+
+    function captureImpactScrollPosition() {
+      return {
+        detail: document.querySelector(".impact-shell")?.scrollTop || 0,
+        queue: document.querySelector(".queue > .scroll")?.scrollTop || 0
+      };
+    }
+
+    function restoreImpactScrollPosition(position) {
+      const restore = () => {
+        const detail = document.querySelector(".impact-shell");
+        const queue = document.querySelector(".queue > .scroll");
+        if (detail) detail.scrollTop = position.detail;
+        if (queue) queue.scrollTop = position.queue;
+      };
+      restore();
+      requestAnimationFrame(restore);
+    }
+
+    function renderImpactAfterRefresh(scrollPosition = null, preserveActiveReview = false) {
+      snapshotEvalReviewDraftFromDom();
+      renderImpactQueue();
+      const activeReview = preserveActiveReview
+        && state.impactView === "evals"
+        && document.querySelector("[data-eval-review-form]");
+      if (activeReview) {
+        state.evalExternalChangesDeferred = true;
+        syncEvalDeferredNotice();
+      } else {
+        renderImpactDetail();
+      }
+      if (scrollPosition) restoreImpactScrollPosition(scrollPosition);
+    }
+
     async function loadSessions() {
       if (!state.projectRoot) {
         state.sessions = [];
@@ -348,15 +526,19 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.learningCollections = [];
         state.learningCollectionItems = [];
         state.insightId = null;
+        resetLearningImpactState();
         state.embeddingStatus = null;
         state.embeddingSettings = null;
+        resetObservationState();
         state.sessionsSignature = "";
         state.candidatesSignature = "";
         renderSessions();
         renderActiveView();
         return;
       }
-      const data = await api("/api/sessions?project=" + encodeURIComponent(state.projectRoot));
+      const requestedProjectRoot = state.projectRoot;
+      const data = await api("/api/sessions?project=" + encodeURIComponent(requestedProjectRoot));
+      if (state.projectRoot !== requestedProjectRoot) return;
       state.sessions = data.sessions;
       state.candidateReview = data.candidate_review || null;
       state.sessionsSignature = sessionsSignature(data);
@@ -368,6 +550,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         await loadLearningInsights();
       } else if (state.mainView === "embeddings") {
         await loadEmbeddings();
+      } else if (state.mainView === "impact") {
+        await loadImpact();
       } else {
         await loadCandidates();
       }
@@ -386,6 +570,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       const data = await api("/api/candidates?project=" + encodeURIComponent(state.projectRoot) + "&session=" + encodeURIComponent(state.sessionId));
       state.candidates = data.candidates;
       state.candidatesSignature = candidatesSignature(data.candidates);
+      const routedCandidate = state.candidates.find((candidate) => candidate.id === state.candidateId);
+      if (routedCandidate) state.candidateView = routedCandidate.status === "proposed" ? "inbox" : "reviewed";
       state.candidateId = reviewQueueModel({
         candidates: state.candidates,
         candidateView: state.candidateView,
@@ -422,6 +608,92 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       }
     }
 
+    function resetLearningImpactState() {
+      state.learningRuns = [];
+      state.learningRunsProjectRoot = null;
+      state.learningDraft = null;
+      state.learningDraftInsightKey = null;
+      state.learningDraftBusy = false;
+      state.learningDraftError = "";
+    }
+
+    function learningProgress(insight) {
+      return insight?.learning_impact?.progress || {
+        status: Number(insight?.consulted_count || 0) > 0 ? "learned" : "not_started",
+        feedback: null,
+        linked_run_id: null,
+        updated_at: insight?.last_consulted_at || insight?.shelved_at || null,
+        legacy_derived: Number(insight?.consulted_count || 0) > 0
+      };
+    }
+
+    function learningStatus(insight) {
+      return learningProgress(insight).status;
+    }
+
+    function snapshotLearningDraftFromDom() {
+      if (!state.learningDraft || state.learningDraftInsightKey !== state.insightId) return state.learningDraft;
+      const form = el("learning-agent-candidate-form");
+      if (!form) return state.learningDraft;
+      const values = new FormData(form);
+      state.learningDraft = {
+        title: String(values.get("title") || ""),
+        context: String(values.get("context") || ""),
+        mistake: String(values.get("mistake") || ""),
+        fix: String(values.get("fix") || ""),
+        scope: String(values.get("scope") || "project"),
+        tags: String(values.get("tags") || "").split(",").map((value) => value.trim()).filter(Boolean),
+        path_globs: String(values.get("path_globs") || "").split(/[,\\n]/).map((value) => value.trim()).filter(Boolean),
+        module: String(values.get("module") || "").trim() || null
+      };
+      return state.learningDraft;
+    }
+
+    function captureLearningScrollPosition() {
+      return document.querySelector("#detail > .scroll")?.scrollTop || 0;
+    }
+
+    function restoreLearningScrollPosition(scrollTop) {
+      const restore = () => {
+        const scroll = document.querySelector("#detail > .scroll");
+        if (scroll) scroll.scrollTop = scrollTop;
+      };
+      restore();
+      requestAnimationFrame(restore);
+    }
+
+    function replaceLearningImpact(insightKey, impact, scrollTop = 0) {
+      state.learningInsights = state.learningInsights.map((item) => item.library_key === insightKey
+        ? {
+            ...item,
+            learning_impact: impact,
+            consulted_count: impact.progress.status === "learned" ? 1 : 0,
+            last_consulted_at: impact.progress.status === "learned" ? impact.progress.updated_at : null
+          }
+        : item);
+      renderLearningShelf();
+      renderLearningDetail();
+      restoreLearningScrollPosition(scrollTop);
+    }
+
+    async function loadLearningRunsForCurrentInsight() {
+      const insight = currentLearningInsight();
+      if (!insight || state.learningRunsProjectRoot === insight.origin_project_root) return;
+      try {
+        const data = await api("/api/observations/runs?project=" + encodeURIComponent(insight.origin_project_root) + "&limit=30");
+        if (currentLearningInsight()?.origin_project_root !== insight.origin_project_root) return;
+        snapshotLearningDraftFromDom();
+        const scrollTop = captureLearningScrollPosition();
+        state.learningRunsProjectRoot = insight.origin_project_root;
+        state.learningRuns = data.runs || [];
+        renderLearningDetail();
+        restoreLearningScrollPosition(scrollTop);
+      } catch {
+        state.learningRunsProjectRoot = insight.origin_project_root;
+        state.learningRuns = [];
+      }
+    }
+
     async function loadLearningInsights() {
       if (!state.projectRoot) {
         state.learningInsights = [];
@@ -441,9 +713,15 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       if (!state.learningInsights.some((insight) => insight.library_key === state.insightId)) {
         state.insightId = state.learningInsights[0]?.library_key || null;
       }
+      if (state.learningDraftInsightKey && state.learningDraftInsightKey !== state.insightId) {
+        state.learningDraft = null;
+        state.learningDraftInsightKey = null;
+        state.learningDraftError = "";
+      }
       if (state.mainView === "learning") {
         renderLearningShelf();
         renderLearningDetail();
+        void loadLearningRunsForCurrentInsight();
       }
     }
 
@@ -467,39 +745,215 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       }
     }
 
+    function resetObservationState() {
+      state.observationAvailability = "not_configured";
+      state.observationOverview = null;
+      state.observationHookHealth = null;
+      state.observationRuns = [];
+      state.observationRunId = null;
+      state.observationRunDetail = null;
+      state.observationDemoRun = null;
+      state.observationGuideOpen = false;
+      state.observationEvals = null;
+      state.observationEvalsProjectRoot = null;
+      state.observationLoading = false;
+      state.observationError = "";
+      state.impactEventFilter = "all";
+      state.impactView = "overview";
+      state.evalCandidateFilter = "all";
+      state.evalReviewCandidateId = null;
+      state.evalReviewDraft = null;
+      state.evalReviewPreview = null;
+      state.evalReviewBusy = false;
+      state.evalReviewError = "";
+      state.evalExternalChangesDeferred = false;
+      state.controlledEvalExperimentId = null;
+      state.controlledEvalCaseFilter = "attention";
+      state.controlledEvalBusy = false;
+      state.controlledEvalError = "";
+    }
+
+    async function loadImpact(backgroundRefresh = false) {
+      if (!state.projectRoot) {
+        resetObservationState();
+        if (state.mainView === "impact") {
+          renderImpactQueue();
+          renderImpactDetail();
+        }
+        return;
+      }
+      const requestedProjectRoot = state.projectRoot;
+      const previousSignature = impactContentSignature();
+      const scrollPosition = backgroundRefresh ? captureImpactScrollPosition() : null;
+      if (!backgroundRefresh) {
+        state.observationLoading = true;
+        state.observationError = "";
+      }
+      if (state.observationEvalsProjectRoot !== state.projectRoot) {
+        state.observationEvals = null;
+        state.observationEvalsProjectRoot = null;
+      }
+      if (!backgroundRefresh && state.mainView === "impact") renderImpactDetail();
+      try {
+        const project = encodeURIComponent(requestedProjectRoot);
+        const [overview, runs] = await Promise.all([
+          api("/api/observations/overview?project=" + project),
+          api("/api/observations/runs?project=" + project + "&limit=100")
+        ]);
+        if (state.projectRoot !== requestedProjectRoot) return;
+        state.observationAvailability = overview.availability;
+        state.observationOverview = overview.overview;
+        state.observationHookHealth = overview.hook_health || null;
+        state.observationRuns = runs.runs || [];
+        if (state.observationRuns.length) state.observationDemoRun = null;
+        if (state.impactView === "runs" && state.observationRunId) {
+          const detail = await api("/api/observations/run?project="
+            + project + "&id=" + encodeURIComponent(state.observationRunId));
+          if (state.projectRoot !== requestedProjectRoot) return;
+          state.observationRunDetail = detail;
+        }
+        state.observationError = "";
+      } catch (error) {
+        if (state.projectRoot !== requestedProjectRoot) return;
+        state.observationError = error.message;
+      } finally {
+        if (state.projectRoot !== requestedProjectRoot) return;
+        if (!backgroundRefresh) state.observationLoading = false;
+        const contentChanged = previousSignature !== impactContentSignature();
+        if (state.mainView === "impact" && (!backgroundRefresh || contentChanged)) {
+          renderImpactAfterRefresh(scrollPosition, backgroundRefresh);
+        }
+      }
+      if (state.mainView === "impact" && state.impactView === "evals") await loadImpactEvals(backgroundRefresh);
+    }
+
+    async function loadImpactEvals(backgroundRefresh = false) {
+      if (!state.projectRoot) return;
+      const requestedProjectRoot = state.projectRoot;
+      const previousSignature = impactContentSignature();
+      const scrollPosition = backgroundRefresh ? captureImpactScrollPosition() : null;
+      if (!backgroundRefresh) {
+        state.observationLoading = true;
+        state.observationError = "";
+      }
+      if (!backgroundRefresh && state.mainView === "impact") {
+        snapshotEvalReviewDraftFromDom();
+        renderImpactQueue();
+        renderImpactDetail();
+      }
+      try {
+        const evals = await api("/api/observations/evals?project=" + encodeURIComponent(requestedProjectRoot));
+        if (state.projectRoot !== requestedProjectRoot) return;
+        state.observationEvals = evals;
+        state.observationEvalsProjectRoot = requestedProjectRoot;
+        if (!backgroundRefresh) state.evalExternalChangesDeferred = false;
+        const controlledExperiments = state.observationEvals?.controlled?.experiments || [];
+        if (!controlledExperiments.some((item) => item.id === state.controlledEvalExperimentId)) {
+          state.controlledEvalExperimentId = controlledExperiments[0]?.id || null;
+        }
+        state.observationError = "";
+      } catch (error) {
+        if (state.projectRoot !== requestedProjectRoot) return;
+        state.observationError = error.message;
+      } finally {
+        if (state.projectRoot !== requestedProjectRoot) return;
+        if (!backgroundRefresh) state.observationLoading = false;
+        const contentChanged = previousSignature !== impactContentSignature();
+        if (state.mainView === "impact" && state.impactView === "evals" && (!backgroundRefresh || contentChanged)) {
+          renderImpactAfterRefresh(scrollPosition, backgroundRefresh);
+        }
+      }
+    }
+
+    async function loadImpactRun(runId) {
+      if (!state.projectRoot || !runId) return;
+      const requestedProjectRoot = state.projectRoot;
+      if (state.impactView === "evals") snapshotEvalReviewDraftFromDom();
+      state.observationDemoRun = null;
+      state.observationRunId = runId;
+      state.observationRunDetail = null;
+      state.impactView = "runs";
+      syncWorkspaceRoute();
+      el("queue-title").textContent = t("impact.runs");
+      state.observationLoading = true;
+      state.observationError = "";
+      renderImpactQueue();
+      renderImpactDetail();
+      try {
+        const detail = await api("/api/observations/run?project="
+          + encodeURIComponent(requestedProjectRoot) + "&id=" + encodeURIComponent(runId));
+        if (state.projectRoot !== requestedProjectRoot) return;
+        state.observationRunDetail = detail;
+      } catch (error) {
+        if (state.projectRoot !== requestedProjectRoot) return;
+        state.observationError = error.message;
+      } finally {
+        if (state.projectRoot !== requestedProjectRoot) return;
+        state.observationLoading = false;
+        if (state.mainView === "impact") {
+          renderImpactQueue();
+          renderImpactDetail();
+        }
+      }
+    }
+
     function renderMainViewButtons() {
       document.querySelectorAll("[data-main-view]").forEach((button) => {
         button.classList.toggle("active", button.dataset.mainView === state.mainView);
       });
     }
 
+    function syncDocumentTitle() {
+      const view = state.mainView === "impact"
+        ? (state.impactView === "evals" ? t("evals.title") : state.impactView === "runs" ? t("impact.runs") : t("impact.overview"))
+        : t("nav." + state.mainView);
+      document.title = "codetrap · " + view;
+    }
+
+    function setCandidateTabsHidden(hidden) {
+      const tabs = el("candidate-tabs");
+      tabs.classList.toggle("hidden", hidden);
+      tabs.hidden = hidden;
+      if (hidden) tabs.querySelectorAll("button").forEach((button) => button.textContent = "");
+    }
+
     function renderActiveView() {
       renderMainViewButtons();
-      if (state.mainView === "library") {
+      syncDocumentTitle();
+      if (state.mainView === "impact") {
+        el("queue-title").textContent = state.impactView === "evals" ? t("evals.reviewQueue") : t("impact.runs");
+        el("detail-title").textContent = state.impactView === "runs"
+          ? t("impact.runTimeline")
+          : state.impactView === "evals" ? t("evals.title") : t("impact.overview");
+        setCandidateTabsHidden(true);
+        hideReviewSummary();
+        renderImpactQueue();
+        renderImpactDetail();
+      } else if (state.mainView === "library") {
         el("queue-title").textContent = t("title.trapLibrary");
         el("detail-title").textContent = t("title.trapDetail");
-        el("candidate-tabs").classList.add("hidden");
+        setCandidateTabsHidden(true);
         hideReviewSummary();
         renderLibrary();
         renderTrapDetail();
       } else if (state.mainView === "learning") {
         el("queue-title").textContent = t("title.learningInsights");
         el("detail-title").textContent = t("title.learningDetail");
-        el("candidate-tabs").classList.add("hidden");
+        setCandidateTabsHidden(true);
         hideReviewSummary();
         renderLearningShelf();
         renderLearningDetail();
       } else if (state.mainView === "embeddings") {
         el("queue-title").textContent = t("title.embeddings");
         el("detail-title").textContent = t("title.embeddingDetail");
-        el("candidate-tabs").classList.add("hidden");
+        setCandidateTabsHidden(true);
         hideReviewSummary();
         renderEmbeddingsView();
         renderEmbeddingsDetail();
       } else {
         el("queue-title").textContent = t("title.candidateInbox");
         el("detail-title").textContent = t("title.candidateDetail");
-        el("candidate-tabs").classList.remove("hidden");
+        setCandidateTabsHidden(false);
         renderCandidates();
         renderDetail();
       }
@@ -523,8 +977,11 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           state.learningCollections = [];
           state.learningCollectionItems = [];
           state.insightId = null;
+          resetLearningImpactState();
           state.embeddingStatus = null;
           state.embeddingSettings = null;
+          resetObservationState();
+          syncWorkspaceRoute();
           renderProjects();
           await loadSessions();
         });
@@ -558,6 +1015,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         button.addEventListener("click", async () => {
           state.sessionId = button.dataset.session;
           state.candidateId = null;
+          syncWorkspaceRoute();
           renderSessions();
           await loadCandidates();
           revealCompactDetail();
@@ -655,6 +1113,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         button.addEventListener("click", () => {
           state.candidateId = button.dataset.candidate;
           state.conflicts = [];
+          syncWorkspaceRoute();
           renderCandidates();
           renderDetail();
           revealCompactDetail();
@@ -955,11 +1414,10 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       return state.learningInsights.filter((insight) => {
         const membership = learningMembership(insight.library_key);
         const collection = membership ? learningCollection(membership.collection_key) : null;
-        const learned = Number(insight.consulted_count || 0) > 0;
+        const status = learningStatus(insight);
         const sourceType = insight.source_type || collection?.source_type || "other";
         if (query && !learningInsightSearchText(insight).includes(query)) return false;
-        if (state.learningFilters.status === "learned" && !learned) return false;
-        if (state.learningFilters.status === "notLearned" && learned) return false;
+        if (state.learningFilters.status && state.learningFilters.status !== status) return false;
         if (state.learningFilters.sourceType && sourceType !== state.learningFilters.sourceType) return false;
         if (state.learningFilters.tag && !(insight.tags || []).includes(state.learningFilters.tag)) return false;
         return true;
@@ -979,7 +1437,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       if (!visible.some((insight) => insight.library_key === state.insightId)) {
         state.insightId = visible[0]?.library_key || null;
       }
-      const consulted = insights.filter((insight) => Number(insight.consulted_count || 0) > 0).length;
+      const consulted = insights.filter((insight) => learningStatus(insight) === "learned").length;
       const sourceTypes = [...new Set(state.learningInsights.map((insight) => {
         const membership = learningMembership(insight.library_key);
         return insight.source_type || (membership ? learningCollection(membership.collection_key)?.source_type : null) || "other";
@@ -1003,7 +1461,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         const shownItems = allItems.filter((item) => visibleKeys.has(item.insight_key));
         const learnedCount = allItems.filter((item) => {
           const insight = state.learningInsights.find((entry) => entry.library_key === item.insight_key);
-          return Number(insight?.consulted_count || 0) > 0;
+          return learningStatus(insight) === "learned";
         }).length;
         const rank = learnedCount > 0 && learnedCount < allItems.length ? 0 : learnedCount === allItems.length ? 2 : 1;
         return { collection, allItems, shownItems, learnedCount, rank };
@@ -1017,7 +1475,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           <button type="button" data-learning-scope="project" class="\${state.learningScope === "project" ? "active" : ""}">\${escapeHtml(t("value.currentProject"))}</button>
         </div>
         <input id="learning-search" type="search" value="\${escapeAttr(state.learningFilters.query)}" placeholder="\${escapeAttr(t("placeholder.searchLearning"))}">
-        <select id="learning-status-filter">\${learningFilterOptions(["notLearned", "learned"], state.learningFilters.status, "value.anyStatus")}</select>
+        <select id="learning-status-filter">\${learningFilterOptions(["not_started", "in_progress", "learned"], state.learningFilters.status, "value.anyStatus")}</select>
         <select id="learning-source-filter">\${learningFilterOptions(sourceTypes, state.learningFilters.sourceType, "value.anySourceType")}</select>
         <select id="learning-tag-filter">\${learningFilterOptions(tags, state.learningFilters.tag, "value.anyTag")}</select>
         <button type="button" id="clear-learning-filters" class="ghost">\${escapeHtml(t("action.clearFilters"))}</button>
@@ -1046,11 +1504,11 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           <div class="collection-chapters" id="\${chaptersId}" \${collapsed ? "hidden" : ""}>\${contextHtml}\${shownItems.map((item) => {
             const insight = state.learningInsights.find((entry) => entry.library_key === item.insight_key);
             if (!insight) return "";
-            const learned = Number(insight.consulted_count || 0) > 0;
+            const status = learningStatus(insight);
             return \`<button type="button" class="learning-chapter \${insight.library_key === state.insightId ? "active" : ""}" data-learning-insight="\${escapeAttr(insight.library_key)}">
               <span class="chapter-number">\${String(item.position).padStart(2, "0")}</span>
               <span class="chapter-copy"><span class="row-title">\${escapeHtml(insight.title)}</span><span class="subtle">\${escapeHtml(insight.summary)}</span></span>
-              <span class="chapter-state \${learned ? "learned" : ""}" aria-label="\${escapeAttr(t(learned ? "value.learned" : "value.notLearned"))}"></span>
+              <span class="chapter-state \${escapeAttr(status)}" aria-label="\${escapeAttr(valueLabel(status))}"></span>
             </button>\`;
           }).join("")}</div>
         </section>\`;
@@ -1060,7 +1518,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         \${standalone.map((insight) => \`<button type="button" class="row learning-standalone-row \${insight.library_key === state.insightId ? "active" : ""}" data-learning-insight="\${escapeAttr(insight.library_key)}">
           <span class="row-title">\${escapeHtml(insight.title)}</span>
           <span class="subtle">\${escapeHtml(insight.summary)}</span>
-          <span class="meta"><span class="pill">\${escapeHtml(valueLabel(insight.source_type || "other"))}</span><span class="pill \${Number(insight.consulted_count || 0) > 0 ? "accepted" : ""}">\${escapeHtml(t(Number(insight.consulted_count || 0) > 0 ? "pill.learned" : "pill.notLearned"))}</span></span>
+          <span class="meta"><span class="pill">\${escapeHtml(valueLabel(insight.source_type || "other"))}</span><span class="pill \${learningStatus(insight) === "learned" ? "accepted" : learningStatus(insight) === "in_progress" ? "warn" : ""}">\${escapeHtml(valueLabel(learningStatus(insight)))}</span></span>
         </button>\`).join("")}
       </section>\` : "";
       const empty = insights.length
@@ -1070,10 +1528,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
 
       document.querySelectorAll("[data-learning-insight]").forEach((button) => {
         button.addEventListener("click", () => {
-          state.insightId = button.dataset.learningInsight;
-          renderLearningShelf();
-          renderLearningDetail();
-          revealCompactDetail();
+          selectLearningInsight(button.dataset.learningInsight);
         });
       });
       document.querySelectorAll("[data-learning-scope]").forEach((button) => {
@@ -1141,6 +1596,77 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       return { insight, membership, collection, items, index: items.findIndex((item) => item.insight_key === insight.library_key) };
     }
 
+    function renderLearningImpactControls(insight) {
+      const progress = learningProgress(insight);
+      const runOptions = ['<option value="">' + escapeHtml(t("value.noLinkedRun")) + '</option>']
+        .concat(state.learningRuns.map((run) => '<option value="' + escapeAttr(run.id) + '" ' + (run.id === progress.linked_run_id ? "selected" : "") + '>' + escapeHtml((run.source_client ? valueLabel(run.source_client) + " · " : "") + formatDisplayDate(run.started_at) + " · " + run.id) + '</option>'));
+      if (progress.linked_run_id && !state.learningRuns.some((run) => run.id === progress.linked_run_id)) {
+        runOptions.push('<option value="' + escapeAttr(progress.linked_run_id) + '" selected>' + escapeHtml(progress.linked_run_id) + '</option>');
+      }
+      return \`<section class="section learning-impact-card">
+        <div class="learning-impact-heading">
+          <div><div class="eyebrow">\${escapeHtml(t("learningImpact.kicker"))}</div><div class="title">\${escapeHtml(t("title.personalLearningImpact"))}</div></div>
+          <span class="pill scope">\${escapeHtml(t("learningImpact.private"))}</span>
+        </div>
+        <p class="subtle learning-impact-copy">\${escapeHtml(t("hint.personalProgressSeparate"))}</p>
+        <div class="learning-impact-group">
+          <span class="field-label">\${escapeHtml(t("label.learningStatus"))}</span>
+          <div class="segmented learning-status-control" role="group" aria-label="\${escapeAttr(t("label.learningStatus"))}">
+            \${["not_started", "in_progress", "learned"].map((status) => '<button type="button" data-learning-status="' + status + '" class="' + (progress.status === status ? "active" : "") + '">' + escapeHtml(valueLabel(status)) + '</button>').join("")}
+          </div>
+        </div>
+        <div class="learning-impact-group">
+          <span class="field-label">\${escapeHtml(t("label.contentFeedback"))}</span>
+          <div class="feedback-choice" role="group" aria-label="\${escapeAttr(t("label.contentFeedback"))}">
+            \${["helpful", "unclear", "outdated"].map((feedback) => '<button type="button" data-learning-feedback="' + feedback + '" class="ghost ' + (progress.feedback === feedback ? "active" : "") + '">' + escapeHtml(valueLabel(feedback)) + '</button>').join("")}
+          </div>
+        </div>
+        <label class="learning-run-link"><span>\${escapeHtml(t("label.linkedRun"))}</span><select id="learning-run-link">\${runOptions.join("")}</select></label>
+      </section>\`;
+    }
+
+    function renderLearningCandidatePanel(insight) {
+      const promotion = insight.learning_impact?.promotion || null;
+      if (promotion) {
+        const reviewLabel = promotion.status === "accepted" && promotion.accepted_trap_id
+          ? t("learningImpact.confirmedTrap", { id: promotion.accepted_trap_id })
+          : promotion.status === "missing" ? t("learningImpact.candidateMissing") : valueLabel(promotion.status);
+        return \`<section class="section learning-agent-card">
+          <div class="learning-agent-heading"><div><div class="eyebrow">\${escapeHtml(t("learningImpact.agentKicker"))}</div><div class="title">\${escapeHtml(t("title.agentExperienceCandidate"))}</div></div><span class="pill \${promotion.status === "accepted" ? "accepted" : "warn"}">\${escapeHtml(reviewLabel)}</span></div>
+          <p>\${escapeHtml(t("hint.agentCandidateAlreadyCreated"))}</p>
+          <button type="button" id="open-learning-candidate-review" class="primary">\${escapeHtml(t("action.openCandidateReview"))}</button>
+        </section>\`;
+      }
+      if (!state.learningDraft || state.learningDraftInsightKey !== insight.library_key) {
+        return \`<section class="section learning-agent-card">
+          <div class="learning-agent-heading"><div><div class="eyebrow">\${escapeHtml(t("learningImpact.agentKicker"))}</div><div class="title">\${escapeHtml(t("title.agentExperienceCandidate"))}</div></div><span class="pill scope">0 model calls</span></div>
+          <p>\${escapeHtml(t("hint.agentCandidateBoundary"))}</p>
+          <button type="button" id="begin-learning-candidate" class="primary">\${escapeHtml(t("action.createAgentCandidate"))}</button>
+        </section>\`;
+      }
+      const draft = state.learningDraft;
+      return \`<section class="section learning-agent-card draft-open">
+        <div class="learning-agent-heading"><div><div class="eyebrow">\${escapeHtml(t("learningImpact.localDraft"))}</div><div class="title">\${escapeHtml(t("title.agentExperienceDraft"))}</div></div><span class="pill scope">\${escapeHtml(t("learningImpact.inboxOnly"))}</span></div>
+        <p>\${escapeHtml(t("hint.agentCandidateEdit"))}</p>
+        \${state.learningDraftError ? '<div class="inline-error" role="alert">' + escapeHtml(state.learningDraftError) + '</div>' : ''}
+        <form id="learning-agent-candidate-form" class="learning-agent-form">
+          <label class="full"><span>\${escapeHtml(t("label.title"))}</span><input name="title" value="\${escapeAttr(draft.title)}"></label>
+          <label class="full"><span>\${escapeHtml(t("label.context"))}</span><textarea name="context">\${escapeHtml(draft.context)}</textarea></label>
+          <label class="full"><span>\${escapeHtml(t("label.mistake"))}</span><textarea name="mistake">\${escapeHtml(draft.mistake)}</textarea></label>
+          <label class="full"><span>\${escapeHtml(t("label.fix"))}</span><textarea name="fix" class="tall">\${escapeHtml(draft.fix)}</textarea></label>
+          <label><span>\${escapeHtml(t("label.scope"))}</span><select name="scope"><option value="project" \${draft.scope === "project" ? "selected" : ""}>\${escapeHtml(valueLabel("project"))}</option><option value="global" \${draft.scope === "global" ? "selected" : ""}>\${escapeHtml(valueLabel("global"))}</option></select></label>
+          <label><span>\${escapeHtml(t("label.module"))}</span><input name="module" value="\${escapeAttr(draft.module || "")}"></label>
+          <label class="full"><span>\${escapeHtml(t("label.tags"))}</span><input name="tags" value="\${escapeAttr((draft.tags || []).join(", "))}"></label>
+          <label class="full"><span>\${escapeHtml(t("label.pathGlobs"))}</span><input name="path_globs" value="\${escapeAttr((draft.path_globs || []).join(", "))}"></label>
+        </form>
+        <div class="learning-agent-actions">
+          <button type="button" id="cancel-learning-candidate" class="ghost" \${state.learningDraftBusy ? "disabled" : ""}>\${escapeHtml(t("action.cancel"))}</button>
+          <button type="button" id="preview-learning-candidate" class="ghost" \${state.learningDraftBusy ? "disabled" : ""}>\${escapeHtml(t("action.previewAgentCandidate"))}</button>
+          <button type="button" id="create-learning-candidate" class="primary" \${state.learningDraftBusy ? "disabled" : ""}>\${escapeHtml(t("action.sendToCandidateInbox"))}</button>
+        </div>
+      </section>\`;
+    }
+
     function renderLearningDetail() {
       if (state.mainView !== "learning") return;
       const context = currentLearningContext();
@@ -1155,7 +1681,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         el("detail").innerHTML = '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span><div class="learning-prompt-card"><span>' + escapeHtml(t("label.learningGenerationPrompt")) + '</span><code>' + escapeHtml(t("prompt.learningGeneration")) + '</code></div></div>';
         return;
       }
-      const learned = Number(insight.consulted_count || 0) > 0;
+      const progress = learningProgress(insight);
       const previous = context.index > 0 ? context.items[context.index - 1] : null;
       const next = context.index >= 0 && context.index < context.items.length - 1 ? context.items[context.index + 1] : null;
       const breadcrumb = context.collection
@@ -1184,11 +1710,13 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
             <div class="source-list">\${renderSourceReferences(insight.source_refs)}</div>
           </div>
           \${coveragePanel}
+          \${renderLearningImpactControls(insight)}
+          \${renderLearningCandidatePanel(insight)}
           <div class="section">
             <div class="detail-kv">
               \${kv(t("label.shelvedAt"), formatDisplayDate(insight.shelved_at))}
-              \${kv(t("label.learningStatus"), t(learned ? "value.learned" : "value.notLearned"))}
-              \${kv(t("label.lastConsultedAt"), learned ? formatDisplayDate(insight.last_consulted_at) : t("value.never"))}
+              \${kv(t("label.learningStatus"), valueLabel(progress.status))}
+              \${kv(t("label.lastConsultedAt"), progress.status === "learned" ? formatDisplayDate(progress.updated_at) : t("value.never"))}
               \${kv(t("label.sourceType"), valueLabel(insight.source_type || context.collection?.source_type || "other"))}
             </div>
             \${context.collection ? \`<div class="collection-edit-actions">
@@ -1202,11 +1730,16 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
             <button type="button" id="previous-learning" class="ghost" \${previous ? "" : "disabled"}>\${escapeHtml(t("action.previousChapter"))}</button>
             <button type="button" id="next-learning" class="ghost" \${next ? "" : "disabled"}>\${escapeHtml(t("action.nextChapter"))}</button>
           </div>
-          <button type="button" id="consult-insight" class="primary" \${state.insightConsulting || learned ? "disabled" : ""}>\${escapeHtml(t(learned ? "action.learned" : "action.markLearned"))}</button>
-          <span class="action-hint">\${escapeHtml(t(learned ? "hint.learnedRecorded" : "hint.markLearnedExplicit"))}</span>
         </div>
       \`;
-      if (!learned) el("consult-insight").addEventListener("click", consultLearningInsight);
+      document.querySelectorAll("[data-learning-status]").forEach((button) => button.addEventListener("click", () => updateLearningStatus(button.dataset.learningStatus)));
+      document.querySelectorAll("[data-learning-feedback]").forEach((button) => button.addEventListener("click", () => updateLearningFeedback(button.dataset.learningFeedback)));
+      el("learning-run-link")?.addEventListener("change", (event) => updateLearningRunLink(event.target.value));
+      el("begin-learning-candidate")?.addEventListener("click", openLearningCandidateDraft);
+      el("preview-learning-candidate")?.addEventListener("click", previewLearningCandidateDraft);
+      el("create-learning-candidate")?.addEventListener("click", createLearningCandidate);
+      el("cancel-learning-candidate")?.addEventListener("click", cancelLearningCandidateDraft);
+      el("open-learning-candidate-review")?.addEventListener("click", openLearningCandidateReview);
       if (previous) el("previous-learning").addEventListener("click", () => selectLearningInsight(previous.insight_key));
       if (next) el("next-learning").addEventListener("click", () => selectLearningInsight(next.insight_key));
       if (context.collection) {
@@ -1217,12 +1750,196 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
 
     function selectLearningInsight(insightKey) {
       if (!insightKey) return;
+      snapshotLearningDraftFromDom();
+      if (state.insightId !== insightKey) {
+        state.learningDraft = null;
+        state.learningDraftInsightKey = null;
+        state.learningDraftError = "";
+        state.learningRuns = [];
+        state.learningRunsProjectRoot = null;
+      }
       const membership = learningMembership(insightKey);
       if (membership) state.collapsedLearningCollections.delete(membership.collection_key);
       state.insightId = insightKey;
       renderLearningShelf();
       renderLearningDetail();
       revealCompactDetail();
+      void loadLearningRunsForCurrentInsight();
+    }
+
+    async function updateLearningStatus(status) {
+      const insight = currentLearningInsight();
+      if (!insight || state.insightConsulting || learningStatus(insight) === status) return;
+      snapshotLearningDraftFromDom();
+      const scrollTop = captureLearningScrollPosition();
+      state.insightConsulting = true;
+      state.detailActionInFlight = true;
+      try {
+        const impact = await api("/api/learning/progress/status", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id, status })
+        });
+        replaceLearningImpact(insight.library_key, impact, scrollTop);
+        showStatus(t("status.learningProgressUpdated"));
+      } catch (error) {
+        showStatus(error.message, true);
+      } finally {
+        state.insightConsulting = false;
+        state.detailActionInFlight = false;
+      }
+    }
+
+    async function updateLearningFeedback(feedback) {
+      const insight = currentLearningInsight();
+      if (!insight || state.insightConsulting || learningProgress(insight).feedback === feedback) return;
+      snapshotLearningDraftFromDom();
+      const scrollTop = captureLearningScrollPosition();
+      state.insightConsulting = true;
+      state.detailActionInFlight = true;
+      try {
+        const impact = await api("/api/learning/feedback", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id, feedback })
+        });
+        replaceLearningImpact(insight.library_key, impact, scrollTop);
+        showStatus(t("status.learningFeedbackUpdated"));
+      } catch (error) {
+        showStatus(error.message, true);
+      } finally {
+        state.insightConsulting = false;
+        state.detailActionInFlight = false;
+      }
+    }
+
+    async function updateLearningRunLink(linkedRunId) {
+      const insight = currentLearningInsight();
+      if (!insight || state.insightConsulting || learningProgress(insight).linked_run_id === (linkedRunId || null)) return;
+      snapshotLearningDraftFromDom();
+      const scrollTop = captureLearningScrollPosition();
+      state.insightConsulting = true;
+      state.detailActionInFlight = true;
+      try {
+        const impact = await api("/api/learning/run-link", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id, linkedRunId: linkedRunId || null })
+        });
+        replaceLearningImpact(insight.library_key, impact, scrollTop);
+        showStatus(t("status.learningRunUpdated"));
+      } catch (error) {
+        showStatus(error.message, true);
+        renderLearningDetail();
+        restoreLearningScrollPosition(scrollTop);
+      } finally {
+        state.insightConsulting = false;
+        state.detailActionInFlight = false;
+      }
+    }
+
+    async function openLearningCandidateDraft() {
+      const insight = currentLearningInsight();
+      if (!insight || state.learningDraftBusy) return;
+      state.learningDraftBusy = true;
+      state.detailActionInFlight = true;
+      try {
+        const preview = await api("/api/learning/candidate/preview", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id })
+        });
+        state.learningDraft = preview.draft;
+        state.learningDraftInsightKey = insight.library_key;
+        state.learningDraftError = "";
+        renderLearningDetail();
+      } catch (error) {
+        showStatus(error.message, true);
+      } finally {
+        state.learningDraftBusy = false;
+        state.detailActionInFlight = false;
+        if (state.mainView === "learning" && currentLearningInsight()?.library_key === insight.library_key) {
+          renderLearningDetail();
+        }
+      }
+    }
+
+    async function previewLearningCandidateDraft() {
+      const insight = currentLearningInsight();
+      const draft = snapshotLearningDraftFromDom();
+      if (!insight || !draft || state.learningDraftBusy) return;
+      const scrollTop = captureLearningScrollPosition();
+      state.learningDraftBusy = true;
+      state.learningDraftError = "";
+      state.detailActionInFlight = true;
+      renderLearningDetail();
+      restoreLearningScrollPosition(scrollTop);
+      try {
+        const preview = await api("/api/learning/candidate/preview", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id, draft })
+        });
+        state.learningDraft = preview.draft;
+        showStatus(t("status.agentCandidatePreviewed"));
+      } catch (error) {
+        state.learningDraftError = error.message;
+      } finally {
+        state.learningDraftBusy = false;
+        state.detailActionInFlight = false;
+        renderLearningDetail();
+        restoreLearningScrollPosition(scrollTop);
+      }
+    }
+
+    async function createLearningCandidate() {
+      const insight = currentLearningInsight();
+      const draft = snapshotLearningDraftFromDom();
+      if (!insight || !draft || state.learningDraftBusy) return;
+      const scrollTop = captureLearningScrollPosition();
+      state.learningDraftBusy = true;
+      state.learningDraftError = "";
+      state.detailActionInFlight = true;
+      renderLearningDetail();
+      restoreLearningScrollPosition(scrollTop);
+      try {
+        await api("/api/learning/candidate/create", {
+          method: "POST",
+          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id, draft })
+        });
+        state.learningDraft = null;
+        state.learningDraftInsightKey = null;
+        await loadLearningInsights();
+        showStatus(t("status.agentCandidateCreated"));
+      } catch (error) {
+        state.learningDraftError = error.message;
+      } finally {
+        state.learningDraftBusy = false;
+        state.detailActionInFlight = false;
+        renderLearningDetail();
+        restoreLearningScrollPosition(scrollTop);
+      }
+    }
+
+    function cancelLearningCandidateDraft() {
+      state.learningDraft = null;
+      state.learningDraftInsightKey = null;
+      state.learningDraftError = "";
+      renderLearningDetail();
+    }
+
+    async function openLearningCandidateReview() {
+      const insight = currentLearningInsight();
+      const promotion = insight?.learning_impact?.promotion;
+      if (!insight || !promotion || promotion.status === "missing") return;
+      state.projectRoot = insight.origin_project_root;
+      state.mainView = "review";
+      state.sessionId = promotion.session_id;
+      state.candidateId = promotion.candidate_id;
+      state.candidateView = promotion.status === "proposed" ? "inbox" : "reviewed";
+      state.trapKey = null;
+      state.learningDraft = null;
+      state.learningDraftInsightKey = null;
+      renderProjects();
+      syncWorkspaceRoute();
+      renderActiveView();
+      revealCompactDetail();
+      await loadSessions();
     }
 
     async function renameLearningCollection(collectionKey) {
@@ -1642,6 +2359,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       state.trapSearch = "";
       state.trapFilters = { scope, status: "all", category: "", module: "", owner: "" };
       state.trapKey = key;
+      syncWorkspaceRoute();
       renderMainViewButtons();
       await loadTraps();
       if (state.traps.some((trap) => trapKey(trap) === key)) {
@@ -1821,7 +2539,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
             <div class="meta">
               <span class="pill">\${escapeHtml(t("pill.quality", { score: Number(candidate.quality_score).toFixed(2) }))}</span>
               <span class="pill">\${escapeHtml(t("pill.conflict", { status: valueLabel(candidate.quality.conflict_status) }))}</span>
-              <span class="pill">\${escapeHtml(t("pill.action", { action: valueLabel(candidate.quality.suggested_action) }))}</span>
+              <span class="pill">\${escapeHtml(t("pill.action", { action: valueLabel(effectiveCandidateSuggestedAction(candidate)) }))}</span>
             </div>
             \${candidate.quality.warnings.map((warning) => '<div class="warning">' + escapeHtml(qualityWarningLabel(warning)) + '</div>').join("")}
           </div>
@@ -1952,14 +2670,21 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         return \`<div class="actions"><span class="pill \${reviewCssClass(candidate)}">\${escapeHtml(reviewLabel(candidate))}</span>\${viewTrap}\${cleanDeleted}\${rollback}</div>\`;
       }
       const approved = candidate.review?.status === "approved";
-      return \`<div class="actions">
-        <button id="save" class="primary" \${disabled}>\${escapeHtml(t("action.save"))}</button>
-        <button id="approve" \${disabled}>\${escapeHtml(t(approved ? "action.reapprove" : "action.approve"))}</button>
-        <button id="accept" \${disabled}>\${escapeHtml(t("action.accept"))}</button>
-        <button id="reject" class="danger" \${disabled}>\${escapeHtml(t("action.reject"))}</button>
+      const conflictActions = state.conflicts.length ? \`<div class="candidate-conflict-actions">
         <button id="accept-anyway" \${disabled}>\${escapeHtml(t("action.acceptAnyway"))}</button>
-        <input id="supersedes" placeholder="\${escapeAttr(t("placeholder.supersedesId"))}" style="width:150px" \${disabled}>
+        <input id="supersedes" placeholder="\${escapeAttr(t("placeholder.supersedesId"))}" style="width:180px" \${disabled}>
         <button id="supersede" \${disabled}>\${escapeHtml(t("action.supersede"))}</button>
+      </div>\` : "";
+      return \`<div class="actions candidate-actions">
+        <div class="candidate-primary-actions">
+          <button id="save" \${disabled}>\${escapeHtml(t("action.saveDraft"))}</button>
+          <button id="accept" class="primary" \${disabled}>\${escapeHtml(t("action.accept"))}</button>
+          <button id="reject" class="danger" \${disabled}>\${escapeHtml(t("action.reject"))}</button>
+        </div>
+        <details class="candidate-more-actions">
+          <summary>\${escapeHtml(t("action.moreReviewOptions"))}</summary>
+          <div class="candidate-more-panel"><button id="approve" \${disabled}>\${escapeHtml(t(approved ? "action.reapprove" : "action.approve"))}</button>\${conflictActions}</div>
+        </details>
         <span id="candidate-draft-state" class="action-hint">\${escapeHtml(t("hint.acceptUsesCurrentDraft"))}</span>
       </div>\`;
     }
@@ -2216,6 +2941,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
 
     async function syncAfterMutation(candidateId) {
       state.candidateId = candidateId;
+      syncWorkspaceRoute(true);
       await loadSessions();
     }
 
@@ -2223,6 +2949,10 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
       if (!state.projectRoot || document.visibilityState !== "visible" || state.externalRefreshInFlight || state.detailActionInFlight) return;
       state.externalRefreshInFlight = true;
       try {
+        if (state.mainView === "impact") {
+          await loadImpact(true);
+          return;
+        }
         const sessionData = await api("/api/sessions?project=" + encodeURIComponent(state.projectRoot));
         const nextSessionsSignature = sessionsSignature(sessionData);
         const nextSessionId = selectedReviewSessionId(sessionData.sessions, state.sessionId);
@@ -2286,11 +3016,13 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         await bootstrap();
         showStatus(t("status.refreshed"));
       } catch (error) {
-        showStatus(error.message, true);
+        if (!bootstrapSucceeded || error.status === 401) renderBootstrapFailure(error);
+        else showStatus(error.message, true);
       }
     }
 
     el("refresh").addEventListener("click", refreshAll);
+    el("bootstrap-retry").addEventListener("click", () => location.reload());
     el("reject-cancel").addEventListener("click", () => el("reject-dialog").close());
     el("reject-form").addEventListener("submit", (event) => {
       event.preventDefault();
@@ -2336,6 +3068,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.mainView = button.dataset.mainView;
         state.candidateId = null;
         state.trapKey = null;
+        syncWorkspaceRoute();
         renderActiveView();
         revealCompactDetail();
         if (state.mainView === "library") {
@@ -2344,6 +3077,8 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
           await loadLearningInsights();
         } else if (state.mainView === "embeddings") {
           await loadEmbeddings();
+        } else if (state.mainView === "impact") {
+          await loadImpact();
         } else {
           await loadCandidates();
         }
@@ -2354,6 +3089,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.candidateView = button.dataset.candidateView;
         state.candidateId = null;
         state.conflicts = [];
+        syncWorkspaceRoute();
         renderCandidates();
         renderDetail();
       });
@@ -2374,8 +3110,11 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
         state.learningCollections = [];
         state.learningCollectionItems = [];
         state.insightId = null;
+        resetLearningImpactState();
         state.embeddingStatus = null;
         state.embeddingSettings = null;
+        resetObservationState();
+        syncWorkspaceRoute();
         el("project-path").value = "";
         renderProjects();
         await loadSessions();
@@ -2448,5 +3187,7 @@ ${WEB_REVIEW_CLIENT_SCRIPT}
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") refreshExternalChanges();
     });
+    window.addEventListener("popstate", applyWorkspaceRouteFromLocation);
+    window.addEventListener("hashchange", applyWorkspaceRouteFromLocation);
     refreshAll();`;
 }

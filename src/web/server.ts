@@ -23,6 +23,15 @@ import {
   resolveWebProjectRoot,
   type WebProject,
 } from "./project-registry";
+import {
+  observationOverviewWebPayload,
+  observationRunsWebPayload,
+  observationRunWebPayload,
+} from "./observation-view";
+import { observationEvalsWebPayload } from "./evals-view";
+import { GovernedEvalOperations } from "../lib/governed-eval-operations";
+import { ControlledEvalOperations, type ControlledEvalProfile } from "../lib/controlled-eval";
+import { LearningImpactOperations, type LearningImpactState } from "../lib/learning-impact";
 
 export interface WebServerOptions {
   cwd?: string;
@@ -203,6 +212,83 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     return jsonResponse(toTrapDetailsJson(details));
   }
 
+  if (request.method === "GET" && url.pathname === "/api/observations/overview") {
+    const projectRoot = projectRootFromQuery(url, context);
+    return jsonResponse(observationOverviewWebPayload(projectRoot, optionalNumberQuery(url, "limit") ?? 50));
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/observations/runs") {
+    const projectRoot = projectRootFromQuery(url, context);
+    return jsonResponse(observationRunsWebPayload(projectRoot, optionalNumberQuery(url, "limit") ?? 100));
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/observations/run") {
+    const projectRoot = projectRootFromQuery(url, context);
+    const payload = observationRunWebPayload(projectRoot, requiredQuery(url, "id"));
+    if (payload.availability === "ready" && payload.run === null) {
+      throw new WebHttpError(404, "Observation Run not found.");
+    }
+    return jsonResponse(payload);
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/observations/evals") {
+    const projectRoot = projectRootFromQuery(url, context);
+    return jsonResponse(await observationEvalsWebPayload(
+      projectRoot,
+      governedEvalOperations(projectRoot, context.home)
+    ));
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/observations/eval-candidate/draft") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    return jsonResponse(runGovernedEvalAction(() => governedEvalOperations(projectRoot, context.home).draft(
+      stringBodyField(body, "observationCandidateId"),
+      recordBodyField(body, "draft")
+    )));
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/observations/eval-candidate/accept") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    return jsonResponse(runGovernedEvalAction(() => governedEvalOperations(projectRoot, context.home).accept(
+      stringBodyField(body, "observationCandidateId"),
+      recordBodyField(body, "draft")
+    )));
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/observations/eval-candidate/reject") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    return jsonResponse(runGovernedEvalAction(() => governedEvalOperations(projectRoot, context.home).reject(
+      stringBodyField(body, "observationCandidateId"),
+      optionalStringBodyField(body, "reason")
+    )));
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/observations/eval-candidate/rollback") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    return jsonResponse(runGovernedEvalAction(() => governedEvalOperations(projectRoot, context.home).rollback(
+      stringBodyField(body, "observationCandidateId")
+    )));
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/observations/controlled-evals/run") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    try {
+      const experiment = await new ControlledEvalOperations(projectRoot).run({
+        profile: stringBodyField(body, "profile") as ControlledEvalProfile,
+        trials: optionalNumberBodyField(body, "trials"),
+        seed: optionalStringBodyField(body, "seed"),
+      });
+      return jsonResponse({ success: true, experiment });
+    } catch (error) {
+      throw new WebHttpError(400, error instanceof Error ? error.message : String(error));
+    }
+  }
+
   if (request.method === "GET" && url.pathname === "/api/insights") {
     const projectRoot = projectRootFromQuery(url, context);
     const scope = learningScopeQuery(url);
@@ -214,7 +300,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
         name: projectRoot,
         last_opened_at: new Date(0).toISOString(),
       }];
-    return jsonResponse(learningLibraryPayload(projects, projectRoot, scope));
+    return jsonResponse(learningLibraryPayload(projects, projectRoot, scope, context.home));
   }
 
   if (request.method === "POST" && url.pathname === "/api/insight/consult") {
@@ -225,11 +311,62 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     if (!store.listInsights().some((insight) => insight.id === id)) {
       throw new WebHttpError(404, `Insight ${id} not found.`);
     }
+    const impact = learningImpactOperations(projectRoot, context.home).updateStatus(id, "learned");
     return jsonResponse({
       success: true,
       project_root: projectRoot,
-      insight: decorateLearningInsight(store.consultInsight(id), projectRoot, learningProjectName(projectRoot, context)),
+      insight: decorateLearningInsight(
+        store.listInsights().find((insight) => insight.id === id)!,
+        projectRoot,
+        learningProjectName(projectRoot, context),
+        impact
+      ),
     });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/learning/progress/status") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).updateStatus(
+      stringBodyField(body, "id"),
+      stringBodyField(body, "status")
+    )));
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/learning/feedback") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).updateFeedback(
+      stringBodyField(body, "id"),
+      stringBodyField(body, "feedback")
+    )));
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/learning/run-link") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).linkRun(
+      stringBodyField(body, "id"),
+      body.linkedRunId
+    )));
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/learning/candidate/preview") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).preview(
+      stringBodyField(body, "id"),
+      optionalRecordBodyField(body, "draft")
+    )));
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/learning/candidate/create") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).createCandidate(
+      stringBodyField(body, "id"),
+      recordBodyField(body, "draft")
+    )));
   }
 
   if (request.method === "POST" && url.pathname === "/api/learning/collection/update") {
@@ -563,6 +700,30 @@ function trapOperations(projectRoot: string, home?: string): TrapOperations {
   return new TrapOperations(trapStore(projectRoot, home));
 }
 
+function governedEvalOperations(projectRoot: string, home?: string): GovernedEvalOperations {
+  return new GovernedEvalOperations(projectRoot, trapOperations(projectRoot, home));
+}
+
+function learningImpactOperations(projectRoot: string, home?: string): LearningImpactOperations {
+  return new LearningImpactOperations(projectRoot, sessionOperations(projectRoot, home).sessions);
+}
+
+function runGovernedEvalAction<T>(action: () => T): T {
+  try {
+    return action();
+  } catch (error) {
+    throw new WebHttpError(400, error instanceof Error ? error.message : String(error));
+  }
+}
+
+function runLearningImpactAction<T>(action: () => T): T {
+  try {
+    return action();
+  } catch (error) {
+    throw new WebHttpError(400, error instanceof Error ? error.message : String(error));
+  }
+}
+
 function trapStore(projectRoot: string, home?: string): TrapStore {
   return new TrapStore(projectRoot, undefined, home);
 }
@@ -648,14 +809,20 @@ function assertRegisteredProject(root: string, context: WebContext): string {
   );
 }
 
-function learningLibraryPayload(projects: WebProject[], selectedProjectRoot: string, scope: "project" | "all") {
+function learningLibraryPayload(
+  projects: WebProject[],
+  selectedProjectRoot: string,
+  scope: "project" | "all",
+  home?: string
+) {
   const insights: Record<string, unknown>[] = [];
   const collections: Record<string, unknown>[] = [];
   const collectionItems: Record<string, unknown>[] = [];
   for (const project of projects) {
     const library = new Phase2Store(project.root).learningLibrary();
+    const impact = learningImpactOperations(project.root, home);
     for (const insight of library.insights) {
-      insights.push(decorateLearningInsight(insight, project.root, project.name));
+      insights.push(decorateLearningInsight(insight, project.root, project.name, impact.state(insight)));
     }
     for (const collection of library.collections) {
       collections.push({
@@ -683,9 +850,20 @@ function learningLibraryPayload(projects: WebProject[], selectedProjectRoot: str
   };
 }
 
-function decorateLearningInsight(insight: InsightRecord, projectRoot: string, projectName: string) {
+function decorateLearningInsight(
+  insight: InsightRecord,
+  projectRoot: string,
+  projectName: string,
+  impact: LearningImpactState
+) {
+  const learned = impact.progress.status === "learned";
   return {
     ...insight,
+    // Preserve the Web response shape while personal progress moves out of the
+    // shared Insight record.
+    consulted_count: learned ? 1 : 0,
+    last_consulted_at: learned ? impact.progress.updated_at : null,
+    learning_impact: impact,
     library_key: learningKey(projectRoot, insight.id),
     origin_project_root: projectRoot,
     origin_project_name: projectName,

@@ -9,6 +9,7 @@ import { parseExecutor, type AuthorizationInput } from "../domain/learning";
 import { capturedTrapMarkdownInput } from "./session-capture";
 import { uniqueStrings as uniqueStringList } from "./string-list";
 import type { SearchTrapsArgs, ListTrapsArgs } from "./trap-operations";
+import { observationContextFromArgs } from "./observation-recorder";
 
 type RawArgs = Record<string, unknown>;
 
@@ -130,6 +131,7 @@ export function searchRequestFromArgs(query: string, args: RawArgs, defaults: Se
     owner: stringOption(args, "owner"),
     rerank: flagPresent(args, "no-rerank") ? false : booleanOption(args, "rerank") ?? defaults.rerank,
     includeRankingSignals: booleanOption(args, "ranking_signals", "ranking-signals") ?? false,
+    observation: observationContextFromArgs(args),
   };
 }
 

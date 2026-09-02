@@ -13,6 +13,11 @@ import type { ScopedSearchDiagnostic, TrapStore, TrapStats } from "./store";
 import type { SearchMode } from "./constants";
 import { toTrapActionCards } from "./search-result-card";
 import type { AddTrapEvidenceResult, TrapMutationResult } from "./trap-mutation-result";
+import {
+  ObservationRunRecorder,
+  type ObservationCallContext,
+} from "./observation-recorder";
+import { activeAgentObservationContext } from "./agent-observation";
 
 export type TrapListGroup = { traps: Trap[]; scope: string };
 export type TrapSearchGroup = { results: TrapSearchResult[]; scope: string };
@@ -35,6 +40,7 @@ export interface SearchTrapsArgs {
   owner?: string;
   rerank?: boolean;
   includeRankingSignals?: boolean;
+  observation?: ObservationCallContext;
 }
 
 export interface ListTrapsArgs {
@@ -56,7 +62,8 @@ export class TrapOperations {
   }
 
   async searchTrapGroups(args: SearchTrapsArgs): Promise<TrapSearchOutcome> {
-    return this.store.search(args.query, {
+    const started = performance.now();
+    const outcome = await this.store.search(args.query, {
       category: args.category,
       scope: args.scope,
       limit: args.limit ?? 20,
@@ -68,6 +75,36 @@ export class TrapOperations {
       rerank: args.rerank,
       includeRankingSignals: args.includeRankingSignals,
     });
+    const projectRoot = this.store.getProjectRoot();
+    const observation = args.observation ?? (projectRoot ? activeAgentObservationContext(projectRoot) : undefined);
+    if (observation) {
+      if (!projectRoot) {
+        outcome.diagnostics.push(observationDiagnostic());
+      } else {
+        try {
+          const results = outcome.groups
+            .flatMap((group) => group.results.map((result) => ({ result, scope: group.scope })))
+            .map(({ result, scope }, index) => ({
+              trap_id: result.trap.id,
+              revision: `${scope}:${result.trap.updated_at}`,
+              rank: index + 1,
+            }));
+          const recorded = new ObservationRunRecorder(projectRoot).search(observation, {
+            query: args.query,
+            mode: args.mode ?? "hybrid",
+            path: args.path ?? null,
+            module: args.module ?? null,
+            results,
+            diagnostics: outcome.diagnostics.map((diagnostic) => diagnostic.code),
+            duration_ms: Math.max(0, performance.now() - started),
+          });
+          if (!recorded.success) outcome.diagnostics.push(observationDiagnostic());
+        } catch {
+          outcome.diagnostics.push(observationDiagnostic());
+        }
+      }
+    }
+    return outcome;
   }
 
   async searchTrapCards(args: SearchTrapsArgs): Promise<TrapSearchCards> {
@@ -95,8 +132,33 @@ export class TrapOperations {
    * `hitTrap`: a view is not evidence of usefulness, and conflating them would
    * make the §17 falsifier unfalsifiable — every search would look successful.
    */
-  markTrapUseful(id: number, scope?: string, now = new Date()): { success: boolean; scope?: string } {
-    return this.store.markUseful(id, scope, now);
+  markTrapUseful(
+    id: number,
+    scope?: string,
+    now = new Date(),
+    observation?: ObservationCallContext
+  ): { success: boolean; scope?: string; observation_warning?: string } {
+    const marked = this.store.markUseful(id, scope, now);
+    if (!marked.success) return marked;
+    const projectRoot = this.store.getProjectRoot();
+    const context = observation ?? (projectRoot ? activeAgentObservationContext(projectRoot) : undefined);
+    if (!context) return marked;
+    if (!projectRoot) return { ...marked, observation_warning: observationDiagnostic().message };
+    try {
+      const details = this.getTrapDetails(id, marked.scope);
+      const recorded = new ObservationRunRecorder(projectRoot).feedback({
+        ...context,
+        trap_id: id,
+        revision: details ? `${details.scope}:${details.trap.updated_at}` : null,
+        feedback: "helpful",
+        note: null,
+      });
+      return recorded.success
+        ? marked
+        : { ...marked, observation_warning: recorded.warning ?? observationDiagnostic().message };
+    } catch {
+      return { ...marked, observation_warning: observationDiagnostic().message };
+    }
   }
 
   validateTrap(id: number, scope?: string, now = new Date()) {
@@ -176,4 +238,12 @@ export class TrapOperations {
   importTraps(records: TrapImportRecord[]): ReturnType<TrapStore["importAll"]> {
     return this.store.importAll(records);
   }
+}
+
+function observationDiagnostic(): ScopedSearchDiagnostic {
+  return {
+    code: "observation_write_failed",
+    message: "Observation sidecar could not record this operation; the primary Codetrap result is unchanged.",
+    scope: "project",
+  };
 }

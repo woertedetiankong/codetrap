@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { buildTrapInput } from "../domain/trap";
 import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
+import { ObservationRunRecorder } from "../lib/observation-recorder";
 import { TrapOperations } from "../lib/trap-operations";
 import { TrapStore } from "../lib/store";
 import { addWebProject } from "../web/project-registry";
@@ -103,6 +104,34 @@ describe("web browser smoke", () => {
       const learnedButton = page.getByRole("button", { name: "Learned", exact: true });
       await learnedButton.waitFor({ state: "visible" });
       expect(await learnedButton.isDisabled()).toBe(true);
+      await expectText(page.locator(".collection-header"), "1 of 2 learned");
+
+      await page.getByRole("button", { name: "Impact" }).click();
+      await page.waitForSelector(".impact-hero");
+      await expectText(page.locator(".impact-hero"), "What changed while Codetrap was present?");
+      await expectText(page.locator(".impact-metrics"), "1");
+      await page.getByRole("button", { name: "Evals" }).click();
+      await page.waitForSelector(".evals-hero");
+      await expectText(page.locator(".evals-hero"), "Measure the signal. Inspect the evidence.");
+      await expectText(page.locator(".eval-rate-grid"), "100%");
+      expect(new URL(page.url()).hash).toBe("#/impact/evals");
+      expect(await page.title()).toBe("codetrap · Evals");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".evals-hero");
+      await expectText(page.locator(".evals-hero"), "Measure the signal. Inspect the evidence.");
+      await page.getByRole("button", { name: "Runs" }).click();
+      await page.locator("[data-observation-run='run-browser-smoke']").click();
+      await page.waitForSelector(".impact-timeline");
+      expect(new URL(page.url()).hash).toBe("#/impact/runs/run-browser-smoke");
+      expect(await page.locator(".impact-event").count()).toBe(6);
+      await expectText(page.locator("#detail"), "Trap search completed");
+      expect((await page.locator("#detail").textContent()) || "").not.toContain("BROWSER_RAW_SECRET");
+
+      await page.setViewportSize({ width: 500, height: 900 });
+      const impactColumns = await page.locator(".impact-run-meta").evaluate((node) =>
+        getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length
+      );
+      expect(impactColumns).toBe(2);
 
       expect(errors).toEqual([]);
     } finally {
@@ -232,6 +261,56 @@ function seedBrowserSmokeData(project: string, home: string): void {
       { collection_id: "col-browser-smoke", insight_id: "ins-browser-smoke-next", position: 2 },
     ],
   }, null, 2)}\n`);
+
+  const recorder = new ObservationRunRecorder(project, () => new Date("2026-08-30T12:00:00.000Z"));
+  const context = { run_id: "run-browser-smoke", device_id: "browser-smoke", source_ref: "browser-smoke" };
+  recorder.start({
+    ...context,
+    event_id: "browser-impact-start",
+    source_client: "codex",
+    source_session_ref: null,
+    repository_revision: null,
+    branch: null,
+    model_provider: "openai",
+    model_name: null,
+    completeness: "complete",
+  });
+  recorder.search({ ...context, event_id: "browser-impact-search" }, {
+    query: "BROWSER_RAW_SECRET",
+    mode: "hybrid",
+    path: "D:/BROWSER_RAW_SECRET/private.ts",
+    module: "BROWSER_RAW_SECRET",
+    results: [{ trap_id: 1, revision: "project:browser", rank: 1 }],
+    diagnostics: [],
+    duration_ms: 12,
+  });
+  recorder.validation({
+    ...context,
+    event_id: "browser-impact-validation",
+    kind: "test",
+    command: "bun test BROWSER_RAW_SECRET",
+    status: "passed",
+    passed: 1,
+    failed: 0,
+    duration_ms: 80,
+  });
+  recorder.feedback({
+    ...context,
+    event_id: "browser-impact-feedback",
+    trap_id: 1,
+    revision: "project:browser",
+    feedback: "helpful",
+    note: "BROWSER_RAW_SECRET",
+  });
+  recorder.complete({
+    ...context,
+    event_id: "browser-impact-complete",
+    status: "completed",
+    completeness: "complete",
+    duration_ms: 1_200,
+    input_tokens: 100,
+    output_tokens: 40,
+  });
 }
 
 function chromeExecutablePath(): string | null {
