@@ -86,7 +86,7 @@ describe("web browser smoke", () => {
       await page.waitForSelector("text=Browser smoke learning insight");
       await expectText(page.locator(".collection-title-line"), "Browser smoke study set");
       await expectText(page.locator(".collection-header"), "0 of 2 learned");
-      await expectText(page.locator(".collection-header"), "coverage not audited");
+      await expectText(page.locator(".collection-audit-status"), "source not audited");
       await expectText(page.locator("#candidates"), "not learned");
       await page.getByRole("button", { name: "Collapse Browser smoke study set" }).click();
       expect(await page.locator(".collection-chapters").isHidden()).toBe(true);
