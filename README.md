@@ -88,10 +88,10 @@ For a quick manual check, agents can run `codetrap search "<task keywords>" --mo
 - **Existing Skill improvement** — stage exact-base file patches that preserve unrelated references, examples, scripts, assets, binaries, and empty directories; preview, approve, install, and roll back through the Phase 3 trust boundary
 - **Dual scope** — project-scoped (`.codetrap/traps.db`) and global (`~/.codetrap/traps.db`)
 - **CLI-first agent API** — `search/show/list/stats/doctor --json` and stdin query support for shell-friendly automation; `search --json` returns `{ results, diagnostics }` so degraded coverage (semantic fallback, partial embedding index) is visible even when results are empty
-- **Three search modes** — FTS (SQLite FTS5), semantic (local Ollama or Jina embeddings), hybrid (RRF fusion)
+- **Three search modes** — FTS (SQLite FTS5), semantic (built-in local Hugging Face, Ollama, or Jina embeddings), hybrid (RRF fusion)
 - **Chinese + mixed-language search** — CJK bigram tokenizer, synonym map for Chinese-English terms
 - **MCP server** — optional tools + resources for AI agent integration
-- **Embedding cache** with multi-profile freshness tracking — Jina/Ollama vectors can coexist and stale ones auto-invalidate
+- **Embedding cache** with multi-profile freshness tracking — local Hugging Face/Jina/Ollama vectors can coexist and stale ones auto-invalidate
 - **Stable project identity** — `codetrap init` mints a durable id in `.codetrap/project.json`, so a project's identity survives renames (the path is display-only metadata); `doctor` surfaces it
 - **Doctor diagnostics** — scope, database, embedding, and per-client (Codex / Claude Code) integration health in text or JSON
 - **Schema migrations** — in-code migration system from v0 through current v7
@@ -150,6 +150,8 @@ codetrap/
 │   │   ├── trap-archive.ts   Import/export compatibility
 │   │   ├── trap-transfer.ts  DB-to-DB transfer for scope migration
 │   │   ├── embedder.ts       Ollama and Jina Embeddings adapters
+│   │   ├── huggingface-embedder.ts Built-in local Hugging Face adapter
+│   │   ├── local-embedding-models.ts Reviewed q8 model registry
 │   │   ├── embedding-job.ts  Batch embedding generation
 │   │   ├── format.ts         CLI output formatting
 │   │   ├── scope.ts          Project root detection
@@ -212,8 +214,8 @@ Commands that accept `--input-json` also accept `--input-json -` and read one
 JSON object from standard input. Prefer this form for multiline payloads on
 Windows PowerShell, where native argument forwarding can otherwise rewrite
 quotes.
-| `embed` | Generate embeddings (requires configured Ollama or Jina provider) |
-| `embeddings` | Manage embedding profiles (`status`, `list`, `use ollama|jina`, `reindex`) |
+| `embed` | Generate embeddings (requires a configured local Hugging Face, Ollama, or Jina provider) |
+| `embeddings` | Manage embedding profiles (`status`, `list`, `models`, `use huggingface|ollama|jina`, `reindex`) |
 | `learn` | Review your own Codex or Claude Code history for reusable lessons (`sources`, `review`, `evidence-pack`, `reviews`, `stage`, `delete`); read-only against history, writes only a review directory |
 | `improver` | Capture correlated human feedback, inspect or delete stored events, dry-run or stage evidence-weighted candidates, record behavior outcomes, and summarize loop metrics |
 | `useful` | Record that a recalled trap actually helped; optional `--run-id` + `--device-id` attaches the human label to an Observation Run |
@@ -1182,7 +1184,8 @@ codetrap://project/recent?cwd=%2Fpath%2Fto%2Fproject
 
 | Env Variable | Required | Description |
 |---|---|---|
-| `CODETRAP_EMBEDDING_PROVIDER` | No | Embedding provider for semantic/hybrid search: `ollama` or `jina`. Recommended local value: `ollama` |
+| `CODETRAP_EMBEDDING_PROVIDER` | No | Embedding provider for semantic/hybrid search: `huggingface`, `ollama`, or `jina`. Recommended: `huggingface` |
+| `CODETRAP_HUGGINGFACE_MODEL` | No | Built-in local model: `default` or `quality`. Default: `default` |
 | `CODETRAP_OLLAMA_MODEL` | No | Ollama embedding model. Recommended: `qwen3-embedding:0.6b` |
 | `CODETRAP_OLLAMA_ENDPOINT` | No | Ollama endpoint. Default: `http://127.0.0.1:11434` |
 | `CODETRAP_OLLAMA_DIMENSIONS` | No | Ollama embedding dimensions. Default: `1024` for `qwen3-embedding:0.6b` |
@@ -1203,10 +1206,8 @@ Behavior preferences can also live in `~/.codetrap/config.json`; CLI args overri
     "rerank": true
   },
   "embeddings": {
-    "provider": "ollama",
-    "endpoint": "http://127.0.0.1:11434",
-    "model": "qwen3-embedding:0.6b",
-    "dimensions": 1024
+    "provider": "huggingface",
+    "model": "default"
   }
 }
 ```
@@ -1227,60 +1228,75 @@ Trap JSON supports optional applicability fields:
 
 Empty applicability fields mean the trap applies everywhere. `search` and `list` can filter with `--path`, `--module`, and `--owner`; matching scoped traps receive a small rerank boost.
 
-### Local Ollama Embeddings Setup
+### Local Hugging Face Embeddings (No Ollama Required)
 
-codetrap works with no embedding provider. In that mode, search uses local SQLite FTS keyword matching, and hybrid search falls back to FTS.
+codetrap works with no embedding provider: FTS continues to work and hybrid
+search falls back to FTS. For local semantic search, choose one reviewed q8
+model; neither option requires Ollama, Python, or a separate model server.
 
-Recommended local semantic search uses Ollama with `qwen3-embedding:0.6b`. This keeps trap passages and query text on your machine.
+| Choice | Model | Dimensions | Approx. download | Use when |
+|---|---|---:|---:|---|
+| `default` | `jinaai/jina-embeddings-v2-base-zh` q8 | 768 | 162 MB | Recommended starting point; Chinese-English and smaller |
+| `quality` | `onnx-community/Qwen3-Embedding-0.6B-ONNX` q8 | 1024 | 614 MB | Quality-first option with more disk and memory use |
 
-1. Install Ollama, then pull the 0.6B embedding model:
-
-```bash
-ollama pull qwen3-embedding:0.6b
-```
-
-Do not omit `:0.6b`; `qwen3-embedding:latest` is much larger.
-
-2. Configure codetrap to use Ollama:
+List the choices, select one, then reindex the desired scopes:
 
 ```bash
-codetrap embeddings use ollama
+codetrap embeddings models
+codetrap embeddings use huggingface --model default
+
+codetrap embeddings reindex --scope project
+codetrap embeddings reindex --scope global
 codetrap embeddings status
 ```
 
-This writes `~/.codetrap/config.json`. Environment variables such as `CODETRAP_EMBEDDING_PROVIDER` and `CODETRAP_OLLAMA_MODEL` are still supported for temporary shell or CI overrides.
+`local` is accepted as a short alias for `huggingface`. The first reindex
+downloads the selected model into `~/.codetrap/models/huggingface`. Downloads
+are pinned to reviewed Hub revisions, ranged, resumable, SHA-256 verified, and
+reused offline. Standalone binaries include their ONNX Runtime WASM dependency;
+trap passages and later query text stay on the machine. Ordinary FTS commands
+never initialize or download a model. Until the selected model has completed a
+reindex, hybrid search returns FTS results with a `semantic_unavailable`
+diagnostic, while semantic search reports the exact reindex command; neither
+path starts a download implicitly.
 
-3. Verify Ollama embedding generation:
+Switch to the larger option at any time:
 
 ```bash
-curl http://127.0.0.1:11434/api/embed -d '{"model":"qwen3-embedding:0.6b","input":"HTTP request timeout"}'
-```
-
-4. Generate embeddings for the traps you want semantic search to use:
-
-```bash
-cd /path/to/your/project
+codetrap embeddings use huggingface --model quality
 codetrap embeddings reindex --scope project
-codetrap embeddings reindex --scope global
 ```
 
-`codetrap embed` remains as a short alias for reindexing. codetrap stores embeddings by profile, so switching between Jina and Ollama does not overwrite existing vectors; it creates or refreshes the selected profile.
+Each model has its own profile id, so switching does not delete or overwrite
+previous vectors. `codetrap embed` remains an alias for reindexing.
 
-You can also run `codetrap web --open` to start the authenticated local console and open it in your default browser. The launch token is moved to session storage and removed from the visible URL immediately. After a server restart, an old tab explains that its credential expired and directs the user to the newest tab instead of showing a bare `Unauthorized` error. The console polls for candidate/session changes made by agents or other terminals, but pauses application of external updates while a candidate form has unsaved edits. Open the `Embeddings` view to inspect the active provider/profile, see project and global fresh/stale/missing counts, switch between Ollama and Jina, and reindex project or global embeddings. The web console does not save Jina API keys; Jina still reads `JINA_API_KEY` from the environment.
+Ollama remains supported for existing setups:
 
-5. Search with hybrid mode:
+```bash
+ollama pull qwen3-embedding:0.6b
+codetrap embeddings use ollama
+```
+
+You can also run `codetrap web --open` to start the authenticated local console
+and open it in your default browser. The launch token is moved to session
+storage and removed from the visible URL immediately. After a server restart,
+an old tab explains that its credential expired and directs the user to the
+newest tab instead of showing a bare `Unauthorized` error. The console polls for
+candidate/session changes made by agents or other terminals, but pauses
+application of external updates while a candidate form has unsaved edits. Open
+`Embeddings` to compare the two local cards, see download/cache state, save a
+selection, switch providers, and reindex project or global embeddings. The web
+console does not save Jina API keys; Jina still reads `JINA_API_KEY` from the
+environment.
+
+Then search normally:
 
 ```bash
 codetrap search "HTTP request timeout" --mode hybrid
 ```
 
-Optional cloud provider: run `codetrap embeddings use jina` and set `JINA_API_KEY` to use Jina instead of Ollama. Privacy note: codetrap does not collect telemetry. FTS and Ollama search are local-only. When Jina is configured, reindexing sends trap passages to Jina, and semantic or hybrid search may send query text to Jina to compute embeddings.
-
-If no embedding provider is configured:
-
-- `codetrap search "<query>" --mode fts` works normally.
-- `codetrap search "<query>" --mode hybrid` works, but falls back to FTS.
-- `codetrap search "<query>" --mode semantic` and `codetrap embed` require an embedding provider.
+If no embedding provider is configured, FTS works normally, hybrid reports its
+FTS fallback, and semantic/reindex commands explain how to select a provider.
 
 ## Reproducible Retrieval Benchmark
 
@@ -1343,7 +1359,7 @@ bun run eval:dogfood -- report --live  # Dogfood eval with configured embedding 
 |---|---|
 | Runtime | Bun + TypeScript |
 | Database | SQLite (bun:sqlite) + FTS5 |
-| Embeddings | Local Ollama (`qwen3-embedding:0.6b`) or Jina AI (`jina-embeddings-v5-text-small`) |
+| Embeddings | Built-in local Hugging Face q8 models, Ollama, or Jina AI |
 | MCP | `@modelcontextprotocol/sdk` |
 | Search | FTS5 + cosine similarity + RRF fusion + generic rerank |
 

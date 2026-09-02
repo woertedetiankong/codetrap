@@ -59,4 +59,18 @@ describe("codetrap config", () => {
       },
     });
   });
+
+  test("round trips a built-in Hugging Face model selection", () => {
+    const home = mkdtempSync(join(tmpdir(), "codetrap-config-hf-"));
+
+    setCodetrapEmbeddingSettings({
+      provider: "huggingface",
+      model: "quality",
+    }, home);
+
+    expect(loadCodetrapConfig(home).embeddings).toEqual({
+      provider: "huggingface",
+      model: "quality",
+    });
+  });
 });

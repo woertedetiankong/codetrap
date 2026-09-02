@@ -10,6 +10,8 @@ import {
   type EmbeddingConfig,
   type EmbeddingProvider,
 } from "./embedder";
+import { HuggingFaceEmbedder } from "./huggingface-embedder";
+import { DEFAULT_LOCAL_EMBEDDING_MODEL_ID } from "./local-embedding-models";
 import { loadCodetrapConfig, type CodetrapConfig, type EmbeddingProviderSetting } from "./config";
 
 export type EmbeddingRuntimeInput = EmbeddingRuntime | EmbeddingProvider | undefined;
@@ -32,15 +34,28 @@ export type EmbeddingRuntimeStatus = {
 export class EmbeddingRuntime {
   constructor(
     private readonly adapter?: EmbeddingProvider,
-    private readonly setupProvider: EmbeddingProviderSetting = "ollama",
-    private readonly configuredConfig: EmbeddingConfig | null = null
+    private readonly setupProvider: EmbeddingProviderSetting = "huggingface",
+    private readonly configuredConfig: EmbeddingConfig | null = null,
+    private readonly setupReason?: string
   ) {}
 
   static fromEnvironment(
     env: NodeJS.ProcessEnv = process.env,
-    config: CodetrapConfig = loadCodetrapConfig()
+    config: CodetrapConfig = loadCodetrapConfig(),
+    home?: string
   ): EmbeddingRuntime {
     const provider = configuredProvider(env, config);
+    if (provider === "huggingface") {
+      try {
+        return new EmbeddingRuntime(new HuggingFaceEmbedder({
+          model: config.embeddings?.model ?? env.CODETRAP_HUGGINGFACE_MODEL ?? DEFAULT_LOCAL_EMBEDDING_MODEL_ID,
+          home,
+        }), "huggingface");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return new EmbeddingRuntime(undefined, "huggingface", null, message);
+      }
+    }
     if (provider === "ollama") {
       return new EmbeddingRuntime(new OllamaEmbedder(ollamaOptions(env, config)), "ollama");
     }
@@ -52,10 +67,15 @@ export class EmbeddingRuntime {
 
     const apiKey = env.JINA_API_KEY;
     if (apiKey) return new EmbeddingRuntime(new JinaEmbedder(apiKey), "jina");
-    return new EmbeddingRuntime(undefined, "ollama");
+    return new EmbeddingRuntime(undefined, "huggingface");
   }
 
   provider(): EmbeddingProvider | undefined {
+    return this.adapter;
+  }
+
+  providerIfReady(): EmbeddingProvider | undefined {
+    if (this.adapter instanceof HuggingFaceEmbedder && !this.adapter.ready()) return undefined;
     return this.adapter;
   }
 
@@ -72,6 +92,18 @@ export class EmbeddingRuntime {
     return this.adapter;
   }
 
+  requireSearchProvider(): EmbeddingProvider {
+    const provider = this.providerIfReady();
+    if (provider) return provider;
+    if (this.adapter instanceof HuggingFaceEmbedder) {
+      throw this.unavailableError(
+        `Local Hugging Face model ${this.adapter.definition.id} is not ready. ` +
+        "Run `codetrap embeddings reindex --scope project` (or `--scope global`) before semantic or hybrid search."
+      );
+    }
+    return this.requireProvider();
+  }
+
   unavailableError(message?: string): EmbeddingProviderUnavailableError {
     return new EmbeddingProviderUnavailableError(
       message ?? "Embedding provider is unavailable. Configure an embedding provider or use --mode fts."
@@ -84,6 +116,14 @@ export class EmbeddingRuntime {
       return {
         command: "export JINA_API_KEY=<your-jina-api-key>",
         reason: "Enable Jina semantic and hybrid search; otherwise use --mode fts.",
+      };
+    }
+    if (this.setupProvider === "huggingface") {
+      return {
+        command: "codetrap embeddings use huggingface --model default",
+        reason: this.setupReason
+          ? `${this.setupReason} Select a supported local model to repair the configuration.`
+          : "Select the balanced local model; the first reindex downloads it from Hugging Face without requiring Ollama.",
       };
     }
     return {
@@ -124,9 +164,10 @@ export class EmbeddingRuntime {
 
 export function defaultEmbeddingRuntime(
   env: NodeJS.ProcessEnv = process.env,
-  config?: CodetrapConfig
+  config?: CodetrapConfig,
+  home?: string
 ): EmbeddingRuntime {
-  return EmbeddingRuntime.fromEnvironment(env, config);
+  return EmbeddingRuntime.fromEnvironment(env, config, home);
 }
 
 export function embeddingRuntimeFrom(input: EmbeddingRuntimeInput): EmbeddingRuntime {
@@ -160,8 +201,9 @@ function ollamaOptions(env: NodeJS.ProcessEnv, config: CodetrapConfig) {
 }
 
 function parseProviderEnv(value: string): EmbeddingProviderSetting {
-  if (value === "ollama" || value === "jina") return value;
-  throw new Error(`Invalid CODETRAP_EMBEDDING_PROVIDER: ${value}. Expected ollama or jina.`);
+  if (value === "local") return "huggingface";
+  if (value === "huggingface" || value === "ollama" || value === "jina") return value;
+  throw new Error(`Invalid CODETRAP_EMBEDDING_PROVIDER: ${value}. Expected huggingface, ollama, or jina.`);
 }
 
 function parseOptionalPositiveInt(value: string | undefined, label: string): number | undefined {

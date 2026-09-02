@@ -189,7 +189,10 @@ export class TrapRepository {
   // Embed one trap right after it is written, so new/edited traps do not
   // rank below older embedded ones until the next manual reindex.
   async ensureEmbeddingForTrap(id: number): Promise<boolean> {
-    const provider = this.embeddings.provider();
+    // A selected Hugging Face model is intentionally inert until an explicit
+    // reindex downloads and validates it. Opportunistic writes must preserve
+    // that boundary instead of making add/edit trigger a large download.
+    const provider = this.embeddings.providerIfReady();
     if (!provider) return false;
     const trap = this.get(id);
     if (!trap) return false;

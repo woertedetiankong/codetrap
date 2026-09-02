@@ -8,6 +8,7 @@ import {
   formatEmbeddingProfilesText,
   formatEmbeddingStatusText,
   formatEmbeddingsUseText,
+  formatLocalEmbeddingModelsText,
   type EmbeddingsUseResult,
 } from "../lib/embedding-management";
 import { CLIENT_SPECS, formatClientSetupText, isSetupClient, runClientSetup } from "../lib/client-setup";
@@ -139,6 +140,13 @@ export async function cmdEmbeddings(args: string[], store: TrapStore): Promise<C
           ? jsonResult(payload)
           : textResult(formatEmbeddingProfilesText(profiles));
       }
+      case "models": {
+        const { opts } = parseArgs(rest);
+        const models = store.embeddingModelChoices();
+        return opts.json !== undefined
+          ? jsonResult({ models })
+          : textResult(formatLocalEmbeddingModelsText(models));
+      }
       case "use": {
         const { opts, positionals } = parseArgs(rest);
         const request = embeddingsUseRequestFromArgs(positionals, opts);
@@ -160,7 +168,7 @@ export async function cmdEmbeddings(args: string[], store: TrapStore): Promise<C
       case "embed":
         return cmdEmbed(rest, store);
       default:
-        return errorResult("Usage: codetrap embeddings <status|list|profiles|use|reindex> [--json]");
+        return errorResult("Usage: codetrap embeddings <status|list|profiles|models|use|reindex> [--json]");
     }
   } catch (error) {
     return errorFrom(error, args);

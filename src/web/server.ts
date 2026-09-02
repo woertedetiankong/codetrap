@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL, EmbeddingProviderUnavailableError } from "../lib/embedder";
 import { CATEGORIES, SCOPES, SEVERITIES } from "../lib/constants";
 import { loadCodetrapConfig, type EmbeddingProviderSetting, type EmbeddingSettings } from "../lib/config";
+import { DEFAULT_LOCAL_EMBEDDING_MODEL_ID, resolveLocalEmbeddingModel } from "../lib/local-embedding-models";
 import { TrapStore } from "../lib/store";
 import { TrapOperations } from "../lib/trap-operations";
 import { SessionOperations } from "../lib/session-operations";
@@ -968,6 +969,20 @@ function embeddingSettingsFromBody(body: Record<string, unknown>): EmbeddingSett
   if (provider === "jina") {
     return { provider };
   }
+  if (provider === "huggingface") {
+    let model;
+    try {
+      model = resolveLocalEmbeddingModel(
+        optionalStringBodyField(body, "model") ?? DEFAULT_LOCAL_EMBEDDING_MODEL_ID
+      );
+    } catch (error) {
+      throw new WebHttpError(400, error instanceof Error ? error.message : String(error));
+    }
+    return {
+      provider,
+      model: model.id,
+    };
+  }
   return {
     provider,
     endpoint: optionalStringBodyField(body, "endpoint") ?? DEFAULT_OLLAMA_ENDPOINT,
@@ -978,8 +993,9 @@ function embeddingSettingsFromBody(body: Record<string, unknown>): EmbeddingSett
 
 function embeddingProviderBodyField(body: Record<string, unknown>, key: string): EmbeddingProviderSetting {
   const value = stringBodyField(body, key);
-  if (value === "ollama" || value === "jina") return value;
-  throw new WebHttpError(400, `${key} must be ollama or jina.`);
+  if (value === "local") return "huggingface";
+  if (value === "huggingface" || value === "ollama" || value === "jina") return value;
+  throw new WebHttpError(400, `${key} must be huggingface, ollama, or jina.`);
 }
 
 function embeddingReindexActions(_projectRoot: string): { scope: "project" | "global"; command: string; reason: string }[] {

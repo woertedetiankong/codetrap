@@ -23,6 +23,15 @@ describe("web client script", () => {
     expect(() => new Function(script)).not.toThrow();
   });
 
+  test("offers both local q8 models and sends the selected model to the settings API", () => {
+    const script = webClientScript();
+    expect(script).toContain('data-embedding-provider="huggingface"');
+    expect(script).toContain('data-local-embedding-model="${escapeAttr(model.id)}"');
+    expect(script).toContain('state.embeddingLocalModelDraft = button.dataset.localEmbeddingModel === "quality"');
+    expect(script).toContain('body.model = state.embeddingLocalModelDraft');
+    expect(script).toContain('model.approximate_download_mb');
+  });
+
   test("the toString()-serialized review block parses and retains its functions", () => {
     // Guards the fragile serialization path specifically: if `toString()` ever
     // returned "[native code]" or an empty/mangled body, this block would either

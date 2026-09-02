@@ -467,6 +467,65 @@ describe("web API", () => {
         },
       });
 
+      writeFileSync(join(home, ".codetrap", "config.json"), JSON.stringify({
+        search: {
+          mode: "fts",
+          limit: 7,
+          rerank: false,
+        },
+        embeddings: {
+          provider: "huggingface",
+          model: "removed-model-id",
+        },
+      }));
+      const invalidModel = await api(handler, "/api/embeddings/use", {
+        method: "POST",
+        body: {
+          projectRoot: project,
+          provider: "huggingface",
+          model: "removed-model-id",
+        },
+      });
+      expect(invalidModel.status).toBe(400);
+      expect((await invalidModel.json()).error).toContain("Invalid local embedding model");
+
+      const huggingface = await api(handler, "/api/embeddings/use", {
+        method: "POST",
+        body: {
+          projectRoot: project,
+          provider: "huggingface",
+          model: "quality",
+        },
+      });
+      expect(huggingface.status).toBe(200);
+      const huggingfacePayload = await huggingface.json();
+      expect(huggingfacePayload.embeddings).toEqual({
+        provider: "huggingface",
+        model: "quality",
+      });
+      expect(huggingfacePayload.status.runtime).toMatchObject({
+        available: true,
+        provider: "huggingface",
+        model: "onnx-community/Qwen3-Embedding-0.6B-ONNX@q8",
+        dimensions: 1024,
+        profile_id: "huggingface:onnx-community/Qwen3-Embedding-0.6B-ONNX@q8:1024:p1",
+      });
+      expect(huggingfacePayload.status.local_models).toEqual([
+        expect.objectContaining({ id: "default", selected: false, cached: false }),
+        expect.objectContaining({ id: "quality", selected: true, cached: false }),
+      ]);
+      expect(JSON.parse(readFileSync(join(home, ".codetrap", "config.json"), "utf-8"))).toMatchObject({
+        search: {
+          mode: "fts",
+          limit: 7,
+          rerank: false,
+        },
+        embeddings: {
+          provider: "huggingface",
+          model: "quality",
+        },
+      });
+
       const jina = await api(handler, "/api/embeddings/use", {
         method: "POST",
         body: {

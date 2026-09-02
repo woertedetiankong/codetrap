@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openDatabase } from "../db/connection";
 import * as queries from "../db/queries";
-import { runCli, tempHome, tempProjectDir } from "./helpers";
+import { runCli, runCliAsync, tempHome, tempProjectDir } from "./helpers";
 
 describe("CLI JSON contract", () => {
   test("search/show/list/stats expose parseable agent-facing JSON", () => {
@@ -125,6 +125,52 @@ describe("CLI JSON contract", () => {
     expect(empty.stderr).toContain("Usage: codetrap search");
   });
 
+  test("an uncached selected local model stays inert until reindex", async () => {
+    const cwd = tempProjectDir("codetrap-cli-hf-inert-");
+    const home = tempHome();
+    expect(runCli([
+      "embeddings", "use", "huggingface", "--model", "default", "--json",
+    ], cwd, home).exitCode).toBe(0);
+
+    const add = await runCliAsync([
+      "add",
+      "--input-json",
+      JSON.stringify({
+        title: "Use fetchWrapper for HTTP requests",
+        category: "api",
+        scope: "project",
+        context: "When making network requests.",
+        mistake: "Calling fetch directly bypasses retry handling.",
+        fix: "Use fetchWrapper.",
+        tags: ["fetch"],
+        severity: "warning",
+      }),
+      "--output-json",
+    ], cwd, home, { timeoutMs: 5_000 });
+    expect(add.exitCode).toBe(0);
+
+    const hybrid = await runCliAsync([
+      "search", "fetchWrapper", "--mode", "hybrid", "--scope", "project", "--json",
+    ], cwd, home, { timeoutMs: 5_000 });
+    expect(hybrid.exitCode).toBe(0);
+    const outcome = JSON.parse(hybrid.stdout);
+    expect(outcome.results[0]).toMatchObject({ title: "Use fetchWrapper for HTTP requests" });
+    expect(outcome.diagnostics[0]).toMatchObject({ code: "semantic_unavailable" });
+    expect(outcome.diagnostics[0].message).toContain("embeddings reindex");
+    expect(existsSync(join(home, ".codetrap", "models", "huggingface"))).toBe(false);
+
+    const semantic = await runCliAsync([
+      "search", "fetchWrapper", "--mode", "semantic", "--scope", "project", "--json",
+    ], cwd, home, { timeoutMs: 5_000 });
+    expect(semantic.exitCode).toBe(1);
+    expect(JSON.parse(semantic.stdout)).toMatchObject({
+      success: false,
+      error: expect.stringContaining("embeddings reindex"),
+    });
+    expect(semantic.stderr).toBe("");
+    expect(existsSync(join(home, ".codetrap", "models", "huggingface"))).toBe(false);
+  });
+
   test("boolean flags never swallow positionals and --flag=value works", () => {
     const cwd = tempProjectDir("codetrap-cli-flags-");
     const home = tempHome();
@@ -214,7 +260,7 @@ describe("CLI JSON contract", () => {
     });
     expect(doctor.next_actions).toEqual([
       expect.objectContaining({
-        command: "export CODETRAP_EMBEDDING_PROVIDER=ollama",
+        command: "codetrap embeddings use huggingface --model default",
       }),
     ]);
   });
@@ -354,6 +400,51 @@ describe("CLI JSON contract", () => {
       active_profile_id: "ollama:qwen3-embedding:0.6b:1024:p1",
       project: [],
       global: [],
+    });
+
+    const models = runCli(["embeddings", "models", "--json"], cwd, home);
+    expect(models.exitCode).toBe(0);
+    expect(JSON.parse(models.stdout).models).toEqual([
+      expect.objectContaining({ id: "default", dimensions: 768, cached: false, selected: false }),
+      expect.objectContaining({ id: "quality", dimensions: 1024, cached: false, selected: false }),
+    ]);
+
+    writeFileSync(join(home, ".codetrap", "config.json"), JSON.stringify({
+      search: { mode: "fts", limit: 7 },
+      embeddings: { provider: "huggingface", model: "removed-model-id" },
+    }));
+
+    const local = runCli([
+      "embeddings",
+      "use",
+      "local",
+      "--model",
+      "quality",
+      "--json",
+    ], cwd, home);
+    expect(local.exitCode).toBe(0);
+    expect(JSON.parse(local.stdout).embeddings).toEqual({
+      provider: "huggingface",
+      model: "quality",
+    });
+    expect(JSON.parse(readFileSync(join(home, ".codetrap", "config.json"), "utf-8"))).toMatchObject({
+      search: { mode: "fts", limit: 7 },
+      embeddings: { provider: "huggingface", model: "quality" },
+    });
+
+    const localStatus = JSON.parse(
+      runCli(["embeddings", "status", "--scope", "project", "--json"], cwd, home).stdout
+    );
+    expect(localStatus.runtime).toMatchObject({
+      available: true,
+      provider: "huggingface",
+      model: "onnx-community/Qwen3-Embedding-0.6B-ONNX@q8",
+      dimensions: 1024,
+    });
+    expect(localStatus.local_models[1]).toMatchObject({
+      id: "quality",
+      selected: true,
+      cached: false,
     });
   });
 

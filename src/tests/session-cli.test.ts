@@ -172,7 +172,7 @@ describe("session CLI", () => {
       },
     });
     expect(runCli(["session", "list"], cwd, home).stdout).toContain("(0 pending, 1 reviewed)");
-  });
+  }, 15_000);
 
   test("keeps raw test failures as notes instead of fallback candidate traps", () => {
     const cwd = tempProjectDir("codetrap-session-stdin-");

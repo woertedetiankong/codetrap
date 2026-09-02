@@ -36,8 +36,49 @@ describe("embedding runtime", () => {
     expect(runtime.available()).toBe(false);
     expect(() => runtime.requireProvider()).toThrow(EmbeddingProviderUnavailableError);
     expect(runtime.setupAction()).toMatchObject({
-      command: "export CODETRAP_EMBEDDING_PROVIDER=ollama",
+      command: "codetrap embeddings use huggingface --model default",
     });
+  });
+
+  test("creates the high-quality local Hugging Face adapter from config without Ollama", () => {
+    const runtime = defaultEmbeddingRuntime({} as NodeJS.ProcessEnv, {
+      embeddings: {
+        provider: "huggingface",
+        model: "quality",
+      },
+    });
+
+    expect(runtime.status()).toMatchObject({
+      available: true,
+      provider: "huggingface",
+      model: "onnx-community/Qwen3-Embedding-0.6B-ONNX@q8",
+      dimensions: 1024,
+      profile_id: "huggingface:onnx-community/Qwen3-Embedding-0.6B-ONNX@q8:1024:p1",
+      setup_action: null,
+    });
+  });
+
+  test("turns an invalid configured Hugging Face model into repair guidance", () => {
+    const runtime = defaultEmbeddingRuntime({} as NodeJS.ProcessEnv, {
+      embeddings: {
+        provider: "huggingface",
+        model: "removed-model-id",
+      },
+    });
+
+    expect(runtime.available()).toBe(false);
+    expect(runtime.setupAction()).toMatchObject({
+      command: "codetrap embeddings use huggingface --model default",
+    });
+    expect(runtime.setupAction()?.reason).toContain("Invalid local embedding model: removed-model-id");
+  });
+
+  test("does not initialize a local model when no provider is configured", () => {
+    const runtime = defaultEmbeddingRuntime({} as NodeJS.ProcessEnv, {});
+
+    expect(runtime.available()).toBe(false);
+    expect(runtime.provider()).toBeUndefined();
+    expect(runtime.status().provider).toBeNull();
   });
 
   test("creates the default Jina adapter from environment", () => {

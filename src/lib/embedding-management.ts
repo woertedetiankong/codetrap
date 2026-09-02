@@ -1,6 +1,7 @@
 import type { ConfigWriteResult, EmbeddingSettings } from "./config";
 import type { EmbeddingScopeStatus, TrapEmbeddingProfiles, TrapEmbeddingStatus } from "./store";
 import type { EmbeddingProfileSummary } from "../db/embedding-queries";
+import type { LocalEmbeddingModelChoice } from "./local-embedding-models";
 
 export type EmbeddingsUseResult = ConfigWriteResult & {
   embeddings: EmbeddingSettings;
@@ -43,6 +44,14 @@ export function formatEmbeddingsUseText(result: EmbeddingsUseResult): string {
     `Config: ${result.path}`,
     `Next: ${result.next_action.command}`,
   ].join("\n");
+}
+
+export function formatLocalEmbeddingModelsText(models: LocalEmbeddingModelChoice[]): string {
+  return models.map((model) => [
+    `${model.id}${model.selected ? " (selected)" : ""}`,
+    `  ${model.repository} ${model.dtype} · ${model.dimensions}d · ~${model.approximate_download_mb} MB`,
+    `  Cache: ${model.cached ? "ready" : "downloads on first reindex"}`,
+  ].join("\n")).join("\n");
 }
 
 function scopeStatusLines(label: string, status: EmbeddingScopeStatus | null): string[] {

@@ -635,6 +635,53 @@ export const WEB_INDEX_HTML = `<!doctype html>
       gap: 8px;
     }
 
+    .local-model-panel {
+      display: grid;
+      gap: 8px;
+    }
+
+    .local-model-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .local-model-card {
+      min-width: 0;
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--ink);
+      box-shadow: none;
+      text-align: left;
+    }
+
+    .local-model-card:hover {
+      border-color: color-mix(in srgb, var(--accent), var(--line) 45%);
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    .local-model-card.active {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent), white 94%);
+      box-shadow: inset 3px 0 var(--accent);
+    }
+
+    .local-model-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .local-model-card-head strong { font-size: 13px; }
+    .local-model-description { color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .local-model-card code { overflow-wrap: anywhere; color: var(--muted); font-size: 9px; }
+    .local-model-spec { color: var(--accent); font: 700 10px/1.35 "Cascadia Code", Consolas, monospace; }
+
     .status-line {
       display: flex;
       flex-wrap: wrap;
@@ -2640,7 +2687,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
       .bar { align-items: flex-start; flex-direction: column; }
       .rail > .bar { align-items: stretch; }
       .rail-actions { justify-content: stretch; }
-      .filter-grid, .summary-grid, .detail-kv, .provider-fields, .form-grid, .insight-form-grid, .learning-agent-form { grid-template-columns: 1fr; }
+      .filter-grid, .summary-grid, .detail-kv, .provider-fields, .local-model-grid, .form-grid, .insight-form-grid, .learning-agent-form { grid-template-columns: 1fr; }
       .learning-agent-form label.full { grid-column: 1; }
       .learning-controls { grid-template-columns: 1fr; }
       .learning-controls .learning-scope,

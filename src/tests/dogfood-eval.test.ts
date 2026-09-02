@@ -153,7 +153,7 @@ describe("dogfood eval script", () => {
     expect(payload.next_actions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          command: "export CODETRAP_EMBEDDING_PROVIDER=ollama",
+          command: "codetrap embeddings use huggingface --model default",
         }),
       ])
     );

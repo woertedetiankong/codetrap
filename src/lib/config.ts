@@ -14,7 +14,7 @@ export type CodetrapConfig = {
   embeddings?: EmbeddingSettings;
 };
 
-export type EmbeddingProviderSetting = "ollama" | "jina";
+export type EmbeddingProviderSetting = "huggingface" | "ollama" | "jina";
 
 export type EmbeddingSettings = {
   provider?: EmbeddingProviderSetting;
@@ -150,8 +150,8 @@ function parseScope(value: string): Scope {
 }
 
 function parseEmbeddingProvider(value: string): EmbeddingProviderSetting {
-  if (value === "ollama" || value === "jina") return value;
-  throw new Error("Invalid embeddings.provider: expected one of: ollama, jina");
+  if (value === "huggingface" || value === "ollama" || value === "jina") return value;
+  throw new Error("Invalid embeddings.provider: expected one of: huggingface, ollama, jina");
 }
 
 function parsePositiveInt(value: number, label: string): number {

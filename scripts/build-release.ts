@@ -2,6 +2,7 @@
 
 import { chmod, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { buildCodetrapStandalone } from "./build-standalone";
 
 type ReleaseTarget = {
   target: string;
@@ -25,23 +26,11 @@ await mkdir(releaseDir, { recursive: true });
 for (const item of targets) {
   const outfile = join(releaseDir, item.name);
   console.log(`Building ${item.name} (${item.target})`);
-  const proc = Bun.spawnSync({
-    cmd: [
-      "bun",
-      "build",
-      "--compile",
-      `--target=${item.target}`,
-      "./src/index.ts",
-      "--outfile",
-      outfile,
-    ],
-    stdout: "inherit",
-    stderr: "inherit",
+  await buildCodetrapStandalone({
+    entrypoint: "./src/index.ts",
+    outfile,
+    target: item.target as Bun.Build.CompileTarget,
   });
-
-  if (!proc.success) {
-    process.exit(proc.exitCode ?? 1);
-  }
 
   if (!item.windows) {
     await chmod(outfile, 0o755);

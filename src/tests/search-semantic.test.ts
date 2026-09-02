@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../db/connection";
 import { TrapRepository } from "../db/repository";
 import { embeddingConfig, type EmbeddingProvider, type EmbeddingTask } from "../lib/embedder";
-import { trap } from "./helpers";
+import { HuggingFaceEmbedder } from "../lib/huggingface-embedder";
+import { tempHome, trap } from "./helpers";
 
 class MockEmbedder implements EmbeddingProvider {
   readonly provider = "mock";
@@ -65,6 +66,34 @@ describe("semantic and hybrid search", () => {
     expect(results[0]?.trap.title).toContain("fetchWrapper");
     expect(results[0]?.sources).toEqual(["fts"]);
     expect(results[0]?.diagnostics?.[0]?.code).toBe("semantic_unavailable");
+  });
+
+  test("an uncached local model downloads only during explicit reindex", async () => {
+    let pipelineCalls = 0;
+    const embedder = new HuggingFaceEmbedder({
+      model: "default",
+      home: tempHome("codetrap-search-hf-unready-"),
+      pipelineFactory: async () => {
+        pipelineCalls += 1;
+        throw new Error("explicit reindex initialized the local model");
+      },
+    });
+    const repo = new TrapRepository(openDatabase(":memory:"), embedder);
+    const id = repo.add(trap());
+
+    const hybrid = await repo.searchWithDiagnostics("fetchWrapper", { mode: "hybrid" });
+    expect(hybrid.results[0]?.trap.id).toBe(id);
+    expect(hybrid.results[0]?.sources).toEqual(["fts"]);
+    expect(hybrid.diagnostics[0]?.code).toBe("semantic_unavailable");
+    expect(hybrid.diagnostics[0]?.message).toContain("embeddings reindex");
+
+    await expect(repo.searchWithDiagnostics("fetchWrapper", { mode: "semantic" }))
+      .rejects.toThrow("embeddings reindex");
+    expect(await repo.ensureEmbeddingForTrap(id)).toBe(false);
+    expect(pipelineCalls).toBe(0);
+
+    await expect(repo.ensureEmbeddings()).rejects.toThrow("explicit reindex initialized");
+    expect(pipelineCalls).toBe(1);
   });
 
   test("hybrid fusion considers overfetched candidates before final ranking", async () => {

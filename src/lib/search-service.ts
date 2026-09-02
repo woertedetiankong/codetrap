@@ -175,7 +175,7 @@ export class SearchService {
     query: string,
     plan: SearchRetrievalPlan
   ): Promise<TrapSearchResult[]> {
-    const provider = this.embeddings.requireProvider();
+    const provider = this.embeddings.requireSearchProvider();
 
     const [queryEmbedding] = await provider.embed([query], "retrieval.query");
     if (!queryEmbedding) return [];

@@ -5,6 +5,7 @@ import {
   DEFAULT_OLLAMA_ENDPOINT,
   DEFAULT_OLLAMA_MODEL,
 } from "./embedder";
+import { DEFAULT_LOCAL_EMBEDDING_MODEL_ID, resolveLocalEmbeddingModel } from "./local-embedding-models";
 import { parseExecutor, type AuthorizationInput } from "../domain/learning";
 import { capturedTrapMarkdownInput } from "./session-capture";
 import { uniqueStrings as uniqueStringList } from "./string-list";
@@ -171,6 +172,16 @@ export function embeddingsUseRequestFromArgs(
   if (provider === "jina") {
     return {
       embeddings: { provider },
+    };
+  }
+  if (provider === "huggingface") {
+    return {
+      embeddings: {
+        provider,
+        model: resolveLocalEmbeddingModel(
+          stringOption(args, "model") ?? DEFAULT_LOCAL_EMBEDDING_MODEL_ID
+        ).id,
+      },
     };
   }
 
@@ -396,8 +407,9 @@ function searchModeOption(args: RawArgs, key: string): SearchMode | undefined {
 }
 
 function embeddingProviderOption(value: string): EmbeddingProviderSetting {
-  if (value === "ollama" || value === "jina") return value;
-  throw new Error(`Invalid embedding provider: ${value}. Expected ollama or jina.`);
+  if (value === "local") return "huggingface";
+  if (value === "huggingface" || value === "ollama" || value === "jina") return value;
+  throw new Error(`Invalid embedding provider: ${value}. Expected huggingface, ollama, or jina.`);
 }
 
 function booleanOption(args: RawArgs, ...keys: string[]): boolean | undefined {

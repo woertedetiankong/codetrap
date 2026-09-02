@@ -40,9 +40,19 @@ handoff) — see §19.
 | Governed Eval candidates | **Done** | 2026-08-31 | [handoff](tasks/2026-08-31-governed-eval-candidates/handoff.md) | Human calibration now turns metadata-only signals into explicit, previewed, content-bound fixture cases with reject/rollback, exact-byte recovery, and OpenCLI-verified privacy and UX. |
 | Controlled Eval runner v1 | **Done** | 2026-08-31 | [handoff](tasks/2026-08-31-controlled-eval-runner/handoff.md) | Zero-cost deterministic retrieval/memory comparisons now preserve immutable fixture identity, local result history, reproducibility evidence, and regression-first UX; real Agent/worktree/model trials remain permissioned future work. |
 | Learning Impact | **Done** | 2026-08-31 | [handoff](tasks/2026-08-31-learning-impact/handoff.md) | Personal progress, feedback, Run context, deterministic editable drafting, and governed Inbox promotion are separate from Insight content and confirmed memory; tests and OpenCLI pass. |
+| Local Hugging Face embeddings | **Done** | 2026-09-02 | [handoff](tasks/2026-09-02-local-huggingface-embeddings/handoff.md) | Two q8 profiles now use pinned checksum-verified artifacts, repairable settings, race-safe caches, and embedded standalone WASM; full tests and real executable inference pass. |
 | Observation reliability hardening | **Done** | 2026-09-02 | [handoff](tasks/2026-09-02-observation-reliability-hardening/handoff.md) | Active Evals drafts and old Run links survive refresh; Hook health and deferred updates are visible; recovery is preview-first and failure-closed; corrupt Hook state cannot hide healthy Ledger data; project-bound responses cannot cross-contaminate views; healthy controlled history survives corrupt artifacts. |
 
 ### Closed decisions by date
+
+- 2026-09-02 Local semantic search defaults to the reviewed
+  `jina-embeddings-v2-base-zh` q8 profile and offers Qwen3-Embedding-0.6B q8 as
+  the larger quality-first choice. Selection does not download; the first
+  reindex downloads into the Codetrap user cache. Source/npm use native ONNX,
+  standalone binaries use embedded WASM, and Ollama/Jina remain compatible
+  optional providers. Reviewed model revisions and SHA-256 values are pinned so
+  a same-size corrupt or changed artifact is never treated as ready
+  ([detail](tasks/2026-09-02-local-huggingface-embeddings/handoff.md)).
 
 - 2026-08-31 Learning Impact stores reversible personal progress, content
   feedback, and an optional Run link outside shared Insight content. Creating an

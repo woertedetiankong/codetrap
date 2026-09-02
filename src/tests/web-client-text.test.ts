@@ -42,6 +42,10 @@ describe("web client text", () => {
     expect(WEB_INDEX_HTML).toContain('id="embedding-form"');
     expect(WEB_INDEX_HTML).toContain('id="embedding-reindex-project"');
     expect(WEB_INDEX_HTML).toContain("JINA_API_KEY");
+    expect(WEB_INDEX_HTML).toContain('data-embedding-provider="huggingface"');
+    expect(WEB_TEXT.en["embedding.model.default.name"]).toContain("Default");
+    expect(WEB_TEXT.en["embedding.model.quality.name"]).toContain("High quality");
+    expect(WEB_TEXT.en["hint.localModelDownload"]).toContain("No Ollama is required");
     expect(WEB_INDEX_HTML).toContain('data-main-view="learning"');
     expect(WEB_INDEX_HTML).not.toContain('data-main-view="insights"');
     expect(WEB_TEXT.zh["nav.learning"]).toBe("学习");

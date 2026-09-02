@@ -58,7 +58,8 @@ ${WEB_ROUTE_CLIENT_SCRIPT}
       learningDraftError: "",
       embeddingStatus: null,
       embeddingSettings: null,
-      embeddingProviderDraft: "ollama",
+      embeddingProviderDraft: "huggingface",
+      embeddingLocalModelDraft: "default",
       embeddingOllama: { ...EMBEDDING_DEFAULTS },
       embeddingReindexing: null,
       observationAvailability: "not_configured",
@@ -2002,8 +2003,21 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
     function syncEmbeddingDraftFromStatus(status) {
       const settings = status?.settings || null;
       const runtime = status?.runtime || null;
-      const provider = settings?.provider || runtime?.provider || "ollama";
-      state.embeddingProviderDraft = provider === "jina" ? "jina" : "ollama";
+      const provider = settings?.provider || runtime?.provider || "huggingface";
+      state.embeddingProviderDraft = ["huggingface", "ollama", "jina"].includes(provider)
+        ? provider
+        : "huggingface";
+      if (state.embeddingProviderDraft === "huggingface") {
+        const selected = status?.local_models?.find((model) => model.selected)?.id;
+        const configured = settings?.model;
+        state.embeddingLocalModelDraft = configured === "quality" || configured === "high-quality"
+          ? "quality"
+          : configured === "default" || configured === "balanced"
+            ? "default"
+            : selected === "quality"
+              ? "quality"
+              : "default";
+      }
       if (state.embeddingProviderDraft === "ollama") {
         state.embeddingOllama = {
           endpoint: settings?.endpoint || EMBEDDING_DEFAULTS.endpoint,
@@ -2019,6 +2033,10 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
       const runtime = status?.runtime || null;
       const project = status?.project || null;
       const global = status?.global || null;
+      const localModels = status?.local_models || [];
+      const selectedLocalModel = localModels.find((model) => model.id === state.embeddingLocalModelDraft);
+      const downloadingLocalModel = state.embeddingProviderDraft === "huggingface" &&
+        Boolean(state.embeddingReindexing) && !selectedLocalModel?.cached;
       const provider = runtime?.provider || state.embeddingProviderDraft || "";
       const providerLabel = provider ? valueLabel(provider) : t("embedding.notConfigured");
       el("queue-title").textContent = t("title.embeddings");
@@ -2052,8 +2070,16 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
             \${runtime?.profile_id ? '<span class="pill scope">' + escapeHtml(t("embedding.activeProfile")) + '</span>' : ''}
           </div>
           <div class="segmented" id="embedding-provider-tabs" aria-label="\${escapeAttr(t("label.provider"))}">
+            <button type="button" data-embedding-provider="huggingface" class="\${state.embeddingProviderDraft === "huggingface" ? "active" : ""}">\${escapeHtml(valueLabel("huggingface"))}</button>
             <button type="button" data-embedding-provider="ollama" class="\${state.embeddingProviderDraft === "ollama" ? "active" : ""}">\${escapeHtml(valueLabel("ollama"))}</button>
             <button type="button" data-embedding-provider="jina" class="\${state.embeddingProviderDraft === "jina" ? "active" : ""}">\${escapeHtml(valueLabel("jina"))}</button>
+          </div>
+          <div class="local-model-panel \${state.embeddingProviderDraft === "huggingface" ? "" : "hidden"}">
+            <div class="local-model-grid" role="group" aria-label="\${escapeAttr(t("label.localModel"))}">
+              \${renderLocalEmbeddingModels(localModels)}
+            </div>
+            <div class="subtle">\${escapeHtml(t("hint.localModelDownload"))}</div>
+            \${downloadingLocalModel ? '<div class="warning">' + escapeHtml(t("hint.localModelDownloading")) + '</div>' : ''}
           </div>
           <div class="provider-fields \${state.embeddingProviderDraft === "ollama" ? "" : "hidden"}">
             <div class="field"><label for="embedding-endpoint">\${escapeHtml(t("label.endpoint"))}</label><input id="embedding-endpoint" value="\${escapeAttr(state.embeddingOllama.endpoint)}" placeholder="\${escapeAttr(t("placeholder.endpoint"))}"></div>
@@ -2067,12 +2093,24 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
           <div class="title">\${escapeHtml(t("title.reindex"))}</div>
           <div class="subtle">\${escapeHtml(t("hint.reindexAfterSwitch"))}</div>
           <div class="actions" style="padding:0;border-top:0;background:transparent">
-            <button type="button" id="embedding-reindex-project" \${state.embeddingReindexing ? "disabled" : ""}>\${escapeHtml(t("action.reindexProject"))}</button>
-            <button type="button" id="embedding-reindex-global" \${state.embeddingReindexing ? "disabled" : ""}>\${escapeHtml(t("action.reindexGlobal"))}</button>
+            <button type="button" id="embedding-reindex-project" \${state.embeddingReindexing ? "disabled" : ""}>\${escapeHtml(state.embeddingReindexing === "project" ? t("action.reindexing") : t("action.reindexProject"))}</button>
+            <button type="button" id="embedding-reindex-global" \${state.embeddingReindexing ? "disabled" : ""}>\${escapeHtml(state.embeddingReindexing === "global" ? t("action.reindexing") : t("action.reindexGlobal"))}</button>
           </div>
         </div>
       \`;
       bindEmbeddingsControls();
+    }
+
+    function renderLocalEmbeddingModels(models) {
+      return models.map((model) => {
+        const selected = state.embeddingLocalModelDraft === model.id;
+        return \`<button type="button" class="local-model-card \${selected ? "active" : ""}" data-local-embedding-model="\${escapeAttr(model.id)}" aria-pressed="\${selected ? "true" : "false"}">
+          <span class="local-model-card-head"><strong>\${escapeHtml(t("embedding.model." + model.id + ".name"))}</strong><span class="pill \${model.cached ? "accepted" : "scope"}">\${escapeHtml(t(model.cached ? "embedding.cached" : "embedding.downloadRequired"))}</span></span>
+          <span class="local-model-description">\${escapeHtml(t("embedding.model." + model.id + ".description"))}</span>
+          <code>\${escapeHtml(model.repository)}</code>
+          <span class="local-model-spec">q8 · \${escapeHtml(model.dimensions)}d · ~\${escapeHtml(model.approximate_download_mb)} MB</span>
+        </button>\`;
+      }).join("");
     }
 
     function renderEmbeddingsDetail() {
@@ -2119,7 +2157,18 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
     function bindEmbeddingsControls() {
       document.querySelectorAll("[data-embedding-provider]").forEach((button) => {
         button.addEventListener("click", () => {
-          state.embeddingProviderDraft = button.dataset.embeddingProvider === "jina" ? "jina" : "ollama";
+          const provider = button.dataset.embeddingProvider;
+          state.embeddingProviderDraft = ["huggingface", "ollama", "jina"].includes(provider)
+            ? provider
+            : "huggingface";
+          renderEmbeddingsView();
+        });
+      });
+      document.querySelectorAll("[data-local-embedding-model]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.embeddingLocalModelDraft = button.dataset.localEmbeddingModel === "quality"
+            ? "quality"
+            : "default";
           renderEmbeddingsView();
         });
       });
@@ -2157,6 +2206,8 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
         body.endpoint = state.embeddingOllama.endpoint || EMBEDDING_DEFAULTS.endpoint;
         body.model = state.embeddingOllama.model || EMBEDDING_DEFAULTS.model;
         body.dimensions = dimensions;
+      } else if (state.embeddingProviderDraft === "huggingface") {
+        body.model = state.embeddingLocalModelDraft;
       }
       try {
         const data = await api("/api/embeddings/use", {

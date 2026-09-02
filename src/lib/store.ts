@@ -27,6 +27,7 @@ import {
   setCodetrapEmbeddingSettings,
 } from "./config";
 import { summarizeEmbeddingState, type EmbeddingStateSummary, type EmbeddingStatsResult } from "./embedding-health";
+import { localEmbeddingModelChoices, type LocalEmbeddingModelChoice } from "./local-embedding-models";
 import { ensureProjectIdentity, type ProjectIdentity } from "./project-identity";
 import { normalizeScope, ScopedRepositoryContext, type ScopedRepository } from "./scope-context";
 import { importTrapArchive, type TrapArchiveImportResult } from "./trap-archive";
@@ -60,6 +61,7 @@ export type EmbeddingScopeStatus = EmbeddingStateSummary & {
 };
 export type TrapEmbeddingStatus = {
   runtime: EmbeddingRuntimeStatus;
+  local_models: LocalEmbeddingModelChoice[];
   project: EmbeddingScopeStatus | null;
   global: EmbeddingScopeStatus | null;
 };
@@ -75,7 +77,7 @@ export class TrapStore {
     private readonly home?: string
   ) {
     this.embeddings = embeddings === undefined
-      ? defaultEmbeddingRuntime(process.env, loadCodetrapConfig(home))
+      ? defaultEmbeddingRuntime(process.env, loadCodetrapConfig(home), home)
       : embeddingRuntimeFrom(embeddings);
     this.scopes = new ScopedRepositoryContext(cwd, this.embeddings, home);
   }
@@ -317,6 +319,7 @@ export class TrapStore {
     const profiles = this.embeddingProfiles(opts);
     return {
       runtime,
+      local_models: this.embeddingModelChoices(),
       project: stats.project
         ? { ...stats.project, profiles: profiles.project ?? [] }
         : null,
@@ -397,6 +400,14 @@ export class TrapStore {
 
   embeddingRuntimeHealth(): Promise<EmbeddingRuntimeStatus> {
     return this.embeddings.health();
+  }
+
+  embeddingModelChoices(): LocalEmbeddingModelChoice[] {
+    const config = this.embeddings.config();
+    return localEmbeddingModelChoices(
+      this.home,
+      config?.provider === "huggingface" ? config.model : undefined
+    );
   }
 
   configureEmbeddings(settings: EmbeddingSettings): ConfigWriteResult {
