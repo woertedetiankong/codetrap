@@ -71,11 +71,13 @@ describe("web browser smoke", () => {
         waitUntil: "domcontentloaded",
       });
       await page.waitForSelector("text=Browser smoke candidate");
-      await expectWorkspaceHeaderLayout(page, 2);
-
+      // Navigation lives in the topbar now, so it stays on one row at every
+      // desktop width instead of wrapping once the rail gets narrow.
+      await expectTopbarNavigationLayout(page);
       await page.setViewportSize({ width: 1920, height: 800 });
-      await page.waitForFunction(() => document.querySelector(".rail")!.classList.contains("wide-header"));
-      await expectWorkspaceHeaderLayout(page, 1);
+      await expectTopbarNavigationLayout(page);
+      await page.setViewportSize({ width: 1440, height: 800 });
+      await expectTopbarNavigationLayout(page);
       await expectText(page.locator("#review-summary"), "1 pending");
 
       await page.getByRole("button", { name: "Library" }).click();
@@ -87,30 +89,34 @@ describe("web browser smoke", () => {
       await expectText(page.locator(".collection-title-line"), "Browser smoke study set");
       await expectText(page.locator(".collection-header"), "0 of 2 learned");
       await expectText(page.locator(".collection-audit-status"), "source not audited");
-      await expectText(page.locator("#candidates"), "not learned");
       await page.getByRole("button", { name: "Collapse Browser smoke study set" }).click();
       expect(await page.locator(".collection-chapters").isHidden()).toBe(true);
       await page.getByRole("button", { name: "Expand Browser smoke study set" }).click();
       expect(await page.locator(".collection-chapters").isVisible()).toBe(true);
       await page.getByRole("button", { name: /Browser smoke learning insight/ }).click();
       await expectTextContent(page.locator("#detail"), "Learning status");
+      // The learning state lives on the detail status control, not the queue.
+      // A freshly shelved insight may carry no progress row at all, so assert the
+      // transition rather than a default selection.
+      expect(await page.locator('.learning-status-control button[data-learning-status="learned"].active').count()).toBe(0);
       await expectText(page.locator(".source-coverage-panel"), "legacy collection");
       await expectText(page.locator(".source-coverage-panel"), "cannot verify whether anything was omitted");
       await expectText(page.locator(".learning-breadcrumb"), "1 / 2");
       await expectText(page.locator("pre.learning-code"), "[source] -> [agent] -> [insight]");
       expect(await page.locator("a.source-link").getAttribute("href")).toBe("https://example.com/learning-source");
-      await page.getByRole("button", { name: "Mark learned" }).click();
-      await expectText(page.locator("#candidates"), "learned");
-      const learnedButton = page.getByRole("button", { name: "Learned", exact: true });
-      await learnedButton.waitFor({ state: "visible" });
-      expect(await learnedButton.isDisabled()).toBe(true);
+      // Recording "learned" is the status control itself; there is no separate
+      // confirm button, so the click and its effect are asserted on that control.
+      const learnedButton = page.locator('.learning-status-control button[data-learning-status="learned"]');
+      await learnedButton.click();
+      await expectText(page.locator(".learning-status-control button.active"), "Learned");
+      expect(await learnedButton.getAttribute("class")).toContain("active");
       await expectText(page.locator(".collection-header"), "1 of 2 learned");
 
       await page.getByRole("button", { name: "Impact" }).click();
       await page.waitForSelector(".impact-hero");
       await expectText(page.locator(".impact-hero"), "What changed while Codetrap was present?");
       await expectText(page.locator(".impact-metrics"), "1");
-      await page.getByRole("button", { name: "Evals" }).click();
+      await page.getByRole("tab", { name: "Evals" }).click();
       await page.waitForSelector(".evals-hero");
       await expectText(page.locator(".evals-hero"), "Measure the signal. Inspect the evidence.");
       await expectText(page.locator(".eval-rate-grid"), "100%");
@@ -119,7 +125,7 @@ describe("web browser smoke", () => {
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.waitForSelector(".evals-hero");
       await expectText(page.locator(".evals-hero"), "Measure the signal. Inspect the evidence.");
-      await page.getByRole("button", { name: "Runs" }).click();
+      await page.getByRole("tab", { name: "Runs" }).click();
       await page.locator("[data-observation-run='run-browser-smoke']").click();
       await page.waitForSelector(".impact-timeline");
       expect(new URL(page.url()).hash).toBe("#/impact/runs/run-browser-smoke");
@@ -141,40 +147,44 @@ describe("web browser smoke", () => {
   }, 20_000);
 });
 
-async function expectWorkspaceHeaderLayout(
-  page: { evaluate: <T>(fn: () => T) => Promise<T> },
-  expectedNavigationRows: number
+/**
+ * The topbar must present every view on one row with its label intact. The
+ * previous rail-hosted header wrapped to a second row and hard-clipped the
+ * longest label, so assert against both failure modes directly.
+ */
+async function expectTopbarNavigationLayout(
+  page: { evaluate: <T>(fn: () => T) => Promise<T> }
 ): Promise<void> {
   const layout = await page.evaluate(() => {
-    const rect = (selector: string) => {
-      const box = document.querySelector(selector)!.getBoundingClientRect();
-      return { x: box.x, y: box.y, width: box.width, bottom: box.bottom };
-    };
-    const navigationRows = new Set(
-      [...document.querySelectorAll(".main-nav button")]
-        .map((button) => Math.round(button.getBoundingClientRect().y))
-    ).size;
-
+    const buttons = [...document.querySelectorAll(".app-topbar .main-nav button")] as HTMLElement[];
+    const topbar = document.querySelector(".app-topbar")!.getBoundingClientRect();
+    const panes = document.querySelector(".rail")!.getBoundingClientRect();
     return {
-      navigationRows,
-      actions: rect(".rail-actions"),
-      navigation: rect(".main-nav"),
-      locale: rect(".locale-switcher"),
-      refresh: rect("#refresh"),
-      projectForm: rect(".project-form"),
+      count: buttons.length,
+      rows: new Set(buttons.map((button) => Math.round(button.getBoundingClientRect().y))).size,
+      clipped: buttons
+        .filter((button) => button.scrollWidth > button.clientWidth + 1)
+        .map((button) => button.textContent),
+      documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      topbarBottom: topbar.bottom,
+      railTop: panes.top,
     };
   });
 
-  expect(layout.navigationRows).toBe(expectedNavigationRows);
-  expect(Math.abs(layout.navigation.x - layout.actions.x)).toBeLessThanOrEqual(2);
-  expect(Math.abs(layout.navigation.width - layout.actions.width)).toBeLessThanOrEqual(2);
-  expect(layout.navigation.bottom).toBeLessThanOrEqual(layout.locale.y);
-  expect(layout.navigation.bottom).toBeLessThanOrEqual(layout.refresh.y);
-  expect(Math.max(layout.locale.bottom, layout.refresh.bottom)).toBeLessThanOrEqual(layout.projectForm.y);
+  expect(layout.count).toBe(5);
+  expect(layout.rows).toBe(1);
+  expect(layout.clipped).toEqual([]);
+  expect(layout.documentOverflow).toBeLessThanOrEqual(0);
+  expect(layout.topbarBottom).toBeLessThanOrEqual(layout.railTop + 1);
 }
 
+/**
+ * Compare rendered text case-insensitively: innerText reflects CSS
+ * text-transform, so an uppercased label would otherwise fail against the
+ * source string it is rendered from.
+ */
 async function expectText(locator: { innerText: () => Promise<string> }, expected: string): Promise<void> {
-  expect(await locator.innerText()).toContain(expected);
+  expect((await locator.innerText()).toLowerCase()).toContain(expected.toLowerCase());
 }
 
 async function expectTextContent(locator: { textContent: () => Promise<string | null> }, expected: string): Promise<void> {
@@ -314,6 +324,9 @@ function seedBrowserSmokeData(project: string, home: string): void {
 }
 
 function chromeExecutablePath(): string | null {
+  const programFiles = process.env["ProgramFiles"] ?? "C:\\Program Files";
+  const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+  const localAppData = process.env["LOCALAPPDATA"];
   const candidates = [
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -321,6 +334,12 @@ function chromeExecutablePath(): string | null {
     "/usr/bin/google-chrome-stable",
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",
+    // Without these the smoke test silently skips on Windows, so browser-visible
+    // regressions stay invisible on the platform this project is developed on.
+    join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
+    join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
+    join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
+    ...(localAppData ? [join(localAppData, "Google", "Chrome", "Application", "chrome.exe")] : []),
   ];
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
