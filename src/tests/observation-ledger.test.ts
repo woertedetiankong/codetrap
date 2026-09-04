@@ -296,6 +296,208 @@ describe("Observation Ledger v1", () => {
     ledger.close();
   });
 
+  test("folds repeated exposure ratings to one current judgment per Run and trap", () => {
+    const ledger = openObservationLedger(tempProject());
+    const projectId = ledger.projectId;
+    const events = [
+      event(projectId, "start", "run-1", 0, "run/started", {
+        source_client: "codex",
+        source_session_ref: null,
+        repository_revision: null,
+        branch: null,
+        model_provider: null,
+        model_name: null,
+        completeness: "complete",
+      }),
+      event(projectId, "exposure", "run-1", 1, "trap/exposed", {
+        trap_id: 42,
+        revision: "rev.1",
+        rank: 1,
+        query_fingerprint: null,
+      }),
+      // The same exposure rated harmful, then corrected to helpful.
+      event(projectId, "rating-1", "run-1", 2, "trap/feedback-recorded", {
+        trap_id: 42,
+        revision: "rev.1",
+        feedback: "harmful",
+        note_fingerprint: null,
+      }, { evidence_class: "human_label" }),
+      event(projectId, "rating-2", "run-1", 3, "trap/feedback-recorded", {
+        trap_id: 42,
+        revision: "rev.1",
+        feedback: "helpful",
+        note_fingerprint: null,
+      }, { evidence_class: "human_label" }),
+      event(projectId, "complete", "run-1", 4, "run/completed", {
+        status: "completed",
+        completeness: "complete",
+        duration_ms: 100,
+        input_tokens: null,
+        output_tokens: null,
+      }),
+    ];
+
+    expect(ledger.appendMany(events)).toEqual({ inserted: 5, duplicates: 0 });
+    const evals = ledger.evals();
+
+    // Two rating events, one current judgment: the correction replaces the
+    // earlier rating instead of inflating both sides of the ratio.
+    expect(evals).toMatchObject({
+      rated_exposures: 1,
+      helpful_feedback: 1,
+      harmful_feedback: 0,
+      superseded_feedback: 1,
+      rates: {
+        helpful: { numerator: 1, denominator: 1, value: 1 },
+        noise: { numerator: 0, denominator: 1, value: 0 },
+      },
+    });
+    // The retracted harmful rating leaves the review queue with it.
+    expect(evals.candidates).toEqual([]);
+    expect(evals.candidate_groups).toEqual([]);
+    ledger.close();
+  });
+
+  test("rates distinct exposures separately and keeps the latest judgment per exposure", () => {
+    const ledger = openObservationLedger(tempProject());
+    const projectId = ledger.projectId;
+    const events = [
+      event(projectId, "start", "run-1", 0, "run/started", {
+        source_client: "codex",
+        source_session_ref: null,
+        repository_revision: null,
+        branch: null,
+        model_provider: null,
+        model_name: null,
+        completeness: "complete",
+      }),
+      event(projectId, "rate-42", "run-1", 1, "trap/feedback-recorded", {
+        trap_id: 42,
+        revision: "rev.1",
+        feedback: "helpful",
+        note_fingerprint: null,
+      }, { evidence_class: "human_label" }),
+      event(projectId, "rate-7-a", "run-1", 2, "trap/feedback-recorded", {
+        trap_id: 7,
+        revision: "rev.1",
+        feedback: "helpful",
+        note_fingerprint: null,
+      }, { evidence_class: "human_label" }),
+      event(projectId, "rate-7-b", "run-1", 3, "trap/feedback-recorded", {
+        trap_id: 7,
+        revision: "rev.1",
+        feedback: "irrelevant",
+        note_fingerprint: null,
+      }, { evidence_class: "human_label" }),
+    ];
+
+    expect(ledger.appendMany(events)).toEqual({ inserted: 4, duplicates: 0 });
+    const evals = ledger.evals();
+
+    expect(evals).toMatchObject({
+      rated_exposures: 2,
+      helpful_feedback: 1,
+      irrelevant_feedback: 1,
+      superseded_feedback: 1,
+      rates: {
+        helpful: { numerator: 1, denominator: 2, value: 0.5 },
+        noise: { numerator: 1, denominator: 2, value: 0.5 },
+      },
+    });
+    expect(evals.candidates.map((candidate) => candidate.reason)).toEqual(["irrelevant_guidance"]);
+    expect(evals.candidates[0]).toMatchObject({ trap_id: 7 });
+    ledger.close();
+  });
+
+  test("collapses a finding recurring across Runs into one group keyed on its signature", () => {
+    const ledger = openObservationLedger(tempProject());
+    const projectId = ledger.projectId;
+    const events = ["run-a", "run-b", "run-c"].flatMap((runId, index) => [
+      event(projectId, `start-${runId}`, runId, 0, "run/started", {
+        source_client: "codex",
+        source_session_ref: null,
+        repository_revision: null,
+        branch: null,
+        model_provider: null,
+        model_name: null,
+        completeness: "complete",
+      }, { occurred_at: `2026-08-2${index}T10:00:00.000Z` }),
+      // The same trap gives harmful guidance in every Run.
+      event(projectId, `harm-${runId}`, runId, 1, "trap/feedback-recorded", {
+        trap_id: 42,
+        revision: "rev.1",
+        feedback: "harmful",
+        note_fingerprint: null,
+      }, { occurred_at: `2026-08-2${index}T10:00:01.000Z`, evidence_class: "human_label" }),
+    ]);
+
+    expect(ledger.appendMany(events)).toEqual({ inserted: 6, duplicates: 0 });
+    const evals = ledger.evals();
+
+    // Three occurrences, one thing for a human to decide about.
+    expect(evals.candidates).toHaveLength(3);
+    expect(evals.candidate_groups).toHaveLength(1);
+    expect(evals.candidate_groups[0]).toMatchObject({
+      group_key: "harmful_guidance|42|-",
+      reason: "harmful_guidance",
+      trap_id: 42,
+      occurrence_count: 3,
+      run_ids: ["run-a", "run-b", "run-c"],
+      first_occurred_at: "2026-08-20T10:00:01.000Z",
+      last_occurred_at: "2026-08-22T10:00:01.000Z",
+      representative_id: "run-a:1:harmful_guidance",
+    });
+    // The representative is the oldest occurrence, so a review linked to it
+    // survives later occurrences of the same finding.
+    expect(evals.candidate_groups[0]!.member_ids[0]).toBe("run-a:1:harmful_guidance");
+    expect(evals.candidate_groups[0]!.member_ids).toHaveLength(3);
+    ledger.close();
+  });
+
+  test("keeps findings with different signatures in separate groups", () => {
+    const ledger = openObservationLedger(tempProject());
+    const projectId = ledger.projectId;
+    const events = [
+      event(projectId, "start", "run-1", 0, "run/started", {
+        source_client: "codex",
+        source_session_ref: null,
+        repository_revision: null,
+        branch: null,
+        model_provider: null,
+        model_name: null,
+        completeness: "complete",
+      }),
+      event(projectId, "harm-42", "run-1", 1, "trap/feedback-recorded", {
+        trap_id: 42,
+        revision: "rev.1",
+        feedback: "harmful",
+        note_fingerprint: null,
+      }, { evidence_class: "human_label" }),
+      event(projectId, "harm-7", "run-1", 2, "trap/feedback-recorded", {
+        trap_id: 7,
+        revision: "rev.1",
+        feedback: "harmful",
+        note_fingerprint: null,
+      }, { evidence_class: "human_label" }),
+      event(projectId, "miss", "run-1", 3, "trap/missed-reported", {
+        query_fingerprint: null,
+        expected_trap_id: 42,
+      }, { evidence_class: "human_label" }),
+    ];
+
+    expect(ledger.appendMany(events)).toEqual({ inserted: 4, duplicates: 0 });
+    const groups = ledger.evals().candidate_groups;
+
+    // A different trap is a different finding; so is a different reason.
+    expect(groups.map((group) => group.group_key).sort()).toEqual([
+      "harmful_guidance|42|-",
+      "harmful_guidance|7|-",
+      "reported_miss|42|-",
+    ]);
+    expect(groups.every((group) => group.occurrence_count === 1)).toBe(true);
+    ledger.close();
+  });
+
   test("does not label a failed validation as post-exposure when exposure happened later", () => {
     const ledger = openObservationLedger(tempProject());
     expect(ledger.appendMany([

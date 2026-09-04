@@ -273,6 +273,33 @@ export interface ObservationEvalCandidateProjection {
   ground_truth: "unconfirmed";
 }
 
+/**
+ * One reviewable finding, collapsed across every occurrence that shares its
+ * structural signature. Occurrences differ only in instance-specific values
+ * (which Run, which event, when), so a recurring failure is one queue row with
+ * a count instead of one row per event.
+ */
+export interface ObservationEvalCandidateGroupProjection {
+  /** Normalized signature: reason, trap, and validation kind only. */
+  group_key: string;
+  reason: ObservationEvalCandidateReason;
+  trap_id: number | null;
+  validation_kind: ValidationKind | null;
+  /** How many candidate events collapsed into this finding. */
+  occurrence_count: number;
+  /** Distinct Runs the finding was observed in, oldest first. */
+  run_ids: string[];
+  first_occurred_at: string;
+  last_occurred_at: string;
+  /**
+   * The earliest occurrence's candidate id. Stable as later occurrences
+   * accrue, so a review linked to this id survives new observations.
+   */
+  representative_id: string;
+  /** Every candidate id in the group, oldest first, including the representative. */
+  member_ids: string[];
+}
+
 export interface ObservationEvalsProjection {
   project_id: string;
   total_runs: number;
@@ -283,6 +310,12 @@ export interface ObservationEvalsProjection {
   helpful_feedback: number;
   irrelevant_feedback: number;
   harmful_feedback: number;
+  /**
+   * Exposure ratings replaced by a later rating of the same (Run, trap).
+   * The feedback counts above are current judgments, not event totals; this
+   * is the difference between the two.
+   */
+  superseded_feedback: number;
   miss_reports: number;
   runs_with_explicit_feedback: number;
   runs_with_miss_report: number;
@@ -296,4 +329,5 @@ export interface ObservationEvalsProjection {
     validation_pass: ObservationRateProjection;
   };
   candidates: ObservationEvalCandidateProjection[];
+  candidate_groups: ObservationEvalCandidateGroupProjection[];
 }

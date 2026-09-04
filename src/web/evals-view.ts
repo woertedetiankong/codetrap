@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type {
+  ObservationEvalCandidateGroupProjection,
   ObservationEvalCandidateProjection,
   ObservationEvalsProjection,
 } from "../domain/observation";
@@ -52,12 +53,28 @@ export type ObservationEvalWebCandidate = Omit<Pick<ObservationEvalCandidateProj
   | "ground_truth"
 >, "review_status" | "ground_truth"> & GovernedEvalReviewState;
 
+/**
+ * One review row: a finding collapsed across its occurrences, carrying the
+ * review state of whichever occurrence a human actually reviewed.
+ */
+export type ObservationEvalWebCandidateGroup = ObservationEvalCandidateGroupProjection & GovernedEvalReviewState & {
+  /**
+   * The candidate id review actions target. The representative unless an
+   * occurrence was already reviewed, so reviews recorded before grouping stay
+   * reachable.
+   */
+  review_target_id: string;
+  /** Alias of {@link review_target_id} so review surfaces address a group exactly like a single candidate. */
+  id: string;
+};
+
 export interface ObservationEvalsWebPayload {
   project_root: string;
   observation_availability: ObservationWebAvailability;
   retrieval: RetrievalEvalWebSummary;
-  observed: Omit<ObservationEvalsProjection, "project_id" | "candidates"> | null;
+  observed: Omit<ObservationEvalsProjection, "project_id" | "candidates" | "candidate_groups"> | null;
   candidates: ObservationEvalWebCandidate[];
+  candidate_groups: ObservationEvalWebCandidateGroup[];
   fixture_traps: GovernedEvalFixtureTrap[];
   controlled: {
     availability: ControlledEvalAvailability;
@@ -83,18 +100,21 @@ export async function observationEvalsWebPayload(
       retrieval,
       observed: null,
       candidates: [],
+      candidate_groups: [],
       fixture_traps: fixtureTraps,
       controlled,
     };
   }
   try {
-    const { project_id: _projectId, candidates, ...observed } = ledger.evals();
+    const { project_id: _projectId, candidates, candidate_groups: groups, ...observed } = ledger.evals();
+    const webCandidates = candidates.map((candidate) => observationEvalWebCandidate(candidate, governed));
     return {
       project_root: projectRoot,
       observation_availability: "ready",
       retrieval,
       observed,
-      candidates: candidates.map((candidate) => observationEvalWebCandidate(candidate, governed)),
+      candidates: webCandidates,
+      candidate_groups: groups.map((group) => observationEvalWebCandidateGroup(group, webCandidates)),
       fixture_traps: fixtureTraps,
       controlled,
     };
@@ -176,6 +196,33 @@ function emptyRetrievalSummary(
     miss_cases: 0,
     noisy_hit_cases: 0,
     issue,
+  };
+}
+
+/**
+ * Resolve one group's review state. A review recorded against any occurrence
+ * counts as a review of the finding, so grouping never orphans a decision a
+ * human already made against a non-representative occurrence.
+ */
+function observationEvalWebCandidateGroup(
+  group: ObservationEvalCandidateGroupProjection,
+  candidates: ObservationEvalWebCandidate[]
+): ObservationEvalWebCandidateGroup {
+  const members = group.member_ids
+    .map((id) => candidates.find((candidate) => candidate.id === id))
+    .filter((candidate): candidate is ObservationEvalWebCandidate => candidate !== undefined);
+  const reviewed = members.find((candidate) => candidate.review_status !== "review_required");
+  const source = reviewed ?? members.find((candidate) => candidate.id === group.representative_id) ?? members[0];
+  const targetId = source?.id ?? group.representative_id;
+  return {
+    ...group,
+    review_target_id: targetId,
+    id: targetId,
+    review_status: source?.review_status ?? "review_required",
+    ground_truth: source?.ground_truth ?? "unconfirmed",
+    review_ref: source?.review_ref ?? null,
+    review_issue: source?.review_issue ?? null,
+    draft_case: source?.draft_case ?? null,
   };
 }
 

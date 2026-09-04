@@ -19,6 +19,7 @@ import {
   type JsonValue,
   type ObservationEvent,
   type ObservationEventType,
+  type ObservationEvalCandidateGroupProjection,
   type ObservationEvalCandidateProjection,
   type ObservationEvalsProjection,
   type ObservationEvidenceCounts,
@@ -28,6 +29,7 @@ import {
   type RunStartedPayload,
   type SearchReceipt,
   type SourceClient,
+  type TrapFeedback,
   type TrapFeedbackPayload,
   type TrapMissedPayload,
   type ValidationReceipt,
@@ -300,13 +302,22 @@ export class ObservationLedger {
       eventsByRun.set(event.run_id, grouped);
     }
 
-    let ratedExposures = 0;
-    let ratedHelpfulFeedback = 0;
-    let ratedIrrelevantFeedback = 0;
-    let ratedHarmfulFeedback = 0;
-    let helpfulFeedback = 0;
-    let irrelevantFeedback = 0;
-    let harmfulFeedback = 0;
+    // Exposure ratings fold to one current judgment per (Run, trap): a later
+    // rating of the same exposure replaces the earlier one instead of being
+    // counted beside it, so correcting a rating cannot inflate both the
+    // numerator and the denominator of the observed rates.
+    const currentExposureRating = new Map<string, {
+      feedback: TrapFeedback;
+      trapId: number;
+      event: ObservationEvent;
+      run: RunObservationProjection;
+    }>();
+    let supersededFeedback = 0;
+    // Feedback with no trap_id cannot be folded (there is no exposure identity
+    // to replace), so each one stands as its own judgment.
+    let unattributedHelpfulFeedback = 0;
+    let unattributedIrrelevantFeedback = 0;
+    let unattributedHarmfulFeedback = 0;
     let missReports = 0;
     let validationPassed = 0;
     let validationFailed = 0;
@@ -332,31 +343,34 @@ export class ObservationLedger {
           const value = event.attributes as TrapFeedbackPayload;
           evaluableRuns.add(runId);
           explicitFeedbackRuns.add(runId);
-          if (value.feedback === "helpful") {
-            helpfulFeedback += 1;
-            if (value.trap_id !== null) {
-              ratedExposures += 1;
-              ratedHelpfulFeedback += 1;
-            }
-          } else if (value.feedback === "irrelevant") {
-            irrelevantFeedback += 1;
-            if (value.trap_id !== null) {
-              ratedExposures += 1;
-              ratedIrrelevantFeedback += 1;
-            }
-            candidates.push(observationEvalCandidate(event, run, "irrelevant_guidance", value.trap_id, null));
-          } else if (value.feedback === "harmful") {
-            harmfulFeedback += 1;
-            if (value.trap_id !== null) {
-              ratedExposures += 1;
-              ratedHarmfulFeedback += 1;
-            }
-            candidates.push(observationEvalCandidate(event, run, "harmful_guidance", value.trap_id, null));
-          } else {
+          if (value.feedback === "should_have_matched") {
+            // A miss report names a trap that should have matched; it is not a
+            // rating of an exposure, so it never joins the exposure fold.
             missReports += 1;
             missReportRuns.add(runId);
             candidates.push(observationEvalCandidate(event, run, "reported_miss", value.trap_id, null));
+            continue;
           }
+          if (value.trap_id === null) {
+            // No exposure identity to fold on, so this judgment stands alone
+            // and its finding, if any, is queued immediately.
+            if (value.feedback === "helpful") {
+              unattributedHelpfulFeedback += 1;
+            } else if (value.feedback === "irrelevant") {
+              unattributedIrrelevantFeedback += 1;
+              candidates.push(observationEvalCandidate(event, run, "irrelevant_guidance", null, null));
+            } else {
+              unattributedHarmfulFeedback += 1;
+              candidates.push(observationEvalCandidate(event, run, "harmful_guidance", null, null));
+            }
+            continue;
+          }
+          const key = exposureRatingKey(runId, value.trap_id);
+          if (currentExposureRating.has(key)) supersededFeedback += 1;
+          // Candidates for rated exposures are emitted from the folded value
+          // after every event is seen, so a rating corrected to helpful leaves
+          // the review queue instead of lingering as a stale finding.
+          currentExposureRating.set(key, { feedback: value.feedback, trapId: value.trap_id, event, run });
           continue;
         }
         if (event.type === "trap/missed-reported") {
@@ -389,11 +403,31 @@ export class ObservationLedger {
       }
     }
 
+    let ratedHelpfulFeedback = 0;
+    let ratedIrrelevantFeedback = 0;
+    let ratedHarmfulFeedback = 0;
+    for (const current of currentExposureRating.values()) {
+      if (current.feedback === "helpful") {
+        ratedHelpfulFeedback += 1;
+      } else if (current.feedback === "irrelevant") {
+        ratedIrrelevantFeedback += 1;
+        candidates.push(observationEvalCandidate(current.event, current.run, "irrelevant_guidance", current.trapId, null));
+      } else if (current.feedback === "harmful") {
+        ratedHarmfulFeedback += 1;
+        candidates.push(observationEvalCandidate(current.event, current.run, "harmful_guidance", current.trapId, null));
+      }
+    }
+    const ratedExposures = currentExposureRating.size;
+    const helpfulFeedback = ratedHelpfulFeedback + unattributedHelpfulFeedback;
+    const irrelevantFeedback = ratedIrrelevantFeedback + unattributedIrrelevantFeedback;
+    const harmfulFeedback = ratedHarmfulFeedback + unattributedHarmfulFeedback;
+
     candidates.sort((left, right) =>
       right.occurred_at.localeCompare(left.occurred_at) ||
       right.event_seq - left.event_seq ||
       left.id.localeCompare(right.id)
     );
+    const candidateGroups = groupObservationEvalCandidates(candidates);
     const decidedValidations = validationPassed + validationFailed;
     return {
       project_id: this.projectId,
@@ -405,6 +439,7 @@ export class ObservationLedger {
       helpful_feedback: helpfulFeedback,
       irrelevant_feedback: irrelevantFeedback,
       harmful_feedback: harmfulFeedback,
+      superseded_feedback: supersededFeedback,
       miss_reports: missReports,
       runs_with_explicit_feedback: explicitFeedbackRuns.size,
       runs_with_miss_report: missReportRuns.size,
@@ -418,6 +453,7 @@ export class ObservationLedger {
         validation_pass: observationRate(validationPassed, decidedValidations),
       },
       candidates,
+      candidate_groups: candidateGroups,
     };
   }
 
@@ -516,6 +552,61 @@ function observationEvalCandidate(
     review_status: "review_required",
     ground_truth: "unconfirmed",
   };
+}
+
+function exposureRatingKey(runId: string, trapId: number): string {
+  return `${runId}\u0000${trapId}`;
+}
+
+/**
+ * Collapse candidates onto their normalized signature. Only the structural
+ * identity of a finding takes part — the reason, the trap it concerns, and the
+ * validation kind. Instance-specific values (Run, event seq, timestamp) are
+ * deliberately excluded so the same failure recurring across many Runs is one
+ * review row rather than one row per occurrence.
+ */
+function groupObservationEvalCandidates(
+  candidates: ObservationEvalCandidateProjection[]
+): ObservationEvalCandidateGroupProjection[] {
+  const groups = new Map<string, ObservationEvalCandidateGroupProjection>();
+  // Candidates arrive newest-first; walk oldest-first so the representative and
+  // the member/run orders are stable as later occurrences accrue.
+  for (let index = candidates.length - 1; index >= 0; index -= 1) {
+    const candidate = candidates[index]!;
+    const groupKey = observationEvalGroupKey(candidate);
+    const existing = groups.get(groupKey);
+    if (!existing) {
+      groups.set(groupKey, {
+        group_key: groupKey,
+        reason: candidate.reason,
+        trap_id: candidate.trap_id,
+        validation_kind: candidate.validation_kind,
+        occurrence_count: 1,
+        run_ids: [candidate.run_id],
+        first_occurred_at: candidate.occurred_at,
+        last_occurred_at: candidate.occurred_at,
+        representative_id: candidate.id,
+        member_ids: [candidate.id],
+      });
+      continue;
+    }
+    existing.occurrence_count += 1;
+    existing.member_ids.push(candidate.id);
+    existing.last_occurred_at = candidate.occurred_at;
+    if (!existing.run_ids.includes(candidate.run_id)) existing.run_ids.push(candidate.run_id);
+  }
+  return [...groups.values()].sort((left, right) =>
+    right.last_occurred_at.localeCompare(left.last_occurred_at) ||
+    left.group_key.localeCompare(right.group_key)
+  );
+}
+
+function observationEvalGroupKey(candidate: ObservationEvalCandidateProjection): string {
+  return [
+    candidate.reason,
+    candidate.trap_id === null ? "-" : String(candidate.trap_id),
+    candidate.validation_kind ?? "-",
+  ].join("|");
 }
 
 function observationRate(numerator: number, denominator: number) {
