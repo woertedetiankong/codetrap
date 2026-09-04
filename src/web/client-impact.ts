@@ -13,6 +13,8 @@ declare function formatDisplayDate(value: unknown): string;
 declare function api(path: string, options?: Record<string, unknown>): Promise<any>;
 declare function syncWorkspaceRoute(replace?: boolean): void;
 declare function showStatus(message: string, isError?: boolean): void;
+declare function captureImpactScrollPosition(): { detail: number; queue: number };
+declare function restoreImpactScrollPosition(position: { detail: number; queue: number }): void;
 
 export function renderImpactQueue() {
   if (state.impactView === "evals") {
@@ -66,6 +68,20 @@ export function renderImpactQueue() {
   });
 }
 
+/**
+ * Name a Run by what a person can act on — when it ran, which client, how long
+ * it took. The opaque id stays on the page, but as identity rather than as the
+ * largest text on it.
+ */
+export function impactRunHeadline(run: any) {
+  const when = run.started_at ? impactRelativeTime(run.started_at) : t("impact.noStart");
+  return t("impact.runHeadline", {
+    client: run.source_client || "other",
+    when,
+    duration: impactDuration(run.duration_ms),
+  });
+}
+
 export function impactStateDot(status: unknown) {
   const value = String(status || "unknown");
   const dotState = value === "completed" ? "done" : value === "failed" ? "error" : value === "unknown" ? "idle" : "ongoing";
@@ -103,6 +119,18 @@ export function renderImpactDetail() {
   else renderImpactOverview();
 }
 
+/**
+ * Re-render the detail pane in place. Filtering or selecting inside a view
+ * rebuilds `#detail` wholesale, which would otherwise drop the scroll
+ * container back to the top and carry the control the user just clicked off
+ * screen.
+ */
+export function renderImpactDetailKeepingScroll() {
+  const position = captureImpactScrollPosition();
+  renderImpactDetail();
+  restoreImpactScrollPosition(position);
+}
+
 export function renderImpactOverview() {
   const tabs = impactTabs("overview");
   el("detail-meta").textContent = state.observationOverview?.last_event_at
@@ -121,13 +149,16 @@ export function renderImpactOverview() {
   const overview = state.observationOverview;
   const evidence = overview.evidence || {};
   const strip = impactStatsStrip(overview);
+  // Every tile is always rendered. A zero is the answer to "did anything come
+  // back from those exposures", so hiding it makes "none" indistinguishable
+  // from "not measured"; it is de-emphasised instead.
   const metricTiles: [unknown, string][] = [
     [overview.total_runs, t("impact.metric.runs")],
     [overview.completed_runs, t("impact.metric.completed")],
     [overview.exposure_count, t("impact.metric.exposures")],
     [overview.validation_passed, t("impact.metric.validation")],
     [overview.helpful_feedback, t("impact.metric.helpful")],
-  ].filter(([value]) => Number(value || 0) > 0) as [unknown, string][];
+  ];
   el("detail").innerHTML = `<div class="impact-shell">
     ${tabs}
     ${renderAgentObservationHealthNotice()}
@@ -175,7 +206,7 @@ export function renderAgentObservationHealthNotice() {
   const blocked = health.status === "blocked";
   const pending = Number(health.pending_start_count || 0);
   return `<section class="impact-notice warn impact-hook-health ${blocked ? "blocked" : ""}" role="status">
-    <div class="impact-hook-health-mark">${blocked ? "64" : "!"}</div>
+    <div class="impact-hook-health-mark">${blocked ? "\u00d7" : "!"}</div>
     <div><h3>${escapeHtml(t(blocked ? "impact.hookHealthBlockedTitle" : "impact.hookHealthAttentionTitle"))}</h3>
     <p>${escapeHtml(t("impact.hookHealthCopy", { active: health.active_count, capacity: health.capacity, stale: health.stale_count, days: health.stale_after_days }))}</p>
     ${pending ? `<p>${escapeHtml(t("impact.hookHealthPending", { count: pending }))}</p>` : ""}
@@ -187,9 +218,9 @@ export function renderAgentObservationHealthNotice() {
 export function impactStatsStrip(overview: any) {
   const groups: string[] = [];
   groups.push(t("impact.strip.runs", { runs: Number(overview.total_runs || 0).toLocaleString(), completed: Number(overview.completed_runs || 0).toLocaleString() }));
-  if (Number(overview.exposure_count || 0) > 0) groups.push(t("impact.strip.exposures", { count: Number(overview.exposure_count).toLocaleString() }));
-  if (Number(overview.validation_passed || 0) > 0) groups.push(t("impact.strip.validations", { count: Number(overview.validation_passed).toLocaleString() }));
-  if (Number(overview.helpful_feedback || 0) > 0) groups.push(t("impact.strip.helpful", { count: Number(overview.helpful_feedback).toLocaleString() }));
+  groups.push(t("impact.strip.exposures", { count: Number(overview.exposure_count || 0).toLocaleString() }));
+  groups.push(t("impact.strip.validations", { count: Number(overview.validation_passed || 0).toLocaleString() }));
+  groups.push(t("impact.strip.helpful", { count: Number(overview.helpful_feedback || 0).toLocaleString() }));
   return groups;
 }
 
@@ -202,6 +233,12 @@ export function impactMixBar(evidence: any) {
   ].filter(([, value]) => Number(value) > 0) as [string, number, string][];
   const total = items.reduce((sum, [, value]) => sum + value, 0);
   if (!total) return "";
+  // One class means the bar would be a single full-width block, which says
+  // nothing a sentence does not say better.
+  if (items.length === 1) {
+    const [key, value, label] = items[0]!;
+    return `<p class="impact-mix-single ${escapeAttr(key)}"><b>${escapeHtml(value.toLocaleString())}</b> ${escapeHtml(label)}<small>${escapeHtml(t("impact.mixSingle"))}</small></p>`;
+  }
   const bar = items.map(([key, value]) => `<span class="impact-mix-seg ${escapeAttr(key)}" style="width:${((value / total) * 100).toFixed(2)}%"></span>`).join("");
   const legend = items.map(([key, value, label]) => `<span class="impact-mix-item ${escapeAttr(key)}"><i aria-hidden="true"></i><b>${escapeHtml(value.toLocaleString())}</b>${escapeHtml(label)}</span>`).join("");
   return `<div class="impact-mix-bar" role="img" aria-label="${escapeAttr(t("impact.evidenceMix"))}">${bar}</div><div class="impact-mix-legend">${legend}</div>`;
@@ -223,7 +260,9 @@ export function renderImpactRunDetail() {
     ${impactTabs("runs")}
     ${demo ? `<section class="impact-demo-banner" role="status"><div><span>${escapeHtml(t("impact.demoBadge"))}</span><strong>${escapeHtml(t("impact.demoNoticeTitle"))}</strong><p>${escapeHtml(t("impact.demoNoticeCopy"))}</p></div><button type="button" class="secondary" data-impact-demo-exit>${escapeHtml(t("impact.backToRealData"))}</button></section>` : ""}
     <div class="impact-run-head">
-      <div><div class="impact-kicker">${escapeHtml(t("impact.runSummary"))}</div><h2>${escapeHtml(run.id)}</h2></div>
+      <div><div class="impact-kicker">${escapeHtml(t("impact.runSummary"))}</div>
+        <h2>${escapeHtml(impactRunHeadline(run))}</h2>
+        <code class="impact-run-identity">${escapeHtml(run.id)}</code></div>
       <div class="impact-local-badge">${escapeHtml(demo ? t("impact.demoBadge") : t("impact.localOnly"))}</div>
     </div>
     <section class="impact-run-meta">
@@ -426,7 +465,7 @@ export function renderImpactEvals() {
   const observed = payload.observed;
   const controlled = payload.controlled || {};
   const candidates = filteredEvalCandidates();
-  const candidateCount = (payload.candidates || []).length;
+  const candidateCount = (payload.candidate_groups || []).length;
   el("detail").innerHTML = `<div class="impact-shell evals-shell">
     ${impactTabs("evals")}
     <section class="evals-hero">
@@ -471,7 +510,7 @@ export function renderImpactEvalQueue() {
   const payload = state.observationEvals;
   const candidates = filteredEvalCandidates();
   el("queue-title").textContent = t("evals.reviewQueue");
-  el("queue-meta").textContent = t("evals.queueMeta", { shown: candidates.length, total: (payload?.candidates || []).length });
+  el("queue-meta").textContent = t("evals.queueMeta", { shown: candidates.length, total: (payload?.candidate_groups || []).length });
   if (!state.projectRoot) {
     el("candidates").innerHTML = '<div class="empty">' + escapeHtml(t("empty.noProjects")) + "</div>";
     return;
@@ -481,17 +520,20 @@ export function renderImpactEvalQueue() {
     return;
   }
   if (!candidates.length) {
-    el("candidates").innerHTML = (payload.candidates || []).length
+    el("candidates").innerHTML = (payload.candidate_groups || []).length
       ? '<div class="empty">' + escapeHtml(t("evals.filterEmpty")) + "</div>"
       : `<div class="empty impact-queue-empty"><strong>${escapeHtml(t("evals.queueEmptyTitle"))}</strong><span>${escapeHtml(t("evals.queueEmptyCopy"))}</span></div>`;
     return;
   }
-  el("candidates").innerHTML = candidates.map((candidate: any) => `<button type="button" class="row eval-queue-row" data-eval-run="${escapeAttr(candidate.run_id)}">
-    <span class="eval-reason-code">${escapeHtml(valueLabel(candidate.reason))}</span>
-    <strong>${escapeHtml(candidate.run_id)}</strong>
-    <span class="subtle">${escapeHtml(formatDisplayDate(candidate.occurred_at))} · #${candidate.event_seq}</span>
-    <span class="meta"><span class="pill warn">${escapeHtml(valueLabel(candidate.review_status))}</span><span class="pill">${escapeHtml(valueLabel(candidate.completeness))}</span></span>
-  </button>`).join("");
+  el("candidates").innerHTML = candidates.map((group: any) => {
+    const count = Number(group.occurrence_count || 1);
+    return `<button type="button" class="row eval-queue-row" data-eval-run="${escapeAttr(evalGroupLatestRunId(group))}">
+    <span class="eval-reason-code">${escapeHtml(valueLabel(group.reason))}</span>
+    <strong>${escapeHtml(evalGroupTitle(group))}</strong>
+    <span class="subtle">${escapeHtml(t("evals.lastSeen", { time: formatDisplayDate(group.last_occurred_at) }))}</span>
+    <span class="meta"><span class="pill warn">${escapeHtml(valueLabel(group.review_status))}</span>${count > 1 ? `<span class="pill occurrences">${escapeHtml(t("evals.occurrences", { count }))}</span>` : ""}<span class="pill">${escapeHtml(t("evals.runsSeen", { count: (group.run_ids || []).length }))}</span></span>
+  </button>`;
+  }).join("");
   bindEvalRunLinks(el("candidates"));
 }
 
@@ -608,7 +650,7 @@ export function bindControlledEvalControls() {
   if (form) {
     form.querySelector('[name="profile"]')?.addEventListener("change", (event: any) => {
       state.controlledEvalProfile = event.target.value;
-      renderImpactDetail();
+      renderImpactDetailKeepingScroll();
     });
     form.querySelector('[name="trials"]')?.addEventListener("change", (event: any) => {
       state.controlledEvalTrials = Number(event.target.value);
@@ -624,12 +666,12 @@ export function bindControlledEvalControls() {
   document.querySelector("[data-controlled-history]")?.addEventListener("change", (event: any) => {
     state.controlledEvalExperimentId = event.target.value;
     state.controlledEvalCaseFilter = "attention";
-    renderImpactDetail();
+    renderImpactDetailKeepingScroll();
   });
   document.querySelectorAll("[data-controlled-case-filter]").forEach((button: any) => {
     button.addEventListener("click", () => {
       state.controlledEvalCaseFilter = button.dataset.controlledCaseFilter;
-      renderImpactDetail();
+      renderImpactDetailKeepingScroll();
     });
   });
 }
@@ -691,6 +733,7 @@ export function renderObservedEvals(observed: any, availability: string) {
     <span>${escapeHtml(t("evals.evaluableRuns", { count: observed.evaluable_runs, total: observed.total_runs }))}</span>
     <span>${escapeHtml(t("evals.missReports", { count: observed.miss_reports }))}</span>
     <span>${escapeHtml(t("evals.failedAfterExposure", { count: observed.failed_after_exposure_runs }))}</span>
+    ${observed.superseded_feedback ? `<span>${escapeHtml(t("evals.supersededFeedback", { count: observed.superseded_feedback }))}</span>` : ""}
     ${observed.partial_or_unknown_runs ? `<span class="warn">${escapeHtml(t("evals.partialRuns", { count: observed.partial_or_unknown_runs }))}</span>` : ""}
   </div>`;
 }
@@ -724,7 +767,9 @@ export function evalCandidateFilters() {
 }
 
 export function filteredEvalCandidates() {
-  const candidates = state.observationEvals?.candidates || [];
+  // Review works on grouped findings: one row per normalized signature, not
+  // one row per occurrence.
+  const candidates = state.observationEvals?.candidate_groups || [];
   if (state.evalCandidateFilter === "miss") return candidates.filter((item: any) => item.reason === "reported_miss");
   if (state.evalCandidateFilter === "guidance") return candidates.filter((item: any) => item.reason === "irrelevant_guidance" || item.reason === "harmful_guidance");
   if (state.evalCandidateFilter === "validation") return candidates.filter((item: any) => item.reason === "validation_failed_after_exposure");
@@ -737,16 +782,41 @@ export function renderEvalCandidate(candidate: any) {
     : candidate.validation_kind ? t("evals.validationEvidence", { kind: valueLabel(candidate.validation_kind) }) : t("evals.runEvidence");
   const selected = candidate.id === state.evalReviewCandidateId;
   const statusClass = candidate.review_status === "accepted" ? "approved" : candidate.review_status === "rejected" ? "danger" : "warn";
+  const count = Number(candidate.occurrence_count || 1);
+  const runId = evalGroupLatestRunId(candidate);
+  const occurrences = count > 1
+    ? `<span class="pill occurrences">${escapeHtml(t("evals.occurrences", { count }))}</span>`
+    : "";
+  const span = count > 1
+    ? `<span class="eval-candidate-span">${escapeHtml(t("evals.occurrenceSpan", {
+        runs: (candidate.run_ids || []).length,
+        first: formatDisplayDate(candidate.first_occurred_at),
+        last: formatDisplayDate(candidate.last_occurred_at),
+      }))}</span>`
+    : "";
   return `<article class="eval-candidate ${selected ? "selected" : ""}">
-    <div class="eval-candidate-index">#${candidate.event_seq}</div>
-    <div><div class="meta"><span class="pill warn">${escapeHtml(valueLabel(candidate.reason))}</span><span class="pill ${statusClass}">${escapeHtml(valueLabel(candidate.review_status))}</span></div><h4>${escapeHtml(candidate.run_id)}</h4><p>${escapeHtml(detail)} · ${escapeHtml(candidate.ground_truth === "confirmed" ? t("evals.confirmedGroundTruth") : t("evals.notGroundTruth"))}</p></div>
-    <div class="eval-candidate-actions"><button type="button" class="${selected ? "primary" : "secondary"}" data-eval-review="${escapeAttr(candidate.id)}">${escapeHtml(t(selected ? "evals.reviewing" : "evals.reviewCandidate"))}</button><button type="button" class="ghost" data-eval-run="${escapeAttr(candidate.run_id)}">${escapeHtml(t("evals.inspectRun"))}</button></div>
+    <div class="eval-candidate-index">${count > 1 ? escapeHtml(String(count)) + "&times;" : "1&times;"}</div>
+    <div><div class="meta"><span class="pill warn">${escapeHtml(valueLabel(candidate.reason))}</span><span class="pill ${statusClass}">${escapeHtml(valueLabel(candidate.review_status))}</span>${occurrences}</div><h4>${escapeHtml(evalGroupTitle(candidate))}</h4><p>${escapeHtml(detail)} · ${escapeHtml(candidate.ground_truth === "confirmed" ? t("evals.confirmedGroundTruth") : t("evals.notGroundTruth"))}</p>${span}</div>
+    <div class="eval-candidate-actions"><button type="button" class="${selected ? "primary" : "secondary"}" data-eval-review="${escapeAttr(candidate.id)}">${escapeHtml(t(selected ? "evals.reviewing" : "evals.reviewCandidate"))}</button><button type="button" class="ghost" data-eval-run="${escapeAttr(runId)}">${escapeHtml(t("evals.inspectRun"))}</button></div>
   </article>`;
+}
+
+/** Latest Run the finding was seen in — the most useful one to open. */
+export function evalGroupLatestRunId(group: any) {
+  const runs = group.run_ids || [];
+  return runs.length ? runs[runs.length - 1] : group.run_id;
+}
+
+/** Name the finding by what it concerns, not by the Run it happened to occur in. */
+export function evalGroupTitle(group: any) {
+  if (group.trap_id !== null && group.trap_id !== undefined) return t("evals.groupTrapTitle", { id: group.trap_id });
+  if (group.validation_kind) return t("evals.groupValidationTitle", { kind: valueLabel(group.validation_kind) });
+  return t("evals.groupRunTitle", { run: evalGroupLatestRunId(group) });
 }
 
 export function selectedEvalCandidate() {
   if (!state.evalReviewCandidateId) return null;
-  return (state.observationEvals?.candidates || []).find((candidate: any) => candidate.id === state.evalReviewCandidateId) || null;
+  return (state.observationEvals?.candidate_groups || []).find((group: any) => group.id === state.evalReviewCandidateId) || null;
 }
 
 export function renderEvalReviewPanel(candidate: any, payload: any) {
@@ -803,7 +873,7 @@ export function bindEvalControls() {
       state.evalExternalChangesDeferred = false;
       state.evalCandidateFilter = button.dataset.evalFilter;
       renderImpactQueue();
-      renderImpactDetail();
+      renderImpactDetailKeepingScroll();
     });
   });
   document.querySelectorAll("[data-eval-review]").forEach((button: any) => {
@@ -823,7 +893,7 @@ export function bindEvalControls() {
     state.evalReviewDraft = null;
     state.evalReviewPreview = null;
     state.evalReviewError = "";
-    renderImpactDetail();
+    renderImpactDetailKeepingScroll();
   });
   const form = document.querySelector("[data-eval-review-form]") as any;
   if (form) {
@@ -914,7 +984,8 @@ export function bindEvalRunLinks(root: any = document) {
 }
 
 export function impactMetric(value: unknown, label: string) {
-  return `<div class="impact-metric"><strong>${escapeHtml(Number(value || 0).toLocaleString())}</strong><span>${escapeHtml(label)}</span></div>`;
+  const count = Number(value || 0);
+  return `<div class="impact-metric${count === 0 ? " zero" : ""}"><strong>${escapeHtml(count.toLocaleString())}</strong><span>${escapeHtml(label)}</span></div>`;
 }
 
 export function impactSmallMetric(value: unknown, label: string) {
@@ -1096,7 +1167,7 @@ export function bindImpactEventControls() {
   document.querySelectorAll("[data-impact-event-filter]").forEach((button: any) => {
     button.addEventListener("click", () => {
       state.impactEventFilter = button.dataset.impactEventFilter || "all";
-      renderImpactDetail();
+      renderImpactDetailKeepingScroll();
     });
   });
   document.querySelectorAll("[data-impact-goto]").forEach((button: any) => {
@@ -1156,9 +1227,11 @@ declare function jumpToTrap(scope: string, id: string | number): Promise<void>;
 const CLIENT_IMPACT_FUNCTIONS = [
   renderImpactQueue,
   renderImpactDetail,
+  renderImpactDetailKeepingScroll,
   renderImpactOverview,
   renderAgentObservationHealthNotice,
   renderImpactRunDetail,
+  impactRunHeadline,
   impactFirstRunContent,
   impactOnboardingFlow,
   impactConnectionGuide,
@@ -1192,6 +1265,8 @@ const CLIENT_IMPACT_FUNCTIONS = [
   evalCandidateFilters,
   filteredEvalCandidates,
   renderEvalCandidate,
+  evalGroupLatestRunId,
+  evalGroupTitle,
   selectedEvalCandidate,
   renderEvalReviewPanel,
   renderEvalCaseSummary,

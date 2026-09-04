@@ -3,24 +3,15 @@ export const WEB_SHELL_CLIENT_SCRIPT = `    const SHELL_LAYOUT_KEY = "codetrap-s
     const SHELL_QUEUE_KEY = "codetrap-queue-collapsed";
     const SHELL_DESKTOP_QUERY = "(min-width: 1061px)";
     const SHELL_SPLITTER_WIDTH = 8;
-    const SHELL_PANE_MIN = { rail: 250, detail: 460, queue: 320 };
-    const SHELL_COLLAPSE_THRESHOLD = { rail: 180, queue: 230 };
+    // These keys name column positions, not content: rail is the left column
+    // (the active view's list) and queue the right one (projects and sessions).
+    const SHELL_PANE_MIN = { rail: 320, detail: 460, queue: 250 };
+    const SHELL_COLLAPSE_THRESHOLD = { rail: 230, queue: 180 };
     const SHELL_REVEAL_EDGE_WIDTH = 18;
-    const SHELL_PEEK_WIDTH = { rail: 330, queue: 390 };
-    const SHELL_WIDE_HEADER_THRESHOLD = 430;
-    let shellRailResizeObserver = null;
+    const SHELL_PEEK_WIDTH = { rail: 390, queue: 330 };
 
     function shellElement() {
       return document.querySelector(".shell");
-    }
-
-    function syncWorkspaceHeaderLayout() {
-      const rail = document.querySelector(".rail");
-      if (!rail) return;
-      rail.classList.toggle(
-        "wide-header",
-        isDesktopShellLayout() && rail.getBoundingClientRect().width >= SHELL_WIDE_HEADER_THRESHOLD
-      );
     }
 
     function isDesktopShellLayout() {
@@ -352,13 +343,6 @@ export const WEB_SHELL_CLIENT_SCRIPT = `    const SHELL_LAYOUT_KEY = "codetrap-s
       const splitters = document.querySelectorAll("[data-splitter]");
       if (!splitters.length) return;
       applySavedShellLayout();
-      syncWorkspaceHeaderLayout();
-
-      const rail = document.querySelector(".rail");
-      if (rail && typeof ResizeObserver === "function") {
-        shellRailResizeObserver = new ResizeObserver(syncWorkspaceHeaderLayout);
-        shellRailResizeObserver.observe(rail);
-      }
 
       splitters.forEach((splitter) => {
         splitter.addEventListener("pointerdown", (event) => {
@@ -423,7 +407,6 @@ export const WEB_SHELL_CLIENT_SCRIPT = `    const SHELL_LAYOUT_KEY = "codetrap-s
         resizeFrame = requestAnimationFrame(() => {
           resizeFrame = 0;
           applySavedShellLayout();
-          syncWorkspaceHeaderLayout();
           renderSidebarToggle();
         });
       });

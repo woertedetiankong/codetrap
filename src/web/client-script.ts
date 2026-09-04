@@ -16,7 +16,11 @@ export function webClientScript(textJson = WEB_TEXT_JSON): string {
     const savedLocale = localStorage.getItem("codetrap-locale");
     const initialLocale = savedLocale === "zh" ? "zh" : "en";
     const savedSidebarCollapsed = localStorage.getItem("codetrap-sidebar-collapsed") === "true";
-    const savedQueueCollapsed = localStorage.getItem("codetrap-queue-collapsed") === "true";
+    // The workspace pane holds project and session switching, which is
+    // occasional. Default it closed so the console opens as list + detail, and
+    // honour an explicit choice once the user makes one.
+    const savedQueueCollapsedRaw = localStorage.getItem("codetrap-queue-collapsed");
+    const savedQueueCollapsed = savedQueueCollapsedRaw === null ? true : savedQueueCollapsedRaw === "true";
 ${WEB_ROUTE_CLIENT_SCRIPT}
     const initialRoute = parseWorkspaceRoute(location.hash);
     const EMBEDDING_DEFAULTS = {
@@ -288,7 +292,7 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
     }
 
     function renderCompactWorkspaceToggle() {
-      const rail = el("workspace-rail");
+      const rail = el("workspace-pane");
       const button = el("compact-workspace-toggle");
       if (!rail || !button) return;
       const expanded = rail.classList.contains("compact-open");
@@ -297,7 +301,7 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
     }
 
     function setCompactWorkspaceOpen(expanded) {
-      const rail = el("workspace-rail");
+      const rail = el("workspace-pane");
       if (!rail) return;
       rail.classList.toggle("compact-open", expanded);
       renderCompactWorkspaceToggle();
@@ -487,14 +491,14 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
     function captureImpactScrollPosition() {
       return {
         detail: document.querySelector(".impact-shell")?.scrollTop || 0,
-        queue: document.querySelector(".queue > .scroll")?.scrollTop || 0
+        queue: document.querySelector(".rail > .scroll")?.scrollTop || 0
       };
     }
 
     function restoreImpactScrollPosition(position) {
       const restore = () => {
         const detail = document.querySelector(".impact-shell");
-        const queue = document.querySelector(".queue > .scroll");
+        const queue = document.querySelector(".rail > .scroll");
         if (detail) detail.scrollTop = position.detail;
         if (queue) queue.scrollTop = position.queue;
       };
@@ -807,6 +811,13 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
         state.observationHookHealth = overview.hook_health || null;
         state.observationRuns = runs.runs || [];
         if (state.observationRuns.length) state.observationDemoRun = null;
+        // Restoring "#/impact/runs" carries no Run id. Adopt the newest Run the
+        // way the Runs tab already does, so a reloaded or shared link lands on a
+        // timeline instead of an empty pane beside a full Run list.
+        if (!backgroundRefresh && state.impactView === "runs" && !state.observationRunId && state.observationRuns.length) {
+          state.observationRunId = state.observationRuns[0].id;
+          syncWorkspaceRoute(true);
+        }
         if (state.impactView === "runs" && state.observationRunId) {
           const detail = await api("/api/observations/run?project="
             + project + "&id=" + encodeURIComponent(state.observationRunId));
@@ -3097,7 +3108,7 @@ ${WEB_IMPACT_CLIENT_SCRIPT}
       });
     });
     el("compact-workspace-toggle").addEventListener("click", () => {
-      setCompactWorkspaceOpen(!el("workspace-rail").classList.contains("compact-open"));
+      setCompactWorkspaceOpen(!el("workspace-pane").classList.contains("compact-open"));
     });
     el("delete-session").addEventListener("click", async () => {
       await deleteSession(el("delete-session").dataset.sessionId);

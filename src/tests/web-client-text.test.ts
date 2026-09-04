@@ -103,33 +103,54 @@ describe("web client text", () => {
   test("keeps project navigation compact and content-first on narrow screens", () => {
     expect(WEB_INDEX_HTML).toContain('id="compact-workspace-toggle"');
     expect(WEB_INDEX_HTML).toContain('aria-controls="project-form workspace-list"');
-    expect(WEB_INDEX_HTML).toContain(".rail .project-form,");
-    expect(WEB_INDEX_HTML).toContain(".rail.compact-open .project-form");
-    expect(WEB_INDEX_HTML).toContain(".rail.compact-open > .scroll");
+    expect(WEB_INDEX_HTML).toContain(".queue .project-form,");
+    expect(WEB_INDEX_HTML).toContain(".queue.compact-open .project-form");
+    expect(WEB_INDEX_HTML).toContain(".queue.compact-open > .scroll");
     expect(WEB_INDEX_HTML).toContain('window.matchMedia("(max-width: 1060px)")');
     expect(WEB_INDEX_HTML).toContain("revealCompactDetail");
   });
 
-  test("places the detail pane before the queue pane in the web shell", () => {
+  test("orders the shell as list, detail, then workspace", () => {
+    const listIndex = WEB_INDEX_HTML.indexOf('<aside class="rail">');
     const detailIndex = WEB_INDEX_HTML.indexOf('<section class="detail">');
-    const queueIndex = WEB_INDEX_HTML.indexOf('<section class="queue">');
+    const workspaceIndex = WEB_INDEX_HTML.indexOf('<section class="queue" id="workspace-pane">');
 
+    expect(listIndex).toBeGreaterThan(-1);
     expect(detailIndex).toBeGreaterThan(-1);
-    expect(queueIndex).toBeGreaterThan(-1);
-    expect(detailIndex).toBeLessThan(queueIndex);
-    expect(WEB_INDEX_HTML).toContain("minmax(250px, 0.82fr) 8px minmax(460px, 1.48fr) 8px minmax(320px, 1fr)");
+    expect(workspaceIndex).toBeGreaterThan(-1);
+    // The active view's list leads, the detail follows it, and project/session
+    // switching sits last so it can be collapsed out of the way.
+    expect(listIndex).toBeLessThan(detailIndex);
+    expect(detailIndex).toBeLessThan(workspaceIndex);
+    expect(WEB_INDEX_HTML).toContain('<div class="stack" id="candidates">');
+    expect(WEB_INDEX_HTML).toContain("minmax(320px, 0.62fr) 8px minmax(460px, 1.7fr) 8px minmax(250px, 0.68fr)");
+    // Opening straight into list + detail is the default; the workspace opens on demand.
+    expect(WEB_INDEX_HTML).toContain("savedQueueCollapsedRaw === null ? true");
   });
 
-  test("ships the blue responsive Impact flight-recorder visual system", () => {
+  test("keeps every colour in the token layer", () => {
+    const rootStart = WEB_INDEX_HTML.indexOf(":root {");
+    const rootEnd = WEB_INDEX_HTML.indexOf("}", rootStart);
+    const outsideRoot = WEB_INDEX_HTML.slice(rootEnd);
+    // Themeable colour belongs to :root. A literal anywhere else cannot follow a
+    // palette change, which is how the console drifted to 277 loose colours.
+    const literals = outsideRoot.match(/#[0-9a-fA-F]{6}\b/g) ?? [];
+    expect(literals).toEqual([]);
+  });
+
+  test("ships the responsive Impact flight-recorder visual system on shared tokens", () => {
     expect(WEB_INDEX_HTML).toContain(".impact-hero");
-    expect(WEB_INDEX_HTML).toContain("#0d5ce5");
+    // Colour lives in the token layer now, so a hardcoded hex outside :root is
+    // the regression this guards against.
+    expect(WEB_INDEX_HTML).toContain("--accent: #0e5a6b");
+    expect(WEB_INDEX_HTML).toContain("--warn: #8f5f16");
     expect(WEB_INDEX_HTML).toContain(".impact-timeline::before");
     expect(WEB_INDEX_HTML).toContain(".impact-event.human_label::before");
     expect(WEB_INDEX_HTML).toContain(".impact-metrics { grid-template-columns: repeat(2");
     expect(WEB_INDEX_HTML).toContain("prefers-reduced-motion: reduce");
     expect(WEB_INDEX_HTML).toContain(".evals-hero");
     expect(WEB_INDEX_HTML).toContain(".evals-lanes");
-    expect(WEB_INDEX_HTML).toContain("conic-gradient(#1768e6");
+    expect(WEB_INDEX_HTML).toContain("conic-gradient(var(--accent)");
     expect(WEB_INDEX_HTML).toContain(".eval-metric-grid, .eval-rate-grid { grid-template-columns: 1fr;");
     expect(WEB_INDEX_HTML).toContain(".impact-empty-actions");
     expect(WEB_INDEX_HTML).toContain(".impact-onboarding-flow");
