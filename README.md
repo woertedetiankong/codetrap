@@ -165,7 +165,7 @@ codetrap/
 │   ├── web/
 │   │   ├── server.ts         Thin Web API adapter over shared operations
 │   │   ├── static.ts         HTML/CSS shell
-│   │   ├── browser/         Typed entry/platform/Library and legacy workspace
+│   │   ├── browser/         Typed entry, Library/Review state and legacy templates
 │   │   ├── client-review.ts  Review queue + candidate draft/request model
 │   │   ├── client-script.ts  Shared embedded browser asset accessor
 │   │   ├── client-bundle.generated.ts  Generated browser build (do not edit)
@@ -1354,9 +1354,14 @@ codetrap embeddings use ollama
 
 You can also run `codetrap web --open` to start the authenticated local console
 and open it in your default browser. The launch token is moved to session
-storage and removed from the visible URL immediately. After a server restart,
-an old tab explains that its credential expired and directs the user to the
-newest tab instead of showing a bare `Unauthorized` error. The console polls for
+storage and removed from the visible URL immediately. A copied page address does
+not authorize a fresh tab. Recovery distinguishes missing credentials, rejected
+credentials, connection failures and invalid server responses. Paste the current
+service's full launch URL into the recovery form to reconnect in the same tab;
+the address and port must match. Your current route and local edits remain, and
+failed writes are never automatically replayed. If the service stopped, recovery
+shows a restart command using the current port. Avoid closing or reloading a tab
+with unsaved drafts. The console polls for
 candidate/session changes made by agents or other terminals, but pauses
 application of external updates while a candidate form has unsaved edits. Open
 the blue `Impact` view to see real local Observation Overview totals, browse
@@ -1440,8 +1445,12 @@ with its source change; CI and npm prepack check freshness. See
 
 Library list, filters, selected lesson and experience activity now live in typed
 browser modules. Loading failures offer a retry, and older requests cannot replace
-the current project or lesson after navigation. Other feature state is being
-migrated separately.
+the current project or lesson after navigation. Review preserves separate in-tab
+drafts for each project/session/candidate across navigation and locale changes;
+background updates defer while editing, and action completion stays bound to its
+original candidate. Use Save for durable storage: in-tab drafts are not autosaved
+across a forced reload. Review presentation and Learning/Impact state retain their
+explicit migration boundaries.
 
 ## Test
 

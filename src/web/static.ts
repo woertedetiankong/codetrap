@@ -109,9 +109,14 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .bootstrap-failure-card p { color: var(--muted); line-height: 1.7; }
     .bootstrap-command { margin: 18px 0; padding: 14px 16px; border-left: 4px solid var(--muted); background: var(--panel-2); color: var(--text); overflow-wrap: anywhere; }
     .bootstrap-command code { display: block; margin-top: 7px; color: var(--text); font-weight: 700; }
-    .bootstrap-failure-actions { display: flex; align-items: center; gap: 12px; margin-top: 22px; }
+    .bootstrap-failure-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 22px; }
     .bootstrap-failure-actions button { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
     .bootstrap-privacy { font-size: 13px; }
+    .bootstrap-auth-form { margin-top: 22px; }
+    .bootstrap-auth-form label { display: block; margin-bottom: 8px; font-weight: 600; }
+    .bootstrap-auth-form input { width: 100%; min-width: 0; }
+    .bootstrap-auth-form p { font-size: 13px; margin: 8px 0 12px; }
+    .bootstrap-connect-error { overflow-wrap: anywhere; }
 
     button, input, select, textarea {
       font: inherit;
@@ -602,9 +607,9 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .pill.accepted-missing { color: var(--warn); border-color: color-mix(in srgb, var(--warn), var(--line) 55%); }
     .pill.destination-committed { color: var(--ok); background: color-mix(in srgb, var(--ok), transparent 94%); border-color: color-mix(in srgb, var(--ok), var(--line) 55%); }
     .pill.rejected { color: var(--danger); border-color: color-mix(in srgb, var(--danger), var(--line) 55%); }
-    .receipt { position: fixed; right: 16px; bottom: 64px; max-width: 380px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 6px 24px rgba(0,0,0,0.18); opacity: 0; pointer-events: none; transition: opacity 160ms; z-index: 40; }
+    .receipt { position: fixed; right: 16px; bottom: 64px; max-width: min(380px, calc(100vw - 32px)); padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 6px 24px rgba(0,0,0,0.18); opacity: 0; pointer-events: none; transition: opacity 160ms; z-index: 40; }
     .receipt.show { opacity: 1; pointer-events: auto; }
-    .receipt-line { font-size: 13px; line-height: 1.5; }
+    .receipt-line { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
     .receipt-line.subtle { color: var(--muted); }
     .receipt-actions { display: flex; gap: 8px; margin-top: 10px; }
     .receipt-actions button { min-height: 32px; font-size: 13px; }
@@ -2965,6 +2970,13 @@ export const WEB_INDEX_HTML = `<!doctype html>
       <p id="bootstrap-failure-copy"></p>
       <div class="bootstrap-command"><span id="bootstrap-command-label"></span><code id="bootstrap-command"></code></div>
       <p class="bootstrap-privacy" id="bootstrap-privacy"></p>
+      <form class="bootstrap-auth-form" id="bootstrap-auth-form" hidden>
+        <label for="bootstrap-link" id="bootstrap-link-label"></label>
+        <input type="password" id="bootstrap-link" autocomplete="off" spellcheck="false" aria-describedby="bootstrap-link-help bootstrap-connect-error" required>
+        <p id="bootstrap-link-help"></p>
+        <button type="submit" class="primary" id="bootstrap-connect"></button>
+      </form>
+      <p class="bootstrap-connect-error" id="bootstrap-connect-error" role="status" aria-live="polite"></p>
       <div class="bootstrap-failure-actions"><button type="button" id="bootstrap-retry"></button></div>
     </div>
   </section>

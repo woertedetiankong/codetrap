@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ApiError, createApiClient, parseBootstrapPayload, readBrowserBoot, translate } from "../web/browser/platform";
+import { launchCredential } from "../web/browser/access";
 
 function session(search = "", hash = "#/impact/evals", denied = false) {
   const values = new Map<string, string>();
@@ -18,6 +19,20 @@ function session(search = "", hash = "#/impact/evals", denied = false) {
 const t = (key: string) => translate("zh", key);
 
 describe("typed browser platform", () => {
+  test("recovery accepts only the current service's launch URL and ignores its route", () => {
+    const origin = "http://127.0.0.1:4748";
+    expect(launchCredential(origin + "/?token=next-token#/review/other", origin)).toBe("next-token");
+    for (const link of ["next-token", "javascript:alert(1)", "https://example.com/?token=x", "http://127.0.0.1:4749/?token=x", "http://user:pass@127.0.0.1:4748/?token=x", origin + "/api/bootstrap?token=x", origin + "/?token=", origin + "/?token=x&token=y", origin + "/?token=x%0ay"]) {
+      expect(() => launchCredential(link, origin)).toThrow();
+    }
+  });
+  test("subsequent requests use a new credential while in-flight headers keep their original value", async () => {
+    let token = "first"; const seen: string[] = [];
+    const api = createApiClient(() => token, t, (async (_url, options) => { seen.push(new Headers(options?.headers).get("X-Codetrap-Token")!); return Response.json({}); }));
+    const first = api("/api/bootstrap"); token = "second";
+    await Promise.all([first, api("/api/bootstrap")]);
+    expect(seen).toEqual(["first", "second"]);
+  });
   test("launch token wins over old tab storage, leaves the URL and survives refresh without changing the route", () => {
     const { values, browser } = session("?token=fresh&display=full", "#/library/global/7");
     values.set("codetrap-token", "expired");

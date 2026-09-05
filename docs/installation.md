@@ -344,9 +344,14 @@ run commands in the source worktree, or measure full Codex/Claude behavior.
 
 Impact, Evals, selected Runs, and selected review candidates use refresh-safe
 local hash routes. These routes intentionally omit the absolute project path and
-are not remote Team share links. If the launch token is missing or expired, the
-console replaces the unusable workspace with a persistent recovery screen that
-points back to `codetrap web --open`.
+are not remote Team share links and do not authorize a fresh tab. If the launch
+credential is missing or rejected, paste the running service's full launch URL
+into the recovery form. It must match the current address and port. Recovery
+validates that credential without navigating away or repeating failed writes,
+and retains the current route and local edits. If the service has stopped, use
+the recovery page's restart command for the current port, then copy the new
+launch URL from that terminal. A different port needs its own authorized tab;
+do not close the original tab while it has unsaved edits.
 
 For a project with no Run, **Impact → Overview** can preview a five-event sample
 timeline without writing anything. The sample is browser-memory only, disappears
@@ -407,9 +412,11 @@ Existing Ollama setups remain supported with `codetrap embeddings use ollama`.
 
 You can also run `codetrap web --open` to start the authenticated local console
 and open it in your default browser. The launch token is removed from the
-visible URL after it is copied into session storage. If the server restarts, an
-old tab explains that its credential expired and directs the user to the newly
-opened tab instead of showing a bare `Unauthorized` error. The console notices
+visible URL after it is copied into session storage. Connection failures, missing
+credentials and rejected credentials have distinct recovery messages. Retry a
+temporary connection failure in place, or paste the current service's full launch
+link to reauthorize without reloading. Unsaved drafts remain in tab memory;
+closing or reloading can still lose them. The console notices
 session and candidate updates made by agents or other terminals while
 preserving any unsaved candidate draft.
 

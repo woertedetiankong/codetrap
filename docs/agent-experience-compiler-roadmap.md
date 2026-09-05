@@ -1,7 +1,7 @@
 # codetrap Mature Product Roadmap v2.3: Agent Experience Compiler
 
 Date: 2026-06-22 (v1)
-Updated: 2026-09-04 (v2.3 implementation status)
+Updated: 2026-09-05 (v2.3 implementation status)
 Status: Product direction / long-term roadmap — authoritative parent plan
 Scope: Parent plan for codetrap mature product evolution
 Clients served: **Codex and Claude Code, symmetrically** (Cursor and others: future)
@@ -13,7 +13,7 @@ handoff) — see §19.
 
 ## Status Dashboard
 
-> Updated: 2026-09-04
+> Updated: 2026-09-05
 
 | Milestone | Status | Updated | Evidence | Note |
 |---|---|---|---|---|
@@ -48,11 +48,15 @@ handoff) — see §19.
 | Feedback to reviewed experience revision | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-feedback-revision-loop/handoff.md) | Real scoped feedback, frozen positive/negative checks, explicit acceptance, atomic receipts and safe rollback; 574 tests pass. Real-task benefit remains unverified. |
 | Project evaluation sets | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-project-eval-storage/handoff.md) | Local corpus preparation, reviewed examples, controlled comparison, legacy destination compatibility and portable download; 584 tests pass. |
 | Browser module entry and typed startup | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-browser-module-entry/handoff.md) | Module imports replace source serialization; typed session/network/bootstrap contracts and generated-asset gates preserve existing flows; 581 tests pass. Full business-state typing remains open. |
-| Typed Library state and recovery | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-library-state/handoff.md) | Library DTO/state/rendering, request generations, retries and slow Back navigation pass 593 tests. Review/Learning/Impact migrations remain open. |
+| Typed Library state and recovery | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-library-state/handoff.md) | Library DTO/state/rendering, request generations, retries and slow Back navigation pass 593 tests; committed with preceding stages in `6d54a4e`. |
+| Typed Review state and draft protection | **Done** | 2026-09-05 | [handoff](tasks/2026-09-04-review-state/handoff.md) | Scoped in-tab drafts, captured actions, validated reads, retries and slow Back navigation pass 608 tests. Review templates and Learning/Impact state remain migration boundaries. |
+| Web access recovery | **Done** | 2026-09-05 | [handoff](tasks/2026-09-05-web-access-recovery/handoff.md) | Fresh-tab authorization, distinct failure states and in-place reconnection preserve drafts and avoid write replay; 616 tests pass. |
 
 ### Closed decisions by date
 
-- 2026-09-04 Library is the first complete strict browser business slice: response decoding, scoped selection, async generations, localized retries and cache-independent Back navigation. Continue with Review drafts and selection; see the [Library handoff](tasks/2026-09-04-library-state/handoff.md).
+- 2026-09-05 A bare route does not authorize a fresh tab. Recovery accepts a current same-origin launch URL, validates it without navigation, and resumes retained state. It does not share credentials across tabs, persist drafts across reloads or replay failed writes. See the [access recovery handoff](tasks/2026-09-05-web-access-recovery/handoff.md).
+- 2026-09-05 Review state, drafts and mutation coordination now live in strict browser modules. Drafts are per project/session/candidate and remain in tab memory until explicitly saved; writes capture the original identity and visible fields. Destination-specific renderers remain in the workspace, and backend cross-process edit concurrency is unchanged. Continue with Learning state and practice/proposal drafts; see the [Review handoff](tasks/2026-09-04-review-state/handoff.md).
+- 2026-09-04 Library is the first complete strict browser business slice: response decoding, scoped selection, async generations, localized retries and cache-independent Back navigation. See the [Library handoff](tasks/2026-09-04-library-state/handoff.md).
 - 2026-09-04 Browser delivery uses a normal module entry and prebuilt embedded artifact, with strict startup/platform types and an explicit legacy workspace boundary. Dev/standalone regenerate it; CI and npm prepack check freshness. Continue business-state typing by feature rather than relaxing compiler checks. See [browser architecture](browser-architecture.md).
 - 2026-09-04 The [original product audit](reviews/2026-09-04-product-audit.md) is retained as a baseline. Use its [implementation status](reviews/2026-09-04-product-audit-status.md) to distinguish completed correctness, revision and project Eval storage work from pending frontend, performance and real-outcome validation.
 - 2026-09-04 Product Evals prefer a private project suite, with explicit legacy copying and historical destination compatibility. Fixture positions remain separate from scoped source identities. Export downloads frozen bytes; corpus replacement and cross-device identity are deferred. See the [evaluation-set contract](project-evaluation-suites.md).

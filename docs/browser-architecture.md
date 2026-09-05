@@ -1,6 +1,6 @@
 # Browser entry, builds and type boundaries
 
-Updated: 2026-09-04 (America/Los_Angeles).
+Updated: 2026-09-05 (America/Los_Angeles).
 
 The Web console starts from `src/web/browser/entry.ts`. Ordinary module imports
 connect the route codec, translated text, modal controllers, workspace and feature
@@ -16,6 +16,9 @@ browser/entry.ts
         |     +-- library-data.ts    response validation
         +-- shell.js       pane resizing/collapse, four public operations
         +-- client-route   typed project/item route codec
+        +-- review.ts      typed Review form/action coordination
+        |     +-- review-model.ts    requests, selection, drafts and mutations
+        |     +-- review-data.ts     identity/form/receipt validation
         +-- client-review  pure review selection and payload helpers
         +-- client-impact  injected factory, five public operations
         +-- experience actions, revision and evaluation-set controllers
@@ -69,7 +72,7 @@ functions into an unrelated test page.
 ## Type coverage and behavior
 
 `tsconfig.browser.json` gives the entry, platform, route and translation modules
-and the full Library slice strict DOM types with no Bun/Node ambient globals.
+and access recovery/Library/Review controllers strict DOM types with no Bun/Node ambient globals.
 The existing project strict check continues to cover typed feature controllers.
 Platform contracts cover:
 
@@ -81,11 +84,43 @@ Platform contracts cover:
   Successful but malformed JSON reports an unreadable response.
 - Runtime bootstrap shape validation before installing project state. Invalid
   bootstrap data opens the existing recovery screen instead of a partial workspace.
-- Synchronous startup failures also open recovery. Existing hash routes and the
-  retry action remain intact; the launch token stays out of the browser URL.
+- Synchronous startup failures also open recovery. Existing hash routes remain
+  intact; the launch token stays out of the browser URL.
+
+### Access recovery
+
+`src/web/browser/access.ts` coordinates connection recovery. A fresh tab without
+a token shows an authorization form, not a false server-restart diagnosis. A 401
+means the credential was rejected; it does not prove why. Network failures and
+invalid/server-error bootstrap responses have separate messages. Fatal synchronous
+entry failures retain the entry's reload fallback.
+
+The form parses a full launch URL locally, requires the same origin (including
+port), rejects embedded user/password, duplicate/empty tokens and non-entry paths,
+and never navigates to the pasted URL. It probes the fixed `/api/bootstrap` path
+with redirects disabled, no browser cache and a ten-second timeout. Only a valid
+bootstrap response replaces the in-memory and optional tab-storage credential.
+Neither the pasted route nor project replaces the user's current selection.
+
+Ordinary API calls use the current credential. A 401 opens recovery globally,
+including writes or background polls, while blocking new API calls and pausing
+polling. A successful reconnect advances the connection generation so late 401s
+cannot reopen recovery, even when the credential did not change. No failed write
+is replayed. A Retry connection action rechecks the credential without reloading;
+it also works when browser storage is unavailable.
+
+Recovery hides the shell instead of removing it, preserving its DOM, handlers and
+in-memory Review drafts. Reauthorization restores an already loaded workspace
+without bootstrapping it again; existing failed view reads retain their explicit
+retry controls. Browser Back/Forward while disconnected is applied after reconnect.
+Drafts are not durable autosave: closing/reloading or moving to a different origin
+is not protected by this in-place recovery. New tabs still require authorization;
+there is no cookie, automatic cross-tab credential sharing or unauthenticated
+credential endpoint. See the [access recovery handoff](tasks/2026-09-05-web-access-recovery/handoff.md).
 
 Generic API type parameters do **not** validate every endpoint's JSON. Bootstrap
-and Library list/detail/experience responses have runtime decoders. Other feature
+and Library list/detail/experience responses have runtime decoders. Review decodes
+session/candidate identity, editable form/evidence fields and mutation receipts. Other feature
 controllers retain their existing interaction/data checks.
 
 Library state belongs to `library-model.ts`, outside the legacy workspace object.
@@ -119,8 +154,9 @@ scroll restoration, Learning/Run links and revision-history controllers remain.
 `workspace.d.ts` defines the typed startup handoff into that workspace; it does
 not imply that thousands of existing business-state accesses are checked.
 Impact and Learning practice/action adapters still contain their pre-existing
-dynamic state types. Library state/DTOs are typed; Review, Learning and Impact
-migration remains open under audit F8.
+dynamic state types. Library state/DTOs and Review state/draft/action coordination
+are typed; Review presentation and Learning/Impact state remain migration boundaries
+under audit F8.
 The root TypeScript checks were not relaxed to conceal those boundaries.
 
 Factories receive actual state, DOM, API and navigation dependencies and expose
@@ -128,6 +164,47 @@ only the operations used by the workspace. Internal helpers remain private.
 Keep new infrastructure in typed modules. The next migration should type one
 feature's state and response contracts at a time, with explicit nullable loading,
 failure and ready states; it should not restore ambient globals or source strings.
+
+## Review drafts and operation identity
+
+`review-model.ts` owns session/candidate selection, loading/error states, background
+refresh, conflicts and action state. The workspace reads its state and uses explicit
+transitions; it does not write Review arrays, selected IDs, conflicts or dirty flags.
+The shared `domain/session-review.ts` exports remain available from the backend's
+original module for compatibility. Destination-specific presentation templates
+(including Learning coverage helpers) remain in the legacy workspace. Review's
+transport decoder validates fields used by its state/form/receipt boundary, not
+every destination-specific metadata schema rendered by those legacy templates.
+
+Drafts are raw form strings keyed by `(project root, session ID, candidate ID)`.
+Input events capture them before navigation; newly rendered forms restore only
+that candidate's draft. Locale/view/project/Back changes do not discard another
+candidate's edits. Drafts live in this tab's memory, not persistent autosave; the
+beforeunload guard warns about unsubmitted drafts or pending actions. Browser
+policies may limit that warning, and forcibly closing/reloading still loses the
+in-memory draft. Explicit Save writes through the existing backend operation.
+
+Foreground requests use generations and `cache: "no-store"`; late successes and
+failures cannot install another project's or session's candidates. Project reset
+immediately clears old form content. Review history releases its navigation lock
+before awaiting data. Background refresh captures one context, never mixes projects
+between reads and defers updates while the current candidate has local edits.
+Discarding after that notice fetches the server version before actions resume.
+Explicit missing candidates remain missing instead of selecting a different one.
+
+Every candidate action captures identity and visible payload before the request.
+Buttons and editable candidate fields lock while an action runs. On success only
+the submitted draft version is cleared. Refreshing the originating session keeps
+the current candidate selection and its own draft; a different project receives
+no data from that completion. Receipts include the original project/session/candidate;
+suppression undo binds to that receipt's project. Session removal clears drafts
+only for removed identities. Failures preserve drafts and explicit retries; an
+unconfirmed response is not automatically retried as a write.
+
+Existing backend approval hashes, conflicts, suppression and rollback semantics
+are unchanged. This slice adds browser coordination, not a cross-process optimistic
+edit protocol. Backend material-content authorization remains essential; browser
+request guards do not replace it.
 
 ## Verification
 
@@ -141,4 +218,5 @@ Run browser-heavy files in separate processes if the local runner exits 137.
 The repository has observed this long-process interruption both before and after
 the entry migration; it is not counted as a passing test. A complete run must
 record results for every file. See the [implementation handoff](tasks/2026-09-04-browser-module-entry/handoff.md)
-for the earlier module-delivery evidence; the [Library handoff](tasks/2026-09-04-library-state/handoff.md) records the current slice.
+for the earlier module-delivery evidence; the [Library handoff](tasks/2026-09-04-library-state/handoff.md) records that slice,
+and the [Review handoff](tasks/2026-09-04-review-state/handoff.md) records the current state.

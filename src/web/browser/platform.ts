@@ -52,11 +52,11 @@ export class ApiError extends Error {
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 
 export type BrowserFetch = (path: string, options?: RequestInit) => Promise<Response>;
-export function createApiClient(token: string, t: Translate, request: BrowserFetch = fetch) {
+export function createApiClient(token: string | (() => string), t: Translate, request: BrowserFetch = fetch) {
   return async function api<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
     if (!path.startsWith("/api/")) throw new Error("Expected a local API path.");
     const headers = new Headers(options.headers);
-    headers.set("X-Codetrap-Token", token);
+    headers.set("X-Codetrap-Token", typeof token === "function" ? token() : token);
     if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     const response = await request(path, { ...options, headers });
     const text = await response.text();
@@ -90,19 +90,29 @@ export function parseBootstrapPayload(value: unknown): BootstrapPayload {
   return value as unknown as BootstrapPayload;
 }
 
-export function showBootstrapFailure(doc: Document, locale: WebLocale, t: Translate, error: unknown): void {
+export function showBootstrapFailure(doc: Document, locale: WebLocale, t: Translate, error: unknown,
+  context: { hasToken?: boolean; retained?: boolean; port?: string } = {}): void {
+  const unauthorized = error instanceof ApiError && error.status === 401;
+  const kind = unauthorized ? context.hasToken === false ? "missing" : "invalid" : error instanceof TypeError ? "network" : "startup";
   doc.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
-  doc.title = "codetrap · " + t("auth.title");
-  doc.getElementById("app-shell")?.remove();
+  doc.title = "codetrap · " + t("auth." + kind + "Title");
+  const shell = doc.getElementById("app-shell");
+  if (shell) { shell.hidden = true; shell.classList.add("hidden"); }
   const status = doc.getElementById("status");
   if (status) status.className = "status";
   const labels = {
-    "bootstrap-failure-kicker": t("auth.kicker"), "bootstrap-failure-title": t("auth.title"),
-    "bootstrap-failure-copy": error instanceof ApiError && error.status === 401 ? t("error.sessionExpired") : t("auth.copy"),
-    "bootstrap-command-label": t("auth.commandLabel"), "bootstrap-command": "codetrap web --open",
-    "bootstrap-privacy": t("auth.privacy"), "bootstrap-retry": t("auth.retry"),
+    "bootstrap-failure-kicker": t("auth.kicker"), "bootstrap-failure-title": t("auth." + kind + "Title"),
+    "bootstrap-failure-copy": t("auth." + kind + "Copy"),
+    "bootstrap-command-label": t("auth.commandLabel"),
+    "bootstrap-command": "codetrap web" + (context.port && /^\d+$/.test(context.port) ? " --port " + context.port : "") + " --open",
+    "bootstrap-privacy": t(context.retained ? "auth.retained" : "auth.privacy"), "bootstrap-retry": t("auth.retry"),
+    "bootstrap-link-label": t("auth.linkLabel"), "bootstrap-link-help": t("auth.linkHelp"), "bootstrap-connect": t("auth.connect"),
   };
   for (const [id, text] of Object.entries(labels)) { const node = doc.getElementById(id); if (node) node.textContent = text; }
   const panel = doc.getElementById("bootstrap-failure");
   if (panel) { panel.classList.remove("hidden"); panel.hidden = false; }
+  const form = doc.getElementById("bootstrap-auth-form");
+  if (form) form.hidden = !unauthorized;
+  const retry = doc.getElementById("bootstrap-retry") as HTMLButtonElement | null;
+  if (retry) retry.hidden = unauthorized && context.hasToken === false;
 }

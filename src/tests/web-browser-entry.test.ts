@@ -6,13 +6,14 @@ import { webProjectRouteRef } from "../web/project-registry";
 const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].find(path => path && existsSync(path));
 const browserTest = chrome ? test : test.skip;
 
-for (const failure of ["unauthorized-html", "invalid-bootstrap"] as const) {
+for (const failure of ["unauthorized-html", "invalid-bootstrap", "server-error"] as const) {
   browserTest(`browser entry recovers from ${failure} without mounting a broken workspace or losing its route`, async () => {
     const f = webSuiteFixture();
     let fail = true;
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: req => {
       if (new URL(req.url).pathname === "/api/bootstrap" && fail) return failure === "unauthorized-html"
-        ? new Response("<html>Session expired</html>", { status: 401 }) : Response.json({ projects: [{}], options: {} });
+        ? new Response("<html>Session expired</html>", { status: 401 })
+        : failure === "server-error" ? new Response("Unavailable", { status: 500 }) : Response.json({ projects: [{}], options: {} });
       return f.handler(req);
     } });
     const { chromium } = await import("playwright-core");
@@ -25,10 +26,11 @@ for (const failure of ["unauthorized-html", "invalid-bootstrap"] as const) {
       const hash = "#/impact/evals?project=" + webProjectRouteRef(f.project);
       await page.goto(`http://127.0.0.1:${server.port}/?token=suite-token` + hash);
       await page.locator("#bootstrap-failure").waitFor({ state: "visible" });
-      expect(await page.locator("#app-shell").count()).toBe(0);
+      expect(await page.locator("#app-shell").isHidden()).toBe(true);
+      expect(await page.locator("#bootstrap-failure-title").textContent()).toBe(failure === "unauthorized-html" ? "重新连接工作台" : "工作台加载失败");
       expect(new URL(page.url()).searchParams.has("token")).toBe(false);
       expect(new URL(page.url()).hash).toBe(hash);
-      expect(await page.locator("#bootstrap-command").textContent()).toBe("codetrap web --open");
+      expect(await page.locator("#bootstrap-command").textContent()).toBe(`codetrap web --port ${server.port} --open`);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       fail = false;
       await page.locator("#bootstrap-retry").click();

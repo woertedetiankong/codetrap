@@ -1,14 +1,16 @@
 import { WEB_TEXT } from '../client-text';
 import { parseWorkspaceRoute, workspaceRouteHash } from '../client-route';
-import { selectedReviewSessionId, reviewQueueModel, sortedReviewCandidates, selectedReviewCandidateId, visibleReviewSummary, candidateVisibleInReviewView, reviewStatusRank, reviewCandidateTrapDraft, reviewCandidateMutationPayload } from '../client-review';
+import { reviewQueueModel, visibleReviewSummary } from '../client-review';
 import { createShell } from './shell';
 import { createImpactUI } from '../client-impact';
 import { createExperienceActions } from '../client-experience-actions';
 import { impactOverviewContent } from '../client-impact-overview';
 import { createLibraryUI } from './library';
+import { createReviewUI } from './review';
 import { createRevisionUI } from '../client-revisions';
 import { createEvalSuiteUI } from '../client-eval-suite';
-import { createApiClient, parseBootstrapPayload, showBootstrapFailure } from './platform';
+import { parseBootstrapPayload } from './platform';
+import { createAccessRecovery } from './access';
 
 // Existing business state remains a migration boundary. New browser infrastructure
 // belongs in typed modules; this file contains no source serialization.
@@ -26,9 +28,6 @@ export function mountWorkspace(boot) {
       locale: initialLocale,
       mainView: initialRoute.mainView,
       projects: [],
-      sessions: [],
-      candidateReview: null,
-      candidates: [],
       routeInsightKey: null,
       routeInsightTarget: null,
       routeError: "",
@@ -89,24 +88,22 @@ export function mountWorkspace(boot) {
       controlledEvalBusy: false,
       controlledEvalError: "",
       projectRoot: null,
-      sessionId: initialRoute.sessionId,
-      candidateId: initialRoute.candidateId,
-      candidateView: "inbox",
-      candidateDirty: false,
       detailActionInFlight: false,
-      sessionsSignature: "",
-      candidatesSignature: "",
       externalRefreshInFlight: false,
-      externalDeferredSignature: "",
       sidebarCollapsed: savedSidebarCollapsed,
       queueCollapsed: savedQueueCollapsed,
       options: { categories: [], severities: [], scopes: [], stale_after_days: 180 },
-      conflicts: []
     };
 
     const el = (id) => document.getElementById(id);
-    const api = createApiClient(token, t);
     let bootstrapSucceeded = false;
+    const access = createAccessRecovery({ token, t, locale: () => state.locale, ready: () => bootstrapSucceeded,
+      connected: async (data) => {
+        if (!bootstrapSucceeded) await bootstrap(data);
+        else { renderAuthorizedShell(); syncDocumentTitle(); void applyWorkspaceRouteFromLocation(); }
+      }
+    });
+    const api = access.api;
     let appliedRouteHash = location.hash;
     let routeNavigationInFlight = false;
 
@@ -133,14 +130,20 @@ export function mountWorkspace(boot) {
     });
     const { setSidebarCollapsed, setQueueCollapsed, renderSidebarToggle, initShellResizers } = createShell({ state, el, t });
     const { renderImpactQueue, syncImpactOverviewLayout, renderImpactDetail, syncEvalDeferredNotice, snapshotEvalReviewDraftFromDom } = createImpactUI({ state, evalSuiteUI, revisionUI, impactOverviewContent, el, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, api, syncWorkspaceRoute, showStatus, captureImpactScrollPosition, restoreImpactScrollPosition, loadImpactRun, loadImpactEvals, loadImpact, jumpToTrap });
-    const { renderLearningPractice, bindLearningPractice, selectExperienceProject, openLearningConfirmedTrap, openLearningLinkedRun, openExperienceRun, openExperienceInsight } = createExperienceActions({ state, el, t, escapeHtml, api, resetLibrary: () => library.reset(state.projectRoot), currentLearningInsight, learningProgress, snapshotLearningDraftFromDom, captureLearningScrollPosition, replaceLearningImpact, renderLearningDetail, restoreLearningScrollPosition, showStatus, resetObservationState, renderProjects, renderSessions, renderActiveView, revealCompactDetail, jumpToTrap, loadImpactRun, loadLearningInsights, selectLearningInsight });
+    const { renderLearningPractice, bindLearningPractice, selectExperienceProject, openLearningConfirmedTrap, openLearningLinkedRun, openExperienceRun, openExperienceInsight } = createExperienceActions({ state, el, t, escapeHtml, api, resetLibrary: () => library.reset(state.projectRoot), resetReview: () => review.reset(state.projectRoot), currentLearningInsight, learningProgress, snapshotLearningDraftFromDom, captureLearningScrollPosition, replaceLearningImpact, renderLearningDetail, restoreLearningScrollPosition, showStatus, resetObservationState, renderProjects, renderSessions, renderActiveView, revealCompactDetail, jumpToTrap, loadImpactRun, loadLearningInsights, selectLearningInsight });
     const library = createLibraryUI({
       context: () => ({ project: state.projectRoot, active: state.mainView === "library" && !state.routeError, options: state.options }),
       api, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, optionPairs, kv, textBlock, renderEvidence,
       isCompactShell, syncWorkspaceRoute, restoreWorkspacePosition, showStatus,
       revisionHistory: (...args) => revisionUI.history(...args),
       openRun: (...args) => openExperienceRun(...args), openInsight: (...args) => openExperienceInsight(...args),
-      activate: (detail) => { state.mainView = "library"; state.candidateId = null; state.compactDetail = detail; renderMainViewButtons(); }
+      activate: (detail) => { state.mainView = "library"; review.clearSelection(); state.compactDetail = detail; renderMainViewButtons(); }
+    });
+    const review = createReviewUI({
+      context: () => ({ project: state.projectRoot, active: state.mainView === "review" && !state.routeError }),
+      api, t, renderSessions, renderReview: () => { renderCandidates(); renderDetail(); },
+      navigate: () => { syncWorkspaceRoute(); if (state.mainView === "review") revealCompactDetail(); },
+      showStatus, showReceipt, externalBusy: () => state.detailActionInFlight
     });
     function loadTraps() { return library.load(); }
     function renderLibrary() { library.renderList(); }
@@ -156,8 +159,8 @@ export function mountWorkspace(boot) {
       return {
         mainView: state.mainView, impactView: state.impactView,
         projectRef: projectRouteRef(state.projectRoot),
-        sessionId: state.mainView === "review" ? state.sessionId : null,
-        candidateId: state.mainView === "review" ? state.candidateId : null,
+        sessionId: state.mainView === "review" ? review.state.sessionId : null,
+        candidateId: state.mainView === "review" ? review.state.candidateId : null,
         runId: state.mainView === "impact" && state.impactView === "runs" ? state.observationRunId : null,
         trapScope: parts[0] || null, trapId: parts.length ? Number(parts[1]) : null,
         insightProjectRef: state.routeInsightKey ? (insight ? projectRouteRef(insight.origin_project_root) : state.routeInsightTarget?.projectRef) : null,
@@ -219,9 +222,7 @@ export function mountWorkspace(boot) {
       state.learningCollectionItems = [];
       state.learningFilters = { query: "", status: "", sourceType: "", tag: "" };
       state.learningScope = "all";
-      state.sessionId = route.sessionId;
-      state.candidateId = route.candidateId;
-      state.conflicts = [];
+      review.reset(state.projectRoot, route.sessionId, route.candidateId);
       if (route.mainView === "impact") {
         state.impactView = route.impactView;
         state.observationRunId = route.runId;
@@ -231,7 +232,7 @@ export function mountWorkspace(boot) {
     }
 
     async function applyWorkspaceRouteFromLocation() {
-      if (!bootstrapSucceeded || routeNavigationInFlight || location.hash === appliedRouteHash) return;
+      if (access.blocked || !bootstrapSucceeded || routeNavigationInFlight || location.hash === appliedRouteHash) return;
       saveWorkspacePosition();
       snapshotLearningDraftFromDom();
       const hash = location.hash;
@@ -249,7 +250,7 @@ export function mountWorkspace(boot) {
         else if (state.mainView === "learning") await loadLearningInsights();
         else if (state.mainView === "embeddings") await loadEmbeddings();
         else if (state.mainView === "impact") await loadImpact();
-        else await loadSessions();
+        else void loadSessions();
       } catch (error) {
         showStatus(error.message, true);
       } finally {
@@ -479,6 +480,7 @@ export function mountWorkspace(boot) {
         + `<div class="receipt-line">${escapeHtml(t("receipt.executor", { executor: receipt.executor }))}</div>`
         + `<div class="receipt-line">${escapeHtml(t("receipt.scope", { scope: receipt.authorized_scope }))}</div>`
         + `<div class="receipt-line subtle">${escapeHtml(receipt.recorded_at)}</div>`;
+      if (options.target) box.innerHTML += '<div class="receipt-line subtle">' + escapeHtml(options.target.projectRoot + " / " + options.target.sessionId + " / " + options.target.candidateId) + '</div>';
       box.className = "receipt show";
       if (options.undoSuppression) {
         const actions = document.createElement("div");
@@ -487,7 +489,7 @@ export function mountWorkspace(boot) {
         undo.type = "button";
         undo.className = "ghost";
         undo.textContent = t("action.undoSuppression");
-        undo.addEventListener("click", () => undoSuppression(options.undoSuppression));
+        undo.addEventListener("click", () => undoSuppression(options.undoSuppression, options.projectRoot || state.projectRoot));
         actions.append(undo);
         box.append(actions);
       }
@@ -498,11 +500,11 @@ export function mountWorkspace(boot) {
       if (box) box.className = "receipt";
     }
 
-    async function undoSuppression(fingerprint) {
+    async function undoSuppression(fingerprint, projectRoot) {
       try {
         const data = await api("/api/suppression/undo", {
           method: "POST",
-          body: JSON.stringify({ projectRoot: state.projectRoot, fingerprint })
+          body: JSON.stringify({ projectRoot, fingerprint })
         });
         showReceipt(data.receipt);
         showStatus(t("status.suppressionUndone"));
@@ -519,17 +521,18 @@ export function mountWorkspace(boot) {
       showStatus.timer = setTimeout(() => box.className = "status", 3200);
     }
 
-    function renderBootstrapFailure(error) { bootstrapSucceeded = false; showBootstrapFailure(document, state.locale, t, error); }
+    function renderBootstrapFailure(error) { access.show(error); }
 
     function renderAuthorizedShell() {
+      if (access.blocked) return;
       el("bootstrap-failure").classList.add("hidden");
       el("bootstrap-failure").hidden = true;
       el("app-shell").classList.remove("hidden");
       el("app-shell").hidden = false;
     }
 
-    async function bootstrap() {
-      const data = parseBootstrapPayload(await api("/api/bootstrap"));
+    async function bootstrap(connectedData) {
+      const data = connectedData || parseBootstrapPayload(await api("/api/bootstrap"));
       state.projects = data.projects;
       state.projectRoot = data.current_project_root || data.projects[0]?.root || null;
       state.options = data.options;
@@ -541,17 +544,6 @@ export function mountWorkspace(boot) {
       bootstrapSucceeded = true;
       renderAuthorizedShell();
       syncWorkspaceRoute(true);
-    }
-
-    function sessionsSignature(data) {
-      return JSON.stringify({
-        candidateReview: data.candidate_review || null,
-        sessions: data.sessions || []
-      });
-    }
-
-    function candidatesSignature(candidates) {
-      return JSON.stringify(candidates || []);
     }
 
     function impactContentSignature() {
@@ -602,72 +594,22 @@ export function mountWorkspace(boot) {
     }
 
     async function loadSessions() {
+      if (review.state.project !== state.projectRoot) review.reset(state.projectRoot);
       if (!state.projectRoot) {
-        state.sessions = [];
-        state.candidateReview = null;
-        state.candidates = [];
-        library.reset(null);
-        state.learningInsights = [];
-        state.learningCollections = [];
-        state.learningCollectionItems = [];
-        state.insightId = null;
-        resetLearningImpactState();
-        state.embeddingStatus = null;
-        state.embeddingSettings = null;
-        resetObservationState();
-        state.sessionsSignature = "";
-        state.candidatesSignature = "";
-        renderSessions();
-        renderActiveView();
-        return;
+        library.reset(null); state.learningInsights = []; state.learningCollections = []; state.learningCollectionItems = [];
+        state.insightId = null; resetLearningImpactState(); state.embeddingStatus = null; state.embeddingSettings = null; resetObservationState();
+        renderSessions(); renderActiveView(); return;
       }
-      const requestedProjectRoot = state.projectRoot;
-      const data = await api("/api/sessions?project=" + encodeURIComponent(requestedProjectRoot));
-      if (state.projectRoot !== requestedProjectRoot) return;
-      state.sessions = data.sessions;
-      state.candidateReview = data.candidate_review || null;
-      state.sessionsSignature = sessionsSignature(data);
-      state.sessionId = selectedReviewSessionId(state.sessions, state.sessionId);
-      renderSessions();
-      if (state.mainView === "library") {
-        await loadTraps();
-      } else if (state.mainView === "learning") {
-        await loadLearningInsights();
-      } else if (state.mainView === "embeddings") {
-        await loadEmbeddings();
-      } else if (state.mainView === "impact") {
-        await loadImpact();
-      } else {
-        await loadCandidates();
-      }
+      const requestedView = state.mainView;
+      if (!await review.loadSessions() || state.mainView !== requestedView) return;
+      if (state.mainView === "library") await loadTraps();
+      else if (state.mainView === "learning") await loadLearningInsights();
+      else if (state.mainView === "embeddings") await loadEmbeddings();
+      else if (state.mainView === "impact") await loadImpact();
+      else await loadCandidates();
     }
 
-    async function loadCandidates() {
-      if (!state.projectRoot || !state.sessionId) {
-        state.candidates = [];
-        state.candidatesSignature = "[]";
-        if (state.mainView === "review") {
-          renderCandidates();
-          renderDetail();
-        }
-        return;
-      }
-      const data = await api("/api/candidates?project=" + encodeURIComponent(state.projectRoot) + "&session=" + encodeURIComponent(state.sessionId));
-      state.candidates = data.candidates;
-      state.candidatesSignature = candidatesSignature(data.candidates);
-      const routedCandidate = state.candidates.find((candidate) => candidate.id === state.candidateId);
-      if (routedCandidate) state.candidateView = routedCandidate.status === "proposed" ? "inbox" : "reviewed";
-      state.candidateId = reviewQueueModel({
-        candidates: state.candidates,
-        candidateView: state.candidateView,
-        candidateId: state.candidateId,
-        candidateReview: state.candidateReview
-      }).selectedCandidateId;
-      if (state.mainView === "review") {
-        renderCandidates();
-        renderDetail();
-      }
-    }
+    async function loadCandidates() { return review.loadCandidates(); }
 
     function resetLearningImpactState() {
       state.learningRuns = [];
@@ -1059,8 +1001,7 @@ export function mountWorkspace(boot) {
           state.compactDetail = false;
           state.projectRoot = button.dataset.project;
           setCompactWorkspaceOpen(false);
-          state.sessionId = null;
-          state.candidateId = null;
+          review.reset(state.projectRoot);
           library.reset(state.projectRoot);
           state.learningInsights = [];
           state.learningCollections = [];
@@ -1078,8 +1019,11 @@ export function mountWorkspace(boot) {
     }
 
     function renderSessions() {
-      el("sessions").innerHTML = state.sessions.length ? state.sessions.map((session) => `
-        <div class="row ${session.id === state.sessionId ? "active" : ""}">
+      if (review.loadView("sessions", el("sessions"))) {
+        el("rename-session").classList.add("hidden"); el("delete-session").classList.add("hidden"); return;
+      }
+      el("sessions").innerHTML = review.state.sessions.length ? review.state.sessions.map((session) => `
+        <div class="row ${session.id === review.state.sessionId ? "active" : ""}">
           <button type="button" class="row-main" data-session="${escapeAttr(session.id)}">
             <span class="row-title">${escapeHtml(session.goal)}</span>
             <span class="meta">
@@ -1091,7 +1035,7 @@ export function mountWorkspace(boot) {
           </button>
         </div>
       `).join("") : '<div class="empty">' + escapeHtml(t("empty.noSessions")) + '</div>';
-      const selectedSession = state.sessions.find((session) => session.id === state.sessionId);
+      const selectedSession = review.state.sessions.find((session) => session.id === review.state.sessionId);
       const renameButton = el("rename-session");
       const deleteButton = el("delete-session");
       renameButton.textContent = t("action.renameSession");
@@ -1102,11 +1046,7 @@ export function mountWorkspace(boot) {
       deleteButton.dataset.sessionId = selectedSession?.id || "";
       document.querySelectorAll("[data-session]").forEach((button) => {
         button.addEventListener("click", async () => {
-          state.sessionId = button.dataset.session;
-          state.candidateId = null;
-          syncWorkspaceRoute();
-          renderSessions();
-          await loadCandidates();
+          await review.selectSession(button.dataset.session);
           if (state.mainView !== "library" && state.mainView !== "learning") revealCompactDetail();
         });
       });
@@ -1114,77 +1054,38 @@ export function mountWorkspace(boot) {
 
     async function deleteSession(sessionId) {
       if (!sessionId || !confirm(t("prompt.deleteSession", { id: sessionId }))) return;
-      try {
-        await api("/api/session/delete", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: state.projectRoot, sessionId })
-        });
-        if (state.sessionId === sessionId) {
-          state.sessionId = null;
-          state.candidateId = null;
-          state.candidates = [];
-        }
-        await loadSessions();
-        showStatus(t("status.sessionDeleted"));
-      } catch (error) {
-        showStatus(error.message, true);
-      }
+      await review.sessionAction("delete", sessionId);
     }
-
     async function renameSession(sessionId) {
-      const session = state.sessions.find((item) => item.id === sessionId);
+      const session = review.state.sessions.find(item => item.id === sessionId);
       if (!session) return;
-      const goal = prompt(t("prompt.renameSession"), session.goal);
-      if (goal === null || !goal.trim() || goal.trim() === session.goal) return;
-      try {
-        await api("/api/session/rename", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: state.projectRoot, sessionId, goal: goal.trim() })
-        });
-        await loadSessions();
-        showStatus(t("status.sessionRenamed"));
-      } catch (error) {
-        showStatus(error.message, true);
-      }
+      const goal = prompt(t("prompt.renameSession"), session.goal)?.trim();
+      if (goal && goal !== session.goal) await review.sessionAction("rename", sessionId, goal);
     }
-
     async function cleanupDeletedCandidates() {
-      if (!state.sessionId) return;
-      try {
-        const data = await api("/api/session/cleanup", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: state.projectRoot, sessionId: state.sessionId })
-        });
-        if (data.removed_candidate_ids?.includes(state.candidateId)) {
-          state.candidateId = null;
-        }
-        await loadSessions();
-        showStatus(t("status.deletedCandidatesCleaned"));
-      } catch (error) {
-        showStatus(error.message, true);
-      }
+      if (review.state.sessionId) await review.sessionAction("cleanup", review.state.sessionId);
     }
 
     function renderCandidates() {
       if (state.mainView !== "review") return;
+      if (review.loadView("sessions", el("candidates")) || review.loadView("candidates", el("candidates"))) return;
       const model = reviewQueueModel({
-        candidates: state.candidates,
-        candidateView: state.candidateView,
-        candidateId: state.candidateId,
-        candidateReview: state.candidateReview
+        candidates: review.state.candidates,
+        candidateView: review.state.view,
+        candidateId: review.state.candidateId,
+        candidateReview: review.state.summary
       });
       const pendingCount = model.pendingCount;
       const reviewedCount = model.reviewedCount;
       const sorted = model.visibleCandidates;
-      state.candidateId = model.selectedCandidateId;
-      const session = state.sessions.find((item) => item.id === state.sessionId);
+      const session = review.state.sessions.find((item) => item.id === review.state.sessionId);
       el("queue-meta").textContent = session
         ? t("meta.sessionCounts", { goal: session.goal, pending: pendingCount, reviewed: reviewedCount })
         : t("meta.noSession");
       renderReviewSummary(model.summary);
       renderCandidateViewTabs(pendingCount, reviewedCount);
       el("candidates").innerHTML = sorted.length ? sorted.map((candidate) => `
-        <div class="row ${candidate.id === state.candidateId ? "active" : ""} ${candidate.status} ${reviewCssClass(candidate)}">
+        <div class="row ${candidate.id === review.state.candidateId ? "active" : ""} ${candidate.status} ${reviewCssClass(candidate)}">
           <button type="button" class="row-main" data-candidate="${escapeAttr(candidate.id)}">
             <span class="row-title">${escapeHtml(candidateTitle(candidate))}</span>
             ${candidateSummary(candidate) ? '<span class="subtle">' + escapeHtml(candidateSummary(candidate)) + '</span>' : ''}
@@ -1197,14 +1098,10 @@ export function mountWorkspace(boot) {
           </button>
           ${renderCandidateRowAction(candidate)}
         </div>
-      `).join("") : '<div class="empty">' + escapeHtml(t(state.candidateView === "inbox" ? "empty.noPending" : "empty.noReviewed")) + '</div>';
+      `).join("") : '<div class="empty">' + escapeHtml(t(review.state.view === "inbox" ? "empty.noPending" : "empty.noReviewed")) + '</div>';
       document.querySelectorAll("[data-candidate]").forEach((button) => {
         button.addEventListener("click", () => {
-          state.candidateId = button.dataset.candidate;
-          state.conflicts = [];
-          syncWorkspaceRoute();
-          renderCandidates();
-          renderDetail();
+          review.selectCandidate(button.dataset.candidate);
           if (state.mainView !== "library" && state.mainView !== "learning") revealCompactDetail();
         });
       });
@@ -1324,7 +1221,7 @@ export function mountWorkspace(boot) {
       const manifest = collection.source_coverage;
       if (!manifest) return { manifest: null, summary: sourceCoverageSummary(null, []), current_refs: [] };
       const collectionKey = String(collection.id || collection.title || "").toLocaleLowerCase();
-      const siblings = state.candidates.filter((entry) => {
+      const siblings = review.state.candidates.filter((entry) => {
         if (!isInsightCandidate(entry)) return false;
         if (entry.review_decision === "rejected" || entry.review_decision === "suppressed") return false;
         const siblingCollection = entry.destination_payload?.collection || {};
@@ -1907,9 +1804,7 @@ export function mountWorkspace(boot) {
       if (!insight || !promotion || promotion.status === "missing") return;
       state.projectRoot = insight.origin_project_root;
       state.mainView = "review";
-      state.sessionId = promotion.session_id;
-      state.candidateId = promotion.candidate_id;
-      state.candidateView = promotion.status === "proposed" ? "inbox" : "reviewed";
+      review.reset(state.projectRoot, promotion.session_id, promotion.candidate_id);
       library.reset(state.projectRoot);
       state.learningDraft = null;
       state.learningDraftInsightKey = null;
@@ -2309,12 +2204,12 @@ export function mountWorkspace(boot) {
       document.querySelectorAll("[data-candidate-view]").forEach((button) => {
         const view = button.dataset.candidateView;
         const count = view === "inbox" ? pendingCount : reviewedCount;
-        button.classList.toggle("active", view === state.candidateView);
+        button.classList.toggle("active", view === review.state.view);
         button.textContent = t(view === "inbox" ? "tab.inbox" : "tab.reviewed", { count });
       });
     }
 
-    function renderReviewSummary(summary = visibleReviewSummary(state.candidateReview)) {
+    function renderReviewSummary(summary = visibleReviewSummary(review.state.summary)) {
       const target = el("review-summary");
       if (!target) return;
       if (!summary) {
@@ -2352,18 +2247,17 @@ export function mountWorkspace(boot) {
       // while the user navigates makes it describe something else.
       hideReceipt();
       if (state.mainView !== "review") return;
-      const candidate = state.candidates.find((item) => item.id === state.candidateId);
+      if (review.loadView("sessions", el("detail")) || review.loadView("candidates", el("detail"))) return;
+      const candidate = review.current();
       el("detail-meta").textContent = candidate ? candidate.id + " / " + valueLabel(candidate.status) : t("meta.selectCandidate");
       if (!candidate) {
-        state.candidateDirty = false;
-        el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("empty.noCandidateSelected")) + '</div>';
+        el("detail").innerHTML = '<div class="empty">' + escapeHtml(t(review.state.candidateId ? "route.itemMissing" : "empty.noCandidateSelected")) + '</div>';
         return;
       }
       if (isInsightCandidate(candidate)) {
         renderInsightCandidateDetail(candidate);
         return;
       }
-      state.candidateDirty = false;
       const disabled = candidate.status !== "proposed" ? "disabled" : "";
       el("detail").innerHTML = `
         <div class="scroll">
@@ -2405,7 +2299,6 @@ export function mountWorkspace(boot) {
     }
 
     function renderInsightCandidateDetail(candidate) {
-      state.candidateDirty = false;
       const payload = candidate.destination_payload || {};
       const sourceCoverage = candidateSourceCoverage(candidate);
       const disabled = candidate.status !== "proposed" ? "disabled" : "";
@@ -2518,7 +2411,7 @@ export function mountWorkspace(boot) {
         return `<div class="actions"><span class="pill ${reviewCssClass(candidate)}">${escapeHtml(reviewLabel(candidate))}</span>${viewTrap}${cleanDeleted}${rollback}</div>`;
       }
       const approved = candidate.review?.status === "approved";
-      const conflictActions = state.conflicts.length ? `<div class="candidate-conflict-actions">
+      const conflictActions = review.conflicts().length ? `<div class="candidate-conflict-actions">
         <button id="accept-anyway" ${disabled}>${escapeHtml(t("action.acceptAnyway"))}</button>
         <input id="supersedes" placeholder="${escapeAttr(t("placeholder.supersedesId"))}" style="width:180px" ${disabled}>
         <button id="supersede" ${disabled}>${escapeHtml(t("action.supersede"))}</button>
@@ -2537,326 +2430,23 @@ export function mountWorkspace(boot) {
       </div>`;
     }
 
-    function bindCandidateFormDirty(candidate) {
-      const form = el("candidate-form");
-      if (!form || candidate.status !== "proposed") return;
-      const markDirty = () => {
-        state.candidateDirty = true;
-        renderCandidateDraftState();
-      };
-      form.addEventListener("input", markDirty);
-      form.addEventListener("change", markDirty);
-      renderCandidateDraftState();
-    }
-
-    function renderCandidateDraftState() {
-      const draft = el("candidate-draft-state");
-      if (!draft) return;
-      draft.textContent = state.candidateDirty ? t("hint.unsavedDraftAccepted") : t("hint.acceptUsesCurrentDraft");
-      draft.classList.toggle("dirty", state.candidateDirty);
-    }
-
-    function setDetailActionsDisabled(disabled) {
-      ["save", "approve", "apply-insight", "accept", "reject", "accept-anyway", "supersede", "supersedes", "rollback"].forEach((id) => {
-        const control = el(id);
-        if (control) control.disabled = disabled;
-      });
-    }
-
-    async function runDetailAction(action) {
-      if (state.detailActionInFlight) return;
-      state.detailActionInFlight = true;
-      setDetailActionsDisabled(true);
-      try {
-        await action();
-      } finally {
-        state.detailActionInFlight = false;
-        setDetailActionsDisabled(false);
-      }
-    }
-
-    function openRejectDialog(candidate) {
-      const dialog = el("reject-dialog");
-      dialog.dataset.candidateId = candidate.id;
-      dialog.dataset.sessionId = state.sessionId || "";
-      el("reject-dialog-title").textContent = t("dialog.rejectTitle");
-      el("reject-dialog-candidate").textContent = t("dialog.rejectCandidate", { title: candidateTitle(candidate) });
-      el("reject-dialog-scope").textContent = t("dialog.rejectScope");
-      el("reject-dialog-undo").textContent = t("dialog.rejectUndo");
-      el("reject-reason-label").textContent = t("label.rejectReason");
-      el("reject-cancel").textContent = t("action.cancel");
-      el("reject-confirm").textContent = t("action.confirmReject");
-      el("reject-reason").value = "";
-      dialog.showModal();
-      requestAnimationFrame(() => el("reject-reason").focus());
-    }
-
+    function bindCandidateFormDirty(candidate) { review.attachForm(candidate); }
     function bindDetailActions(candidate) {
-      document.querySelectorAll("[data-clean-deleted-candidates]").forEach((button) => {
-        button.addEventListener("click", cleanupDeletedCandidates);
-      });
-      // Bound before the save-button guard: rollback renders on reviewed
-      // candidates, which have no save button, so binding it after the early
-      // return meant the control existed and did nothing.
-      const rollbackButton = el("rollback");
-      if (rollbackButton) {
-        rollbackButton.addEventListener("click", () => runDetailAction(async () => {
-          if (!confirm(t(isInsightCandidate(candidate) ? "confirm.removeFromLearning" : "confirm.rollback"))) return;
-          try {
-            const data = await api("/api/candidate/rollback", {
-              method: "POST",
-              body: JSON.stringify({
-                projectRoot: state.projectRoot,
-                sessionId: state.sessionId,
-                candidateId: candidate.id
-              })
-            });
-            await syncAfterMutation(data.candidate.id);
-            showReceipt(data.receipt);
-            showStatus(t(isInsightCandidate(candidate) ? "status.insightRemoved" : "status.candidateRolledBack"));
-          } catch (error) {
-            showStatus(error.message, true);
-          }
-        }));
-      }
-
-      const save = el("save");
-      if (save) {
-        save.addEventListener("click", () => runDetailAction(async () => {
-          try {
-            const data = await api("/api/candidate/save", {
-              method: "POST",
-              body: JSON.stringify(candidatePayload(candidate.id))
-            });
-            state.candidateDirty = false;
-            await syncAfterMutation(data.candidate.id);
-            showStatus(t("status.candidateSaved"));
-          } catch (error) {
-            showStatus(error.message, true);
-          }
-        }));
-      }
-      const approveButton = el("approve");
-      if (approveButton) {
-        approveButton.addEventListener("click", () => runDetailAction(async () => {
-          try {
-            // Send the current draft, exactly as Save and Accept do. Posting
-            // only the id would authorize the *stored* revision while the
-            // user's unsaved edit sat on screen, and the re-render would then
-            // discard that edit silently.
-            const data = await api("/api/candidate/approve", {
-              method: "POST",
-              body: JSON.stringify(candidatePayload(candidate.id))
-            });
-            await syncAfterMutation(data.candidate.id);
-            showReceipt(data.receipt);
-            showStatus(t("status.candidateApproved"));
-          } catch (error) {
-            showStatus(error.message, true);
-          }
-        }));
-      }
-
-      const applyInsightButton = el("apply-insight");
-      if (applyInsightButton) {
-        applyInsightButton.addEventListener("click", () => runDetailAction(async () => {
-          try {
-            const data = await api("/api/candidate/apply-insight", {
-              method: "POST",
-              body: JSON.stringify(candidatePayload(candidate.id))
-            });
-            state.candidateDirty = false;
-            await syncAfterMutation(data.candidate.id);
-            showReceipt(data.receipt);
-            showStatus(t("status.insightAdded"));
-          } catch (error) {
-            showStatus(error.message, true);
-          }
-        }));
-      }
-
-      const accept = el("accept");
-      if (accept) accept.addEventListener("click", () => acceptCandidate({}));
-      const acceptAnyway = el("accept-anyway");
-      if (acceptAnyway) acceptAnyway.addEventListener("click", () => acceptCandidate({ acceptAnyway: true }));
-      const supersede = el("supersede");
-      if (supersede) supersede.addEventListener("click", () => {
-        const value = Number.parseInt(el("supersedes").value, 10);
-        if (Number.isNaN(value)) return showStatus(t("status.supersedesRequired"), true);
-        acceptCandidate({ supersedesId: value });
-      });
-      const reject = el("reject");
-      if (reject) reject.addEventListener("click", () => openRejectDialog(candidate));
-    }
-
-    function acceptCandidate(extra) {
-      return runDetailAction(() => submitAcceptCandidate(extra));
-    }
-
-    async function submitAcceptCandidate(extra) {
-      try {
-        const payload = el("candidate-form")
-          ? candidatePayload(state.candidateId, extra)
-          : {
-              projectRoot: state.projectRoot,
-              sessionId: state.sessionId,
-              candidateId: state.candidateId,
-              ...extra
-            };
-        const data = await api("/api/candidate/accept", {
-          method: "POST",
-          body: JSON.stringify(payload)
-        });
-        await syncAfterMutation(data.candidate.id);
-        state.conflicts = [];
-        state.candidateDirty = false;
-        showReceipt(data.receipt);
-        showStatus(t("status.candidateAccepted"));
-      } catch (error) {
-        if (error.payload?.possible_conflicts) {
-          state.conflicts = error.payload.possible_conflicts;
-          showStatus(t("status.possibleConflict"), true);
-          await loadCandidates();
-          state.conflicts = error.payload.possible_conflicts;
-          renderDetail();
-        } else {
-          showStatus(error.message, true);
-        }
-      }
-    }
-
-    function candidatePayload(candidateId, extra = {}) {
-      const candidate = state.candidates.find((item) => item.id === candidateId);
-      if (isInsightCandidate(candidate)) {
-        return {
-          projectRoot: state.projectRoot,
-          sessionId: state.sessionId,
-          candidateId,
-          destinationPayload: insightCandidateFormPayload(candidate),
-          ...extra
-        };
-      }
-      return reviewCandidateMutationPayload({
-        projectRoot: state.projectRoot,
-        sessionId: state.sessionId,
-        candidateId,
-        trap: reviewCandidateTrapDraft(candidateFormFields()),
-        extra
-      });
-    }
-
-    function insightCandidateFormPayload(candidate) {
-      const formElement = el("candidate-form");
-      if (!formElement) return candidate?.destination_payload || {};
-      const form = new FormData(formElement);
-      return {
-        ...(candidate?.destination_payload || {}),
-        title: String(form.get("insight_title") || "").trim(),
-        summary: String(form.get("insight_summary") || "").trim(),
-        body: String(form.get("insight_body") || "").trim(),
-        tags: splitReviewInput(form.get("insight_tags")),
-        source_refs: splitReviewInput(form.get("insight_source_refs")),
-        source_unit_refs: splitReviewInput(form.get("insight_source_unit_refs"))
-      };
-    }
-
-    function splitReviewInput(value) {
-      return [...new Set(String(value || "").split(/[,\n]/).map((item) => item.trim()).filter(Boolean))];
-    }
-
-    function candidateFormFields() {
-      const form = new FormData(el("candidate-form"));
-      return {
-        title: form.get("title"),
-        category: form.get("category"),
-        scope: form.get("scope"),
-        severity: form.get("severity"),
-        tags: form.get("tags"),
-        path_globs: form.get("path_globs"),
-        module: form.get("module"),
-        owner: form.get("owner"),
-        context: form.get("context"),
-        mistake: form.get("mistake"),
-        fix: form.get("fix")
-      };
-    }
-
-    function replaceCandidate(candidate) {
-      state.candidates = state.candidates.map((item) => item.id === candidate.id ? candidate : item);
-      renderCandidates();
-      renderDetail();
-    }
-
-    async function syncAfterMutation(candidateId) {
-      state.candidateId = candidateId;
-      syncWorkspaceRoute(true);
-      await loadSessions();
+      review.bindActions(candidate);
+      document.querySelectorAll("[data-clean-deleted-candidates]").forEach(button => button.addEventListener("click", cleanupDeletedCandidates));
     }
 
     async function refreshExternalChanges() {
-      if (!state.projectRoot || document.visibilityState !== "visible" || state.externalRefreshInFlight || state.detailActionInFlight) return;
+      if (access.blocked || !state.projectRoot || document.visibilityState !== "visible" || state.externalRefreshInFlight || state.detailActionInFlight || review.state.busy) return;
       state.externalRefreshInFlight = true;
       try {
-        if (state.mainView === "impact") {
-          await loadImpact(true);
-          return;
-        }
-        const sessionData = await api("/api/sessions?project=" + encodeURIComponent(state.projectRoot));
-        const nextSessionsSignature = sessionsSignature(sessionData);
-        const nextSessionId = selectedReviewSessionId(sessionData.sessions, state.sessionId);
-        let candidateData = null;
-        let nextCandidatesSignature = "[]";
-        if (state.mainView === "review" && nextSessionId) {
-          candidateData = await api("/api/candidates?project=" + encodeURIComponent(state.projectRoot) + "&session=" + encodeURIComponent(nextSessionId));
-          nextCandidatesSignature = candidatesSignature(candidateData.candidates);
-        }
-
-        const combinedSignature = nextSessionsSignature + "\n" + nextSessionId + "\n" + nextCandidatesSignature;
-        const changed = nextSessionsSignature !== state.sessionsSignature
-          || nextSessionId !== state.sessionId
-          || (state.mainView === "review" && nextCandidatesSignature !== state.candidatesSignature);
-        if (!changed) {
-          state.externalDeferredSignature = "";
-          return;
-        }
-        if (state.candidateDirty) {
-          if (state.externalDeferredSignature !== combinedSignature) {
-            state.externalDeferredSignature = combinedSignature;
-            showStatus(t("status.externalChangesDeferred"));
-          }
-          return;
-        }
-
-        state.sessions = sessionData.sessions;
-        state.candidateReview = sessionData.candidate_review || null;
-        state.sessionId = nextSessionId;
-        state.sessionsSignature = nextSessionsSignature;
-        if (state.mainView === "review") {
-          state.candidates = candidateData?.candidates || [];
-          state.candidatesSignature = nextCandidatesSignature;
-          state.candidateId = reviewQueueModel({
-            candidates: state.candidates,
-            candidateView: state.candidateView,
-            candidateId: state.candidateId,
-            candidateReview: state.candidateReview
-          }).selectedCandidateId;
-        }
-        state.externalDeferredSignature = "";
-        renderSessions();
-        if (state.mainView === "review") {
-          renderCandidates();
-          renderDetail();
-        }
-        showStatus(t("status.externalChanges"));
-      } catch {
-        // Background freshness is best-effort; explicit Refresh still reports errors.
-      } finally {
-        state.externalRefreshInFlight = false;
-      }
+        if (state.mainView === "impact") await loadImpact(true);
+        else await review.refresh(state.mainView === "review");
+      } finally { state.externalRefreshInFlight = false; }
     }
 
     async function refreshAll() {
-      if (state.candidateDirty) {
+      if (review.dirty()) {
         showStatus(t("status.refreshDeferred"));
         return;
       }
@@ -2871,29 +2461,6 @@ export function mountWorkspace(boot) {
 
     el("refresh").addEventListener("click", refreshAll);
     el("reader-back").addEventListener("click", showReaderList);
-    el("bootstrap-retry").addEventListener("click", () => location.reload());
-    el("reject-cancel").addEventListener("click", () => el("reject-dialog").close());
-    el("reject-form").addEventListener("submit", (event) => {
-      event.preventDefault();
-      const dialog = el("reject-dialog");
-      const candidateId = dialog.dataset.candidateId;
-      const sessionId = dialog.dataset.sessionId;
-      const reason = el("reject-reason").value.trim();
-      dialog.close();
-      runDetailAction(async () => {
-        try {
-          const data = await api("/api/candidate/reject", {
-            method: "POST",
-            body: JSON.stringify({ projectRoot: state.projectRoot, sessionId, candidateId, reason })
-          });
-          await syncAfterMutation(data.candidate.id);
-          showReceipt(data.receipt, { undoSuppression: data.suppression.fingerprint });
-          showStatus(t("status.candidateRejected"));
-        } catch (error) {
-          showStatus(error.message, true);
-        }
-      });
-    });
     el("compact-workspace-toggle").addEventListener("click", () => {
       setCompactWorkspaceOpen(!el("workspace-pane").classList.contains("compact-open"));
     });
@@ -2920,7 +2487,7 @@ export function mountWorkspace(boot) {
         state.compactDetail = false;
         state.mainView = button.dataset.mainView;
         setCompactWorkspaceOpen(false);
-        state.candidateId = null;
+        review.clearSelection();
         library.clearSelection();
         syncWorkspaceRoute();
         renderActiveView();
@@ -2940,12 +2507,7 @@ export function mountWorkspace(boot) {
     });
     document.querySelectorAll("[data-candidate-view]").forEach((button) => {
       button.addEventListener("click", () => {
-        state.candidateView = button.dataset.candidateView;
-        state.candidateId = null;
-        state.conflicts = [];
-        syncWorkspaceRoute();
-        renderCandidates();
-        renderDetail();
+        review.selectView(button.dataset.candidateView);
       });
     });
     el("project-form").addEventListener("submit", async (event) => {
@@ -2960,8 +2522,7 @@ export function mountWorkspace(boot) {
         state.compactDetail = false;
         state.projectRoot = data.project.root;
         setCompactWorkspaceOpen(false);
-        state.sessionId = null;
-        state.candidateId = null;
+        review.reset(state.projectRoot);
         library.reset(state.projectRoot);
         state.learningInsights = [];
         state.learningCollections = [];
@@ -3004,8 +2565,8 @@ export function mountWorkspace(boot) {
     }
 
     function renderConflicts() {
-      if (!state.conflicts.length) return "";
-      return `<div class="section"><div class="title">${escapeHtml(t("title.possibleConflicts"))}</div>${state.conflicts.map((conflict) => `
+      if (!review.conflicts().length) return "";
+      return `<div class="section"><div class="title">${escapeHtml(t("title.possibleConflicts"))}</div>${review.conflicts().map((conflict) => `
         <div class="conflict">
           <div class="meta"><span class="pill danger">#${conflict.trap_id}</span><span class="pill">${escapeHtml(valueLabel(conflict.scope))}</span><span class="pill warn">${escapeHtml(conflict.reason)}</span></div>
           <strong>${escapeHtml(conflict.title)}</strong>
@@ -3052,5 +2613,5 @@ export function mountWorkspace(boot) {
     });
     window.addEventListener("popstate", applyWorkspaceRouteFromLocation);
     window.addEventListener("hashchange", applyWorkspaceRouteFromLocation);
-    refreshAll();
+    void access.reconnect();
 }

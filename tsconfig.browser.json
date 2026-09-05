@@ -9,5 +9,5 @@
     "types": [],
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/web/browser/entry.ts", "src/web/browser/platform.ts", "src/web/browser/library.ts"]
+  "include": ["src/web/browser/entry.ts", "src/web/browser/platform.ts", "src/web/browser/access.ts", "src/web/browser/library.ts", "src/web/browser/review.ts"]
 }

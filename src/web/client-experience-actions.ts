@@ -6,6 +6,7 @@ interface Dependencies {
   escapeHtml(value: unknown): string;
   api(path: string, options?: RequestInit): Promise<any>;
   resetLibrary(): void;
+  resetReview(): void;
   currentLearningInsight(): any;
   learningProgress(insight: any): any;
   snapshotLearningDraftFromDom(): void;
@@ -26,7 +27,7 @@ interface Dependencies {
 }
 export function createExperienceActions(deps: Dependencies) {
   const { state } = deps;
-  const { el, t, escapeHtml, api, resetLibrary, currentLearningInsight, learningProgress, snapshotLearningDraftFromDom, captureLearningScrollPosition, replaceLearningImpact, renderLearningDetail, restoreLearningScrollPosition, showStatus, resetObservationState, renderProjects, renderSessions, renderActiveView, revealCompactDetail, jumpToTrap, loadImpactRun, loadLearningInsights, selectLearningInsight } = deps;
+  const { el, t, escapeHtml, api, resetLibrary, resetReview, currentLearningInsight, learningProgress, snapshotLearningDraftFromDom, captureLearningScrollPosition, replaceLearningImpact, renderLearningDetail, restoreLearningScrollPosition, showStatus, resetObservationState, renderProjects, renderSessions, renderActiveView, revealCompactDetail, jumpToTrap, loadImpactRun, loadLearningInsights, selectLearningInsight } = deps;
 function renderLearningPractice(insight: any): string {
   const draft = state.practiceDrafts.get(insight.library_key);
   const saved = learningProgress(insight).practice_note || "";
@@ -84,11 +85,7 @@ async function saveLearningPractice(): Promise<void> {
 function selectExperienceProject(project: string): void {
   if (state.projectRoot === project) return;
   state.projectRoot = project;
-  state.sessions = [];
-  state.sessionId = null;
-  state.candidates = [];
-  state.candidateId = null;
-  state.candidateReview = null;
+  resetReview();
   resetLibrary();
   resetObservationState();
   renderProjects();

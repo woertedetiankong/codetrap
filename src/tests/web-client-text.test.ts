@@ -58,8 +58,8 @@ describe("web client text", () => {
     expect(WEB_TEXT.zh["title.sourceContext"]).toBe("文章来源背景");
     expect(WEB_TEXT.zh["action.collapseCollection"]).toContain("收起合集");
     expect(WEB_TEXT.zh["action.approveAndAddLearning"]).toBe("批准并加入学习架");
-    expect(WEB_TEXT.zh["error.sessionExpired"]).toContain("新打开");
-    expect(WEB_TEXT.zh["auth.title"]).toContain("链接已经失效");
+    expect(WEB_TEXT.zh["error.sessionExpired"]).toContain("重新连接");
+    expect(WEB_TEXT.zh["auth.invalidTitle"]).toBe("重新连接工作台");
     expect(WEB_TEXT.zh["impact.viewOfflineEvals"]).toBe("查看离线评测");
     expect(WEB_TEXT.zh["evals.queueEmptyTitle"]).toBe("没有观测候选");
     expect(WEB_TEXT.zh["value.proposed"]).toBe("待审核");
