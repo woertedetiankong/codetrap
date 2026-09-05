@@ -58,14 +58,15 @@ describe("controlled eval runner", () => {
       trials: 1,
     });
 
-    expect(result.summary.improvements).toBe(2);
+    expect(result.summary.improvements).toBe(3);
     expect(result.summary.regressions).toBe(0);
     expect(result.summary.candidate_failed_cases).toBe(0);
     expect(result.cases.slice(0, 2).every((item) => item.classification === "improved")).toBe(true);
+    // The baseline returns an unrelated trap; the negative case must fail.
     const noRelevant = result.cases.find((item) => item.gold_trap_ids.length === 0);
     expect(noRelevant).toMatchObject({
-      classification: "changed",
-      baseline: { passed: true },
+      classification: "improved",
+      baseline: { passed: false },
       candidate: { passed: true },
     });
   });

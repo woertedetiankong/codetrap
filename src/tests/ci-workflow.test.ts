@@ -19,7 +19,7 @@ describe("CI quality gates", () => {
     const release = readFileSync(".github/workflows/release.yml", "utf8");
     const publish = readFileSync(".github/workflows/npm-publish.yml", "utf8");
 
-    expect(manifest.scripts.typecheck).toBe("tsc --noEmit");
+    expect(manifest.scripts.typecheck).toBe("tsc --noEmit && tsc --project tsconfig.browser.json");
     expect(manifest.devDependencies.typescript).toBe("7.0.2");
     expect(preflight).toContain('{ name: "typecheck", cmd: ["bun", "run", "typecheck"] }');
     expect(release).toContain("bun run typecheck");

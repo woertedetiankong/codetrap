@@ -1,3 +1,5 @@
+import { readRevisionCommit, acceptRevision, rollbackRevision } from "./experience-revisions";
+import type { RevisionDraft } from "../domain/experience-revision";
 import type { Database } from "bun:sqlite";
 import type {
   Trap,
@@ -96,6 +98,10 @@ export class TrapRepository {
     }
     return success;
   }
+
+  revisionCommit(id: string, owner: string) { return readRevisionCommit(this.db, id, owner); }
+  acceptRevision(draft: RevisionDraft) { return acceptRevision(this.db, draft, (id, fields) => this.update(id, fields)); }
+  rollbackRevision(id: string, owner: string) { return rollbackRevision(this.db, id, owner, (id, fields) => this.update(id, fields)); }
 
   delete(id: number): boolean {
     return queries.deleteTrap(this.db, id);

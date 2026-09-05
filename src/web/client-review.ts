@@ -151,21 +151,3 @@ function reviewBlankToNull(value: unknown): string | null {
   const text = String(value || "").trim();
   return text ? text : null;
 }
-
-const CLIENT_REVIEW_FUNCTIONS = [
-  selectedReviewSessionId,
-  reviewQueueModel,
-  sortedReviewCandidates,
-  selectedReviewCandidateId,
-  visibleReviewSummary,
-  candidateVisibleInReviewView,
-  reviewStatusRank,
-  reviewCandidateTrapDraft,
-  reviewCandidateMutationPayload,
-  reviewSplitList,
-  reviewBlankToNull,
-];
-
-export const WEB_REVIEW_CLIENT_SCRIPT = CLIENT_REVIEW_FUNCTIONS
-  .map((fn) => `    ${fn.toString().replace(/\n/g, "\n    ")}`)
-  .join("\n\n");

@@ -1,13 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildTrapInput } from "../domain/trap";
+import { LearningImpactOperations } from "../lib/learning-impact";
 import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
 import { ObservationRunRecorder } from "../lib/observation-recorder";
+import { configureObservationIntegration } from "../lib/observation-integration";
+import { observationLedgerPath } from "../lib/observation-ledger";
 import { TrapOperations } from "../lib/trap-operations";
 import { TrapStore } from "../lib/store";
-import { addWebProject } from "../web/project-registry";
+import { parseWorkspaceRoute } from "../web/client-route";
+import { addWebProject, webProjectRouteRef } from "../web/project-registry";
 import { createWebHandler } from "../web/server";
 import { runCliAsync, tempHome, tempProjectDir } from "./helpers";
 
@@ -36,6 +41,63 @@ const chromePath = chromeExecutablePath();
 const browserTest = chromePath ? test : test.skip;
 
 describe("web browser smoke", () => {
+  browserTest("keeps missing project and item links explicit on mobile and recovers through project selection", async () => {
+    const { chromium } = await import("playwright-core");
+    const home = tempHome("codetrap-route-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-route-missing-", { realpath: true });
+    addWebProject(project, home);
+    seedBrowserSmokeData(project, home);
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project }) });
+    const browser = await chromium.launch({ executablePath: chromePath!, headless: true, args: ["--no-sandbox"] });
+    try {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      page.setDefaultTimeout(5_000);
+      const root = `http://127.0.0.1:${server.port}/?token=${TOKEN}`;
+      const ref = webProjectRouteRef(project);
+      for (const hash of [`#/library/project/999?project=${ref}`, `#/learning/${ref}/missing?project=${ref}`]) {
+        await page.goto(root + hash);
+        await page.locator("#detail .route-unavailable").waitFor();
+        expect(new URL(page.url()).hash).toBe(hash);
+        expect(await page.locator(".rail").isVisible()).toBe(false);
+        expect(await page.locator("#detail").textContent()).not.toContain("Browser smoke confirmed trap");
+        await page.reload();
+        await page.locator("#detail .route-unavailable").waitFor();
+        expect(new URL(page.url()).hash).toBe(hash);
+      }
+      await page.goto(root + "#/library/project/1?project=p-" + "0".repeat(24));
+      await page.locator("#route-choose-project").click();
+      await page.locator("[data-project]").click();
+      await page.locator("[data-trap-key='project:1']").waitFor();
+      expect(parseWorkspaceRoute(new URL(page.url()).hash)).toMatchObject({ projectRef: ref, trapId: null });
+      await page.getByRole("button", { name: "Learning", exact: true }).click();
+      await page.locator("[data-learning-insight]").first().waitFor();
+      expect(await page.locator("#learning-filters").getAttribute("open")).toBeNull();
+      await page.locator("#learning-filters summary").click();
+      expect(await page.locator("#learning-status-filter").isVisible()).toBe(true);
+      await page.locator("[data-learning-insight]").first().click();
+      await page.locator("#learning-practice-note").fill("unsaved phone practice");
+      // Focus scroll and async detail hydration must settle before sampling.
+      await page.locator("#learning-practice-note").scrollIntoViewIfNeeded();
+      const readingPosition = await page.evaluate(async () => {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        return document.querySelector("#detail > .scroll")!.scrollTop;
+      });
+      await page.locator("#reader-back").click();
+      expect(await page.locator(".detail").isVisible()).toBe(false);
+      await page.goBack();
+      await page.locator("#learning-practice-note").waitFor();
+      await page.waitForFunction((position) => Math.abs((document.querySelector("#detail > .scroll")?.scrollTop || 0) - position) < 2, readingPosition);
+      expect(await page.locator("#learning-practice-note").inputValue()).toBe("unsaved phone practice");
+      await page.goForward();
+      await page.locator("[data-learning-insight]").first().waitFor();
+      await page.locator("[data-learning-insight]").first().click();
+      expect(await page.locator("#learning-practice-note").inputValue()).toBe("unsaved phone practice");
+      const height = await page.locator("#detail > .scroll").evaluate((node) => node.clientHeight);
+      expect(height).toBeGreaterThan(450);
+      expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(845);
+    } finally { await browser.close(); server.stop(true); }
+  }, 20_000);
+
   browserTest("loads the review console and renders live project data", async () => {
     const { chromium } = await import("playwright-core");
     const home = tempHome("codetrap-web-browser-home-", { realpath: true, initCodetrap: true });
@@ -71,6 +133,16 @@ describe("web browser smoke", () => {
         waitUntil: "domcontentloaded",
       });
       await page.waitForSelector("text=Browser smoke candidate");
+      await page.locator('#title').fill('Unsaved review after browser migration');
+      await page.route('**/api/sessions?*', async route => {
+        const response = await route.fetch();
+        const data = await response.json();
+        data.sessions[0].pending_count += 1;
+        await route.fulfill({ response, json: data });
+      });
+      await page.getByText('External changes detected; your unsaved draft was preserved', { exact: true }).waitFor({ timeout: 8000 });
+      expect(await page.locator('#title').inputValue()).toBe('Unsaved review after browser migration');
+      await page.unroute('**/api/sessions?*');
       // Navigation lives in the topbar now, so it stays on one row at every
       // desktop width instead of wrapping once the rail gets narrow.
       await expectTopbarNavigationLayout(page);
@@ -108,19 +180,29 @@ describe("web browser smoke", () => {
       // confirm button, so the click and its effect are asserted on that control.
       const learnedButton = page.locator('.learning-status-control button[data-learning-status="learned"]');
       await learnedButton.click();
+      await page.locator('.learning-status-control button[data-learning-status="learned"].active').waitFor();
       await expectText(page.locator(".learning-status-control button.active"), "Learned");
       expect(await learnedButton.getAttribute("class")).toContain("active");
       await expectText(page.locator(".collection-header"), "1 of 2 learned");
 
       await page.getByRole("button", { name: "Impact" }).click();
       await page.waitForSelector(".impact-hero");
-      await expectText(page.locator(".impact-hero"), "What changed while Codetrap was present?");
-      await expectText(page.locator(".impact-metrics"), "1");
+      await expectText(page.locator(".impact-hero"), "See where your experience helps.");
+      await expectText(page.locator(".overview-metrics"), "1 / 2");
+      expect(await page.locator(".rail").isHidden()).toBe(true);
+      await page.locator('[data-overview-run="run-browser-smoke"]').click();
+      await page.waitForSelector(".impact-timeline");
+      expect(await page.locator(".rail").isVisible()).toBe(true);
+      await page.locator(".impact-event.cat-expose").nth(1).locator("summary").click();
+      await page.locator('.impact-event.cat-expose [data-impact-trap="1"][data-trap-scope="global"]').click();
+      await page.waitForSelector("text=Browser smoke global trap");
+      expect(new URL(page.url()).hash).toContain("library");
+      await page.getByRole("button", { name: "Impact", exact: true }).click();
       await page.getByRole("tab", { name: "Evals" }).click();
       await page.waitForSelector(".evals-hero");
       await expectText(page.locator(".evals-hero"), "Measure the signal. Inspect the evidence.");
-      await expectText(page.locator(".eval-rate-grid"), "100%");
-      expect(new URL(page.url()).hash).toBe("#/impact/evals");
+      await expectText(page.locator(".eval-rate-grid"), "50%");
+      expect(new URL(page.url()).hash).toBe("#/impact/evals?project=" + webProjectRouteRef(project));
       expect(await page.title()).toBe("codetrap · Evals");
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.waitForSelector(".evals-hero");
@@ -128,8 +210,8 @@ describe("web browser smoke", () => {
       await page.getByRole("tab", { name: "Runs" }).click();
       await page.locator("[data-observation-run='run-browser-smoke']").click();
       await page.waitForSelector(".impact-timeline");
-      expect(new URL(page.url()).hash).toBe("#/impact/runs/run-browser-smoke");
-      expect(await page.locator(".impact-event").count()).toBe(6);
+      expect(new URL(page.url()).hash).toBe("#/impact/runs/run-browser-smoke?project=" + webProjectRouteRef(project));
+      expect(await page.locator(".impact-event").count()).toBe(9);
       await expectText(page.locator("#detail"), "Trap search completed");
       expect((await page.locator("#detail").textContent()) || "").not.toContain("BROWSER_RAW_SECRET");
 
@@ -145,6 +227,215 @@ describe("web browser smoke", () => {
       server.stop(true);
     }
   }, 20_000);
+
+  browserTest("keeps practice drafts and follows accepted experience across project boundaries", async () => {
+    const { chromium } = await import("playwright-core");
+    const home = tempHome("codetrap-experience-browser-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-experience-browser-", { realpath: true });
+    const source = tempProjectDir("codetrap-experience-source-", { realpath: true });
+    for (const root of [project, source]) { addWebProject(root, home); seedBrowserSmokeData(root, home); }
+    const learning = new LearningImpactOperations(source, new SessionOperations(new SessionStore(source), new TrapOperations(new TrapStore(source, undefined, home))));
+    const promoted = learning.createCandidate("ins-browser-smoke", learning.preview("ins-browser-smoke").draft);
+    new SessionStore(source).acceptCandidate(promoted.candidate.id, { sessionId: promoted.session_id, trapId: 1, scope: "global", evidenceId: null });
+    learning.linkRun("ins-browser-smoke", "run-browser-smoke");
+    // Exercise the bundled inline script: function names may differ from source execution.
+    const bundle = await Bun.build({ entrypoints: [fileURLToPath(new URL("../web/static.ts", import.meta.url))], target: "bun", format: "esm" });
+    expect(bundle.success).toBe(true);
+    const bundlePath = join(home, "bundled-web.mjs");
+    await Bun.write(bundlePath, bundle.outputs[0]!);
+    const bundled = await import(pathToFileURL(bundlePath).href);
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+    let releaseSave: (() => void) | undefined;
+    let saveArrived: (() => void) | undefined;
+    const arrived = new Promise<void>((resolve) => { saveArrived = resolve; });
+    let delaySave = false;
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: async (request) => {
+      if (delaySave && new URL(request.url).pathname === "/api/learning/practice-note") {
+        await new Promise<void>((resolve) => { releaseSave = resolve; saveArrived?.(); });
+        delaySave = false;
+      }
+      if (new URL(request.url).pathname === "/") return new Response(bundled.WEB_INDEX_HTML, { headers: { "content-type": "text/html" } });
+      return handler(request);
+    } });
+    const browser = await chromium.launch({ executablePath: chromePath!, headless: true, args: ["--no-sandbox"] });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+      page.setDefaultTimeout(5000);
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(`http://127.0.0.1:${server.port}/?token=${TOKEN}#/learning`);
+      const insightSelector = '[data-learning-insight="' + source + '::ins-browser-smoke"]';
+      await page.locator(insightSelector).click();
+      await page.locator("#open-learning-confirmed-trap").waitFor();
+      await page.locator("#learning-practice-note").fill("PRIVATE practice: inspect the result");
+      await page.locator("#next-learning").click();
+      await page.locator("#previous-learning").click();
+      expect(await page.locator("#learning-practice-note").inputValue()).toBe("PRIVATE practice: inspect the result");
+      // Do not discard newer typing when an earlier save finishes.
+      delaySave = true;
+      await page.locator("#save-learning-practice").click();
+      await arrived;
+      await page.locator("#learning-practice-note").fill("PRIVATE newer draft");
+      releaseSave!();
+      await page.locator("#save-learning-practice:not([disabled])").waitFor();
+      expect(await page.locator("#learning-practice-note").inputValue()).toBe("PRIVATE newer draft");
+      await expectTextContent(page.locator("#learning-practice-state"), "Unsaved changes");
+      await page.locator("#save-learning-practice").click();
+      await page.locator("#save-learning-practice:not([disabled])").waitFor();
+      const learningLocation = page.url();
+      expect(parseWorkspaceRoute(new URL(learningLocation).hash)).toMatchObject({ projectRef: webProjectRouteRef(project), insightProjectRef: webProjectRouteRef(source), insightId: "ins-browser-smoke" });
+      expect(learningLocation).not.toContain(encodeURIComponent(source));
+      await page.reload();
+      await page.locator("#learning-practice-note").waitFor();
+      expect(await page.locator("#learning-practice-note").inputValue()).toBe("PRIVATE newer draft");
+      await page.locator("#open-learning-confirmed-trap").click();
+      await page.locator(".experience-path").waitFor();
+      expect(parseWorkspaceRoute(new URL(page.url()).hash)).toMatchObject({ projectRef: webProjectRouteRef(source), trapScope: "global", trapId: 1 });
+      await page.reload();
+      await page.locator(".experience-path").waitFor();
+      await expectTextContent(page.locator("#detail"), "Browser smoke global trap");
+      await page.goBack();
+      await page.locator("#learning-practice-note").waitFor();
+      expect(await page.locator("#learning-practice-note").inputValue()).toBe("PRIVATE newer draft");
+      expect(page.url()).toBe(learningLocation);
+      await page.goForward();
+      await page.locator(".experience-path").waitFor();
+      await expectTextContent(page.locator(".experience-facts"), "0 helpful · 0 irrelevant · 1 harmful");
+      expect(await page.locator("[data-experience-insight]").count()).toBe(1);
+      expect(await page.locator("#trap-experience-panel").textContent()).not.toContain("PRIVATE");
+      expect(await page.locator(".experience-path li").count()).toBe(4);
+      // An evidence outage must not hide the confirmed lesson or strand retry.
+      await page.route("**/api/trap/experience?*", (route) => route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "test outage" }) }));
+      await page.locator("[data-experience-retry]").click();
+      await page.getByText("Could not load the experience path. Your lesson is still available.").waitFor();
+      await expectTextContent(page.locator("#detail"), "Browser smoke global trap");
+      await page.unroute("**/api/trap/experience?*");
+      await page.locator("[data-experience-retry]").click();
+      await page.locator(".experience-path").waitFor();
+      // A slow project-trap response cannot replace a subsequently selected global trap.
+      await page.locator("#trap-filter-scope").selectOption("");
+      await page.locator('[data-trap-key="project:1"]').waitFor();
+      await page.locator('[data-trap-key="global:1"]').click();
+      await page.locator(".experience-facts").filter({ hasText: "0 helpful · 0 irrelevant · 1 harmful" }).waitFor();
+      let releaseEvidence!: () => void;
+      let evidenceArrived!: () => void;
+      const pendingEvidence = new Promise<void>((resolve) => { evidenceArrived = resolve; });
+      await page.route("**/api/trap/experience?*", async (route) => {
+        if (new URL(route.request().url()).searchParams.get("scope") === "project") {
+          await new Promise<void>((resolve) => { releaseEvidence = resolve; evidenceArrived(); });
+        }
+        await route.continue();
+      });
+      await page.locator('[data-trap-key="project:1"]').click();
+      await Promise.race([pendingEvidence, new Promise((_, reject) => setTimeout(() => reject(new Error("delayed experience request did not arrive")), 5000))]);
+      await page.locator('[data-trap-key="global:1"]').click();
+      await page.locator(".experience-path").waitFor();
+      const delayed = page.waitForResponse((response) => response.url().includes("/api/trap/experience?") && new URL(response.url()).searchParams.get("scope") === "project");
+      releaseEvidence();
+      await delayed;
+      await expectTextContent(page.locator(".experience-facts"), "0 helpful · 0 irrelevant · 1 harmful");
+      await page.unroute("**/api/trap/experience?*");
+      // The old global detail has the same rating text. Wait for evidence from
+      // this filter refresh so the assertion cannot succeed against stale DOM.
+      const filteredEvidence = page.waitForResponse(response => response.url().includes("/api/trap/experience?")
+        && new URL(response.url()).searchParams.get("scope") === "global"
+        && new URL(response.url()).searchParams.get("project") === source);
+      await page.locator("#trap-filter-scope").selectOption("global");
+      await filteredEvidence;
+      try { await page.locator(".experience-facts").filter({ hasText: "0 helpful · 0 irrelevant · 1 harmful" }).waitFor(); }
+      catch (error) { console.log(JSON.stringify({ url: page.url(), body: (await page.locator("#detail").textContent())?.slice(0, 1800), errors })); throw error; }
+
+      try { await page.locator('[data-experience-run="run-browser-smoke"]').click(); }
+      catch (error) { console.log(JSON.stringify({ url: page.url(), body: (await page.locator("#detail").textContent())?.slice(0, 2400), errors })); throw error; }
+      await page.locator(".impact-timeline").waitFor();
+      expect(new URL(page.url()).hash).toBe("#/impact/runs/run-browser-smoke?project=" + webProjectRouteRef(source));
+      await page.getByRole("button", { name: "Library", exact: true }).click();
+      await page.locator(".experience-path").waitFor();
+      await page.locator('[data-experience-insight="ins-browser-smoke"]').click();
+      await page.locator("#learning-practice-note").waitFor();
+      expect(await page.locator("#learning-practice-note").inputValue()).toBe("PRIVATE newer draft");
+      await page.locator("#open-learning-linked-run").click();
+      await page.locator(".impact-timeline").waitFor();
+      await page.getByRole("button", { name: "Library", exact: true }).click();
+      await page.locator(".experience-path").waitFor();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.locator('[data-trap-key="global:1"]').click();
+      await page.locator("#reader-back").waitFor();
+      expect(await page.locator(".rail").isVisible()).toBe(false);
+      await page.locator("#reader-back").click();
+      expect(await page.locator(".rail").isVisible()).toBe(true);
+      expect(await page.locator(".detail").isVisible()).toBe(false);
+      expect(await page.locator("#library-filters").getAttribute("open")).toBeNull();
+      await page.locator("#library-filters summary").click();
+      expect(await page.locator("#trap-filter-category").isVisible()).toBe(true);
+      await page.locator("#library-filters summary").click();
+      await page.locator('[data-trap-key="global:1"]').click();
+      await page.reload();
+      await page.locator(".experience-path").waitFor();
+      expect(await page.locator(".rail").isVisible()).toBe(false);
+
+      await page.getByRole("button", { name: "中文", exact: true }).click();
+      await page.locator(".experience-path").waitFor();
+      expect(await page.locator(".experience-path").evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").length)).toBe(2);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+      expect(await page.locator("#trap-experience-panel").textContent()).not.toContain("experience.");
+      expect(errors).toEqual([]);
+    } finally { releaseSave?.(); await browser.close(); server.stop(true); }
+  }, 30_000);
+
+  browserTest("empty Impact explains setup, keeps its demo disposable, and fits a phone", async () => {
+    const { chromium } = await import("playwright-core");
+    const home = tempHome("codetrap-overview-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-overview-empty-", { realpath: true });
+    addWebProject(project, home);
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0,
+      fetch: createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project }) });
+    const browser = await chromium.launch({ executablePath: chromePath!, headless: true, args: ["--no-sandbox"] });
+    try {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      page.setDefaultTimeout(5_000);
+      await page.goto(`http://127.0.0.1:${server.port}/?token=${TOKEN}#/impact/overview`);
+      await page.waitForSelector(".overview-welcome");
+      expect(await page.locator(".rail").isHidden()).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+      for (const language of ["EN", "中文"]) {
+        await page.getByRole("button", { name: language, exact: true }).click();
+        const navigation = await page.locator(".app-topbar").evaluate((node) => {
+          const buttons = [...node.querySelectorAll("button")];
+          return buttons.map((button) => ({
+            text: button.textContent,
+            left: button.getBoundingClientRect().left,
+            right: button.getBoundingClientRect().right,
+            height: button.getBoundingClientRect().height,
+            clipped: button.scrollWidth > button.clientWidth + 1,
+          }));
+        });
+        expect(navigation).toHaveLength(9);
+        expect(navigation.filter((item) => item.left < 0 || item.right > 390 || item.height > 48 || item.clipped)).toEqual([]);
+      }
+      await page.locator("[data-impact-guide]").click();
+      await page.waitForSelector(".impact-connection-guide");
+      await expectTextContent(page.locator(".impact-connection-guide"), "codetrap observe enable codex");
+      await page.locator("[data-impact-demo-preview]").click();
+      await page.waitForSelector(".impact-timeline");
+      expect(await page.locator(".impact-event").count()).toBe(5);
+      expect(existsSync(join(project, ".codetrap", "observations", "ledger.sqlite"))).toBe(false);
+      await page.locator("[data-impact-demo-exit]").click();
+      await page.locator('[data-connection-state="not_configured"]').waitFor();
+      configureObservationIntegration(project, "codex", "enable", true);
+      await page.reload();
+      await page.locator('[data-connection-state="awaiting_run"]').waitFor();
+      expect(existsSync(observationLedgerPath(project))).toBe(false);
+      const ledger = observationLedgerPath(project);
+      mkdirSync(join(project, ".codetrap", "observations"), { recursive: true });
+      writeFileSync(ledger, "broken ledger");
+      await page.reload();
+      await page.locator('[data-connection-state="unavailable"]').waitFor();
+      expect(await page.locator(".overview-welcome").count()).toBe(0);
+      expect(await page.locator("[data-impact-retry]").isVisible()).toBe(true);
+    } finally { await browser.close(); server.stop(true); }
+  }, 20_000);
+
 });
 
 /**
@@ -204,6 +495,12 @@ function seedBrowserSmokeData(project: string, home: string): void {
     severity: "warning",
     module: "web",
     path_globs: ["src/web/**"],
+  }) });
+
+  traps.addTrap({ ...buildTrapInput({
+    title: "Browser smoke global trap", category: "api", scope: "global",
+    context: "Global browser lesson.", mistake: "Guessing a scope opens the wrong lesson.",
+    fix: "Use the observed scope.", tags: ["web"], severity: "warning",
   }) });
 
   const sessions = new SessionOperations(new SessionStore(project), traps);
@@ -294,6 +591,12 @@ function seedBrowserSmokeData(project: string, home: string): void {
     diagnostics: [],
     duration_ms: 12,
   });
+  recorder.search({ ...context, event_id: "browser-global-search" }, {
+    query: "scope", mode: "fts", path: null, module: null,
+    results: [{ trap_id: 1, revision: "global:browser", rank: 1 }], diagnostics: [], duration_ms: 1,
+  });
+  recorder.feedback({ ...context, event_id: "browser-global-feedback",
+    trap_id: 1, revision: "global:browser", feedback: "harmful", note: null });
   recorder.validation({
     ...context,
     event_id: "browser-impact-validation",

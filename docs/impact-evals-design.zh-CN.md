@@ -203,7 +203,9 @@ Candidate Inbox
 
 ### 5.4 Evals：比较变化而不是堆分数
 
-生产 `Impact → Evals` 已实现“蓝色校准台”纵向切片：它读取选中项目已签入的 `src/tests/fixtures/search-eval.json`，确定性计算 Recall@3、Recall@5 与 MRR；同时从 Observation Ledger 投影 Helpful、噪音、漏召回和验证比例，并显示明确分子/分母。漏召回、Irrelevant/Harmful 和“曝光后验证失败”会成为 `review_required`、`unconfirmed` 的证据候选。用户可查看来源 Run，或进入人工校准台，主动填写查询、检索模式、判断和期望 fixture ID；草稿只创建会话候选和精确预览，不改 fixture。明确接受后才通过 Phase 2 原子写入并标记 `confirmed`，拒绝保持 fixture 不变，回滚逐字恢复原文件。Observation 仍不返回或还原原始 query、排序标题和任意事件 attributes。
+生产 `Impact → Evals` 读取选中项目的 `.codetrap/evals/suite.json`，缺少本地集合时兼容已有的 `src/tests/fixtures/search-eval.json`，确定性计算 Recall@3、Recall@5 与 MRR；同时从 Observation Ledger 投影 Helpful、噪音、漏召回和验证比例，并显示明确分子/分母。用户可预览并建立固定经验语料，或显式复制旧测试，再审核正反例、运行对照和下载集合。来源身份与测试位置分开，旧审核及其回滚保留原路径，见[评测集合指南](project-evaluation-suites.md)。
+
+漏召回、Irrelevant/Harmful 和“曝光后验证失败”仍只是 `review_required`、`unconfirmed` 的证据候选。用户须主动填写查询、检索模式、判断和期望 fixture ID；草稿只创建会话候选和精确预览，不改集合。明确接受后才通过 Phase 2 写入并标记 `confirmed`，拒绝保持集合不变，回滚检查后续修改并逐字恢复原文件。Observation 仍不返回或还原原始 query、排序标题和任意事件 attributes。
 
 [早期可交互 Evals 原型](prototypes/evals-ui-prototype.html)保留为历史设计证据。它明确使用假数据，只验证更远期受控 baseline/candidate 用户旅程，不读取真实 Observation Ledger，也不代表 runner 或模型调用已经实现。
 
@@ -503,7 +505,7 @@ GET    /v1/projects/{projectId}/evals          查询评测与实验
 
 #### 受控 Evals
 
-实现进度（2026-08-31）：已交付第一版零成本确定性 runner，见 [Controlled Eval runner handoff](tasks/2026-08-31-controlled-eval-runner/handoff.md)。它固定使用已确认的 `src/tests/fixtures/search-eval.json`，提供 `retrieval_policy_v1`（FTS-only 对比 case 已确认检索策略）和 `memory_contribution_v1`（目标经验不可用对比可用）两个命名 profile。两侧只在内存快照上运行，记录 fixture SHA、仓库 revision/dirty、配置指纹、seed、trial 顺序、耗时和逐 case 证据，并将不可变结果保存在项目本地 `.codetrap/evals/`。界面优先展示回归和变化，并与观测比例保持独立。
+实现进度（2026-09-04）：第一版零成本确定性 runner 已接入项目评测集合与旧路径兼容，见 [Controlled Eval runner handoff](tasks/2026-08-31-controlled-eval-runner/handoff.md)和[评测集合指南](project-evaluation-suites.md)。它提供 `retrieval_policy_v1`（FTS-only 对比 case 已确认检索策略）和 `memory_contribution_v1`（目标经验不可用对比可用）两个命名 profile。两侧只在内存快照上运行，记录实际集合路径、SHA、仓库 revision/dirty、配置指纹、seed、trial 顺序、耗时和逐 case 证据，并将不可变结果保存在项目本地 `.codetrap/evals/`。当前集合损坏或缺失不会隐藏已有历史，但会禁止新对照。界面优先展示回归和变化，并与观测比例保持独立。
 
 这一版不创建隔离 worktree、不运行任意命令、不调用 Codex/Claude 或模型 judge，模型调用、token 和成本均为 0；因此它证明的是检索策略或已确认经验对固定 Eval case 的贡献，不是完整 Agent 编码任务的因果效果。下面的 worktree/模型固定契约仍是未来真实 Agent 对照的准入条件。
 

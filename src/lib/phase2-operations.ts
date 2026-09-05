@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { projectEvalPath, readProjectSuite, requireEvalPath } from "./project-eval-suite";
 import { parseCandidateKind, type CandidateKind } from "../domain/candidate";
 import { parseExecutor, type Executor } from "../domain/learning";
 import type { CandidateTrap } from "../domain/session";
@@ -24,8 +27,16 @@ export class Phase2Operations {
     this.phase2 = new Phase2Store(projectRoot);
   }
 
+  private bindEvalProposal(input: Record<string, unknown>): Record<string, unknown> {
+    if (input.kind !== "search_eval_case") return input;
+    const payload = optionalRecordValue(input.payload) ?? {};
+    const path = payload.fixture_path === undefined ? projectEvalPath(this.projectRoot) : requireEvalPath(payload.fixture_path);
+    const corpus = existsSync(join(this.projectRoot, path)) ? readProjectSuite(this.projectRoot, path).corpus_sha256 : undefined;
+    return { ...input, payload: { ...payload, fixture_path: path, ...(corpus ? { corpus_sha256: payload.corpus_sha256 ?? corpus } : {}) } };
+  }
+
   propose(input: Record<string, unknown>) {
-    const prepared = prepareProposal(input);
+    const prepared = prepareProposal(this.bindEvalProposal(input));
     assertSourceCoverageBatch([prepared]);
     return this.sessions.captureCandidate(prepared.request);
   }
@@ -34,7 +45,7 @@ export class Phase2Operations {
     const proposals = recordArray(input.proposals, "proposals");
     if (proposals.length === 0) throw new Error("proposals must contain at least one proposal.");
     const goal = optionalText(input.goal) ?? `Phase 2 proposal batch: ${proposals.length} candidates`;
-    const prepared = proposals.map((proposal) => prepareProposal(proposal, goal));
+    const prepared = proposals.map((proposal) => prepareProposal(this.bindEvalProposal(proposal), goal));
     assertSourceCoverageBatch(prepared);
 
     const batchSession = this.sessions.startBatchSession(goal);
@@ -69,6 +80,11 @@ export class Phase2Operations {
 
   edit(sessionId: string, candidateId: string, payload: Record<string, unknown>) {
     const before = this.sessions.getCandidate(candidateId, sessionId).candidate;
+    if (before.candidate_kind === "search_eval_case") {
+      const bound = before.destination_payload ?? {};
+      if (payload.fixture_path !== undefined && payload.fixture_path !== bound.fixture_path) throw new Error("An existing review cannot change its evaluation destination.");
+      payload = { ...payload, ...Object.fromEntries(["fixture_path", "corpus_sha256", "fixture_sha256", "suite_request_id"].filter(key => bound[key] !== undefined).map(key => [key, bound[key]])) };
+    }
     if (before.candidate_kind === "insight") {
       const previousCollection = optionalRecordValue(before.destination_payload?.collection);
       const nextCollection = optionalRecordValue(payload.collection);

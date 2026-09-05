@@ -1,3 +1,4 @@
+import { LEGACY_EVAL_SUITE, requireEvalPath, evalSuiteHash, evalCorpusHash } from "./project-eval-suite";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -296,11 +297,13 @@ export class Phase2Store {
       return [this.textSnapshot(path, (before) => upsertManagedSection(before, "docs", sectionId, title, content))];
     }
     if (kind === "search_eval_case") {
-      const path = "src/tests/fixtures/search-eval.json";
+      const path = payload.fixture_path === undefined ? LEGACY_EVAL_SUITE : requireEvalPath(payload.fixture_path);
       const testCase = recordValue(payload.case, "payload.case");
       return [this.textSnapshot(path, (before) => {
         if (before === null) throw new Error(`${path} does not exist.`);
         const fixture = parseEvalFixture(before, path);
+        if (payload.corpus_sha256 && payload.corpus_sha256 !== evalCorpusHash(fixture)) throw new Error("The evaluation corpus changed. Start a new review; fixture IDs cannot be remapped automatically.");
+        if (payload.fixture_sha256 && payload.fixture_sha256 !== evalSuiteHash(before)) throw new Error("The evaluation suite changed after preview. Preview the example again.");
         const query = normalizeDogfoodCase(testCase, fixture);
         const queries = [...fixture.queries];
         const key = JSON.stringify(query);

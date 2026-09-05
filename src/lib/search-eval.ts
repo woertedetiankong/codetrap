@@ -154,65 +154,73 @@ export async function evaluateSearchFixtureCases(
   ranking?: RankingConfig
 ): Promise<SearchEvalDetailedReport> {
   const runtime = embeddingRuntimeFrom(embeddings);
-  const repo = fixtureRepository(fixture, runtime, ranking);
+  const fixtureStore = fixtureRepository(fixture, runtime, ranking);
+  let fallbackStore: ReturnType<typeof fixtureRepository> | undefined;
+  try {
+    const repo = fixtureStore.repo;
 
-  let providerError: string | null = null;
-  if (runtime.available()) {
-    try {
-      await repo.ensureEmbeddings();
-    } catch (error) {
-      providerError = errorMessage(error);
-    }
-  }
-  const searchRepo = providerError ? fixtureRepository(fixture, undefined, ranking) : repo;
-
-  const cases: EvalCaseReport[] = [];
-  let hybridFallbackCount = 0;
-  let semanticErrorCount = 0;
-
-  for (const item of fixture.queries) {
-    try {
-      const results = await searchRepo.search(item.query, { mode: item.mode, limit: 5 });
-      const report = caseReport(item, fixture, results);
-      cases.push(report);
-      if (item.mode === "hybrid" && (!runtime.available() || hasSemanticFallback(results))) {
-        hybridFallbackCount++;
+    let providerError: string | null = null;
+    if (runtime.available()) {
+      try {
+        await repo.ensureEmbeddings();
+      } catch (error) {
+        providerError = errorMessage(error);
       }
-    } catch (error) {
-      semanticErrorCount++;
-      cases.push(caseReport(item, fixture, [], errorMessage(error)));
     }
-  }
+    const searchRepo = providerError ? (fallbackStore = fixtureRepository(fixture, undefined, ranking)).repo : repo;
 
-  const dogfoodCases = cases.filter((item) => item.phaseGate === "dogfood" || item.judgment !== undefined);
-  const failures = cases.filter((item) => !item.passed);
-  const misses = cases.filter((item) => item.judgment === "miss" || item.recallAt5 < (fixtureQuery(item, fixture)?.minRecallAt5 ?? 1));
-  const noisyHits = cases.filter((item) => item.judgment === "noisy_hit");
-  const metrics = aggregateMetrics(cases);
-  return {
-    provider: runtime.config(),
-    semantic_available: runtime.available() && providerError === null,
-    provider_error: providerError,
-    total_cases: cases.length,
-    metrics: {
-      ...metrics,
-      hybrid_fallback_count: hybridFallbackCount,
-      semantic_error_count: semanticErrorCount,
-    },
-    dogfood: {
-      total: dogfoodCases.length,
-      judgment_counts: {
-        useful_hit: dogfoodCases.filter((item) => item.judgment === "useful_hit").length,
-        miss: dogfoodCases.filter((item) => item.judgment === "miss").length,
-        noisy_hit: dogfoodCases.filter((item) => item.judgment === "noisy_hit").length,
-        no_relevant_trap: dogfoodCases.filter((item) => item.judgment === "no_relevant_trap").length,
+    const cases: EvalCaseReport[] = [];
+    let hybridFallbackCount = 0;
+    let semanticErrorCount = 0;
+
+    for (const item of fixture.queries) {
+      try {
+        const results = await searchRepo.search(item.query, { mode: item.mode, limit: 5 });
+        const report = caseReport(item, fixture, results);
+        cases.push(report);
+        if (item.mode === "hybrid" && (!runtime.available() || hasSemanticFallback(results))) {
+          hybridFallbackCount++;
+        }
+      } catch (error) {
+        semanticErrorCount++;
+        cases.push(caseReport(item, fixture, [], errorMessage(error)));
+      }
+    }
+
+    const dogfoodCases = cases.filter((item) => item.phaseGate === "dogfood" || item.judgment !== undefined);
+    const failures = cases.filter((item) => !item.passed);
+    const misses = cases.filter((item) => item.judgment === "miss" || item.recallAt5 < (fixtureQuery(item, fixture)?.minRecallAt5 ?? 1));
+    const noisyHits = cases.filter((item) => item.judgment === "noisy_hit" ||
+      (item.judgment === "no_relevant_trap" && item.topResults.length > 0));
+    const metrics = aggregateMetrics(cases);
+    return {
+      provider: runtime.config(),
+      semantic_available: runtime.available() && providerError === null,
+      provider_error: providerError,
+      total_cases: cases.length,
+      metrics: {
+        ...metrics,
+        hybrid_fallback_count: hybridFallbackCount,
+        semantic_error_count: semanticErrorCount,
       },
-    },
-    failures,
-    misses,
-    noisy_hits: noisyHits,
-    cases,
-  };
+      dogfood: {
+        total: dogfoodCases.length,
+        judgment_counts: {
+          useful_hit: dogfoodCases.filter((item) => item.judgment === "useful_hit").length,
+          miss: dogfoodCases.filter((item) => item.judgment === "miss").length,
+          noisy_hit: dogfoodCases.filter((item) => item.judgment === "noisy_hit").length,
+          no_relevant_trap: dogfoodCases.filter((item) => item.judgment === "no_relevant_trap").length,
+        },
+      },
+      failures,
+      misses,
+      noisy_hits: noisyHits,
+      cases,
+    };
+  } finally {
+    fallbackStore?.close();
+    fixtureStore.close();
+  }
 }
 
 export function readEvalFixture(path: string): EvalFixture {
@@ -332,10 +340,16 @@ function formatNextActions(actions: SearchEvalNextAction[]): string[] {
   return actions.map((action) => `  - ${action.command} # ${action.reason}`);
 }
 
-function fixtureRepository(fixture: EvalFixture, embeddings: EmbeddingRuntimeInput, ranking?: RankingConfig): TrapRepository {
-  const repo = new TrapRepository(openDatabase(":memory:"), embeddings, ranking);
-  for (const trap of fixture.traps) repo.add(trap);
-  return repo;
+function fixtureRepository(fixture: EvalFixture, embeddings: EmbeddingRuntimeInput, ranking?: RankingConfig) {
+  const db = openDatabase(":memory:");
+  try {
+    const repo = new TrapRepository(db, embeddings, ranking);
+    for (const trap of fixture.traps) repo.add(trap);
+    return { repo, close: () => db.close() };
+  } catch (error) {
+    db.close();
+    throw error;
+  }
 }
 
 function caseReport(item: EvalQuery, fixture: EvalFixture, results: TrapSearchResult[], error?: string): EvalCaseReport {
@@ -350,7 +364,9 @@ function caseReport(item: EvalQuery, fixture: EvalFixture, results: TrapSearchRe
   );
   const minRecallAt3 = item.minRecallAt3 ?? 0;
   const minRecallAt5 = item.minRecallAt5 ?? 0;
-  const passed = !caseError && recallAt3 >= minRecallAt3 && recallAt5 >= minRecallAt5;
+  const passed = !caseError && (item.judgment === "no_relevant_trap"
+    ? item.goldTrapIds.length === 0 && results.length === 0
+    : recallAt3 >= minRecallAt3 && recallAt5 >= minRecallAt5);
 
   return {
     query: item.query,

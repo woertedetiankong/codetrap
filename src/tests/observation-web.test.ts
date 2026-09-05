@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { observationLedgerPath } from "../lib/observation-ledger";
+import { configureObservationIntegration, observationIntegrationStatus } from "../lib/observation-integration";
 import { ObservationRunRecorder } from "../lib/observation-recorder";
 import { readProjectIdentity } from "../lib/project-identity";
 import { addWebProject } from "../web/project-registry";
@@ -11,6 +12,46 @@ import { tempHome, tempProjectDir } from "./helpers";
 const TOKEN = "observation-web-token";
 
 describe("Observation Web API", () => {
+  test("distinguishes configured clients awaiting a task without creating observation data", async () => {
+    const { project, handler } = webFixture("codetrap-observation-awaiting-");
+    const configured = configureObservationIntegration(project, "codex", "enable", true);
+    const before = readFileSync(configured.config_path, "utf8");
+    const result = await (await api(handler, `/api/observations/overview?project=${encodeURIComponent(project)}`)).json();
+    expect(result.connection).toEqual({ state: "awaiting_run", run_count: 0, clients: [
+      { client: "codex", status: "configured" }, { client: "claude", status: "not_configured" },
+    ] });
+    expect(JSON.stringify(result.connection)).not.toContain("config_path");
+    expect(readFileSync(configured.config_path, "utf8")).toBe(before);
+    expect(readProjectIdentity(project)).toBeNull();
+    expect(existsSync(observationLedgerPath(project))).toBe(false);
+  });
+
+  test("isolates unreadable client configuration from another client and real records", async () => {
+    const { project, handler } = webFixture("codetrap-observation-client-unavailable-");
+    const config = observationIntegrationStatus(project, "codex").config_path;
+    mkdirSync(dirname(config), { recursive: true });
+    writeFileSync(config, "{broken");
+    const overview = async () => (await api(handler, `/api/observations/overview?project=${encodeURIComponent(project)}`)).json();
+    expect((await overview()).connection).toMatchObject({ state: "unavailable", run_count: 0, clients: [{ client: "codex", status: "unavailable" }, { client: "claude", status: "not_configured" }] });
+    configureObservationIntegration(project, "claude", "enable", true);
+    expect((await overview()).connection.state).toBe("awaiting_run");
+    seedObservationRun(project);
+    expect((await overview()).connection).toMatchObject({ state: "has_records", run_count: 1 });
+    expect(readFileSync(config, "utf8")).toBe("{broken");
+  });
+
+  test("reports an unreadable ledger without presenting zero tasks or modifying the file", async () => {
+    const { project, handler } = webFixture("codetrap-observation-ledger-unavailable-");
+    const ledger = observationLedgerPath(project);
+    mkdirSync(dirname(ledger), { recursive: true });
+    writeFileSync(ledger, "not a SQLite database");
+    const response = await api(handler, `/api/observations/overview?project=${encodeURIComponent(project)}`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ availability: "unavailable", overview: null, connection: { state: "unavailable", run_count: null } });
+    expect(readFileSync(ledger, "utf8")).toBe("not a SQLite database");
+    expect(readProjectIdentity(project)).toBeNull();
+  });
+
   test("returns a useful not-configured state without creating identity or ledger files", async () => {
     const { project, handler } = webFixture("codetrap-observation-web-empty-");
     expect(readProjectIdentity(project)).toBeNull();
@@ -35,6 +76,9 @@ describe("Observation Web API", () => {
       availability: "not_configured",
       overview: null,
       recent_runs: [],
+      connection: { state: "not_configured", run_count: 0, clients: [
+        { client: "codex", status: "not_configured" }, { client: "claude", status: "not_configured" }
+      ] },
       hook_health: {
         status: "healthy",
         active_count: 0,
@@ -60,6 +104,7 @@ describe("Observation Web API", () => {
     const overview = await overviewResponse.json();
     expect(overview).toMatchObject({
       availability: "ready",
+      connection: { state: "has_records", run_count: 1 },
       overview: {
         total_events: 6,
         total_runs: 1,
@@ -219,7 +264,7 @@ describe("Observation Web API", () => {
     const payload = await response.json();
     expect(payload).toMatchObject({
       observation_availability: "ready",
-      retrieval: { availability: "not_configured", source: "src/tests/fixtures/search-eval.json" },
+      retrieval: { availability: "not_configured", source: ".codetrap/evals/suite.json" },
       observed: {
         total_runs: 1,
         evaluable_runs: 1,

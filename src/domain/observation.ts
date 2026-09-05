@@ -237,8 +237,13 @@ export interface ObservationOverviewProjection {
   exposure_count: number;
   validation_passed: number;
   validation_failed: number;
+  /** Current judgments after corrections, not historical event totals. */
   helpful_feedback: number;
   harmful_feedback: number;
+  irrelevant_feedback: number;
+  rated_exposures: number;
+  superseded_feedback: number;
+  miss_reports: number;
   last_event_at: string | null;
   evidence: ObservationEvidenceCounts;
 }
@@ -265,6 +270,7 @@ export interface ObservationEvalCandidateProjection {
   occurred_at: string;
   reason: ObservationEvalCandidateReason;
   trap_id: number | null;
+  trap_scope: "project" | "global" | null;
   validation_kind: ValidationKind | null;
   evidence_class: EvidenceClass;
   source_client: SourceClient | null;
@@ -280,10 +286,11 @@ export interface ObservationEvalCandidateProjection {
  * a count instead of one row per event.
  */
 export interface ObservationEvalCandidateGroupProjection {
-  /** Normalized signature: reason, trap, and validation kind only. */
+  /** Normalized signature: reason, scoped trap identity, and validation kind only. */
   group_key: string;
   reason: ObservationEvalCandidateReason;
   trap_id: number | null;
+  trap_scope: "project" | "global" | null;
   validation_kind: ValidationKind | null;
   /** How many candidate events collapsed into this finding. */
   occurrence_count: number;
@@ -311,7 +318,7 @@ export interface ObservationEvalsProjection {
   irrelevant_feedback: number;
   harmful_feedback: number;
   /**
-   * Exposure ratings replaced by a later rating of the same (Run, trap).
+   * Exposure ratings replaced by a later rating of the same (Run, scope, trap).
    * The feedback counts above are current judgments, not event totals; this
    * is the difference between the two.
    */

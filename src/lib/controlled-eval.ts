@@ -1,3 +1,4 @@
+import { LEGACY_EVAL_SUITE, projectEvalPath, readProjectSuite, type EvalSuitePath } from "./project-eval-suite";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -15,7 +16,7 @@ import {
 import { isRecord } from "./value-types";
 
 export const CONTROLLED_EVAL_SCHEMA_VERSION = 1 as const;
-export const CONTROLLED_EVAL_FIXTURE = "src/tests/fixtures/search-eval.json" as const;
+export const CONTROLLED_EVAL_FIXTURE = LEGACY_EVAL_SUITE;
 export const CONTROLLED_EVAL_PROFILES = [
   "retrieval_policy_v1",
   "memory_contribution_v1",
@@ -61,7 +62,7 @@ export type ControlledEvalCaseComparison = {
   baseline: ControlledEvalCaseSide;
   candidate: ControlledEvalCaseSide;
   evidence: {
-    fixture: typeof CONTROLLED_EVAL_FIXTURE;
+    fixture: EvalSuitePath;
     query_index: number;
     query_sha256: string;
   };
@@ -77,7 +78,7 @@ export type ControlledEvalExperiment = {
   completed_at: string;
   duration_ms: number;
   suite: {
-    path: typeof CONTROLLED_EVAL_FIXTURE;
+    path: EvalSuitePath;
     sha256: string;
     snapshot: string;
     case_count: number;
@@ -232,11 +233,13 @@ export class ControlledEvalOperations {
     const profile = controlledEvalProfile(input.profile);
     const trials = controlledEvalTrials(input.trials);
     const seed = controlledEvalSeed(input.seed);
-    const fixturePath = join(this.projectRoot, CONTROLLED_EVAL_FIXTURE);
-    if (!existsSync(fixturePath)) throw new Error(`Controlled Eval fixture not found: ${CONTROLLED_EVAL_FIXTURE}`);
+    const suitePath = projectEvalPath(this.projectRoot);
+    const fixturePath = join(this.projectRoot, suitePath);
+    if (!existsSync(fixturePath)) throw new Error(`Controlled Eval fixture not found: ${suitePath}`);
 
-    const fixtureBytes = readFileSync(fixturePath);
-    const fixture = parseEvalFixture(fixtureBytes.toString("utf8"), fixturePath);
+    const source = readProjectSuite(this.projectRoot, suitePath);
+    const fixtureBytes = Buffer.from(source.bytes);
+    const fixture = source.fixture;
     if (fixture.queries.length === 0) throw new Error("Controlled Eval fixture has no confirmed cases.");
     const suiteSha = sha256(fixtureBytes);
     const profileInfo = PROFILE_INFO[profile];
@@ -281,7 +284,7 @@ export class ControlledEvalOperations {
     }
 
     const first = evaluations[0];
-    const cases = compareCases(first.orderedCases, first.baseline.report.cases, first.candidate.report.cases);
+    const cases = compareCases(first.orderedCases, first.baseline.report.cases, first.candidate.report.cases, suitePath);
     const completedAt = this.now().toISOString();
     const baselineAverage = average(evaluations.map((trial) => trial.baseline.durationMs));
     const candidateAverage = average(evaluations.map((trial) => trial.candidate.durationMs));
@@ -297,7 +300,7 @@ export class ControlledEvalOperations {
       completed_at: completedAt,
       duration_ms: roundMilliseconds(performance.now() - started),
       suite: {
-        path: CONTROLLED_EVAL_FIXTURE,
+        path: suitePath,
         sha256: suiteSha,
         snapshot,
         case_count: fixture.queries.length,
@@ -510,7 +513,8 @@ function controlledCaseId(query: EvalFixture["queries"][number], index: number):
 function compareCases(
   orderedCases: OrderedCase[],
   baseline: EvalCaseReport[],
-  candidate: EvalCaseReport[]
+  candidate: EvalCaseReport[],
+  suitePath: EvalSuitePath,
 ): ControlledEvalCaseComparison[] {
   return orderedCases.map((item, index) => {
     const baselineCase = baseline[index];
@@ -524,7 +528,7 @@ function compareCases(
       baseline: compactCaseSide(baselineCase),
       candidate: compactCaseSide(candidateCase),
       evidence: {
-        fixture: CONTROLLED_EVAL_FIXTURE,
+        fixture: suitePath,
         query_index: item.originalIndex + 1,
         query_sha256: sha256(stableJson(item.query)),
       },

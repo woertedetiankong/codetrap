@@ -1,3 +1,4 @@
+import type { RevisionDraft, ExperienceScope } from "../domain/experience-revision";
 import type { EmbeddingProfileSummary } from "../db/embedding-queries";
 import type { TrapStats } from "../db/repository";
 import {
@@ -194,6 +195,12 @@ export class TrapStore {
       success: scoped.repository.update(id, input),
     }));
   }
+
+  revisionCommit(id: string, owner: string, scope: ExperienceScope) {
+    return this.scopes.repositoriesForRead(scope)[0]?.repository.revisionCommit(id, owner) ?? null;
+  }
+  acceptRevision(draft: RevisionDraft) { return this.scopes.repositoryFor(draft.source.scope).acceptRevision(draft); }
+  rollbackRevision(id: string, owner: string, scope: ExperienceScope) { return this.scopes.repositoryFor(scope).rollbackRevision(id, owner); }
 
   delete(id: number, scope?: string): TrapMutationResult {
     return this.resolveMutation(id, scope, (scoped) => ({

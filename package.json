@@ -37,6 +37,7 @@
     "benchmarks",
     ".agents/plugins/marketplace.json",
     "scripts",
+    "tsconfig.browser.json",
     "docs/installation.md",
     ".env.example",
     "README.md",
@@ -47,7 +48,7 @@
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.mjs",
-    "dev": "bun run src/index.ts",
+    "dev": "bun run build:web && bun run src/index.ts",
     "install:cli": "ln -sf \"$PWD/bin/codetrap\" \"$(bun pm bin -g)/codetrap\"",
     "build:release": "bun run scripts/build-release.ts",
     "release:preflight": "bun run scripts/release-preflight.ts",
@@ -55,10 +56,13 @@
     "eval:dogfood": "bun run scripts/dogfood-eval.ts",
     "eval:search-policy": "bun run scripts/search-policy-sweep.ts",
     "benchmark:retrieval": "bun run scripts/public-retrieval-benchmark.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.browser.json",
     "build": "bun run scripts/build-standalone.ts ./src/index.ts dist/codetrap && bun run scripts/build-standalone.ts ./src/mcp-server.ts dist/codetrap-serve",
     "build:cli": "bun run scripts/build-standalone.ts ./src/index.ts dist/codetrap",
-    "build:serve": "bun run scripts/build-standalone.ts ./src/mcp-server.ts dist/codetrap-serve"
+    "build:serve": "bun run scripts/build-standalone.ts ./src/mcp-server.ts dist/codetrap-serve",
+    "build:web": "bun run scripts/build-web.ts",
+    "check:web": "bun run scripts/build-web.ts --check",
+    "prepack": "bun run check:web"
   },
   "publishConfig": {
     "access": "public"

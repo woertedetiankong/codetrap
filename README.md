@@ -165,9 +165,10 @@ codetrap/
 │   ├── web/
 │   │   ├── server.ts         Thin Web API adapter over shared operations
 │   │   ├── static.ts         HTML/CSS shell
-│   │   ├── client-shell.ts   Pane sizing/collapse behavior
+│   │   ├── browser/         Typed entry/platform/Library and legacy workspace
 │   │   ├── client-review.ts  Review queue + candidate draft/request model
-│   │   ├── client-script.ts  DOM composition and event wiring
+│   │   ├── client-script.ts  Shared embedded browser asset accessor
+│   │   ├── client-bundle.generated.ts  Generated browser build (do not edit)
 │   │   └── client-text.ts    Localized UI strings
 │   └── tests/
 │       ├── search-*.test.ts
@@ -330,11 +331,39 @@ Overview/Evals metrics. The adjacent connection guide now shows preview/apply
 commands for opt-in automatic Codex/Claude capture and keeps the explicit Agent
 instruction as a fallback.
 
+The observation readiness card distinguishes no configured collection, configured
+clients awaiting a first task, existing real task records, and unreadable local
+state. Codex and Claude Code have separate configuration indicators. Installed
+hooks do not prove client trust or execution; existing records do not prove that
+capture remains active. Reading readiness never enables hooks or creates a
+project identity or ledger. Corrupt state is not displayed as zero activity.
+
+Impact Overview uses a dedicated layout with recent tasks, current feedback,
+validation denominators, and links to inspect evidence. An absent ledger means
+no evidence has been recorded; it does not by itself tell whether client hooks
+are configured. Check `codetrap observe status --json` for each client’s configuration state.
+
+Feedback corrections are folded by **Run + scope + trap ID** in both Overview
+and Evals. Project `#1` and global `#1` are separate experiences. Existing v1
+scope-prefixed revisions supply this identity without rewriting the ledger;
+unqualified historical references remain unknown and do not open a guessed
+Library item. All original feedback events remain visible in the Run timeline.
+Real scoped Run events also offer **Review this lesson**: record feedback, draft a
+focused revision, test positive and negative examples, then explicitly apply or
+reject it. Library → **Experience revisions** reopens the draft and its rollback
+receipt. A passing keyword check does not demonstrate real-task benefit; the
+receipt separately shows later evidence for that exact revision. See the
+[revision workflow, storage and recovery](docs/experience-revisions.md).
+
+Overview's feedback fraction counts all current judgments, including those with
+no trap reference. Evals' Helpful/noise rates count only ratings with a trap
+reference. Neither number measures causal improvement.
+
 Open `codetrap web --open`, choose **Impact**, then **Evals** to inspect four
 separate evidence tracks:
 
-- deterministic Recall@3, Recall@5, and MRR when the selected project checks in
-  `src/tests/fixtures/search-eval.json`;
+- deterministic Recall@3, Recall@5, and MRR over the selected project's
+  `.codetrap/evals/suite.json`, with legacy source-fixture compatibility;
 - zero-cost controlled baseline/candidate experiments over that immutable
   fixture, with fixed profiles, a user-visible seed and trial count, regression-
   first case evidence, and reproducibility/configuration identities;
@@ -343,8 +372,14 @@ separate evidence tracks:
 - governed review candidates for explicit misses, irrelevant or harmful
   guidance, and validation failures recorded after an exposure.
 
-A missing fixture stays “not configured”; Codetrap does not substitute its
-maintainer benchmark for project data. Review candidates are unconfirmed clues,
+A missing set offers **Prepare from my lessons**: preview a fixed corpus from
+confirmed project/global lessons, then create it and add reviewed examples.
+Existing source fixtures offer **Copy existing tests**, preserving their order
+and leaving the original file intact. **Download evaluation set** exports the
+frozen content and cases without overwriting source files. See the
+[workflow, identity mapping and compatibility guide](docs/project-evaluation-suites.md).
+Codetrap does not substitute its maintainer benchmark for project data.
+Review candidates are unconfirmed clues,
 not ground truth. A user can inspect the source Run, author the exact query and
 expected fixture IDs, save a draft/preview without changing the fixture, then
 explicitly accept, reject, or roll back the case. Opening Evals and its GET path
@@ -353,19 +388,37 @@ one validated case through the locked, content-bound, reversible Phase 2
 lifecycle. Retrieval metrics and observed outcomes remain separate because
 neither alone proves task causality.
 
+A `no_relevant_trap` retrieval case must return **no results** to pass, even
+when its recall thresholds are zero. Unexpected results appear in both failures
+and noisy hits; recall averages still use cases with expected traps. Temporary
+fixture databases are closed after evaluation, including embedding fallback
+and error paths.
+
 The controlled lane currently provides two deterministic profiles:
 `retrieval_policy_v1` compares FTS-only retrieval with each confirmed case's
 configured retrieval mode, while `memory_contribution_v1` compares the expected
 traps being unavailable versus available. Both sides run from in-memory fixture
 snapshots and write only immutable experiment evidence under
-`.codetrap/evals/`; the checked-in fixture and source tree are not changed.
+`.codetrap/evals/`; the active set and source tree are not changed by a run.
+Historical results remain readable when the active set is unavailable; new
+comparisons require a valid set with at least one reviewed example.
 These v1 experiments make zero model calls and incur zero token cost. They test
 retrieval and confirmed-memory contribution, not end-to-end Codex or Claude Code
 behavior; real Agent/worktree trials require a later explicit, budgeted opt-in.
 
-The console keeps local view state in refresh-safe hash routes such as
-`#/impact/evals` and `#/impact/runs/<run-id>` without putting the absolute project
-path or launch token in the route. An expired launch link shows a persistent
+The console keeps the workspace project and selected item in refresh-safe hash
+routes. Examples include `#/library/project/42?project=p-…`,
+`#/learning/p-<origin>/<insight-id>?project=p-<workspace>`, and
+`#/impact/runs/<run-id>?project=p-…`. Refresh and browser Back/Forward restore the
+exact scoped lesson or Learning origin, including cross-project links. Missing
+projects/items stay explicit instead of selecting a different first item. The
+project reference is derived from the normalized registered root: it contains
+neither the absolute path nor the launch token, but is local to that root and is
+not an authorization credential or portable identity after moving the project.
+Existing view-only hashes still work. On phones, Learning and Library switch
+between list and reader, keep filters collapsed initially, and use one main
+scroll region. Back/Forward within the tab also restores reading position.
+Unsaved practice notes still require saving before a reload. An expired launch link shows a persistent
 recovery page instead of a partially initialized console. Impact navigation stays
 available during loading, empty, and error states; when observation is off, the
 Overview offers a direct read-only path to any checked-in offline Evals.
@@ -707,8 +760,10 @@ codetrap phase2 revert <phase2-commit-id> --json
 
 `project_convention` writes equivalent managed sections to `AGENTS.md` and
 `CLAUDE.md`. `docs_guidance` is allowlisted to README/client guidance and
-`docs/**/*.md`; `search_eval_case` can only update
-`src/tests/fixtures/search-eval.json`. Commits store exact before/after
+`docs/**/*.md`; `search_eval_case` binds either the project-local
+`.codetrap/evals/suite.json` or the legacy `src/tests/fixtures/search-eval.json`.
+Old candidates without a path retain their legacy destination after migration.
+Commits store exact before/after
 snapshots, refuse to overwrite a later edit during revert, and record the
 destination in the receipt log.
 
@@ -776,6 +831,26 @@ can explicitly choose **Not started**, **In progress**, or **Learned**, record
 with an existing local Observation Run. Legacy consultation reads as Learned
 until an explicit personal record replaces it; opening the page never migrates
 or rewrites the Insight.
+
+The **How will you put this into practice?** card saves a personal note of up to
+1,000 characters in local Learning progress. Unsaved text survives chapter and
+view changes within the tab, including newer typing while an earlier save
+finishes. Save before reloading or closing the tab; clear the text and save to
+remove the note. Notes never enter shared Insight content, candidate drafts, or
+observation events.
+
+Accepted Learning candidates expose **View confirmed lesson**, using the actual
+accepted scope and ID. Related task links select the Insight's source project.
+Each Library detail has an **experience path**: explicit Learning provenance,
+confirmed lesson, recorded exposures, and current feedback. Source links return
+to Learning; task rows open the original Run evidence. Counts are project-local,
+including for global lessons, and the Run list pages through 20 items at a time.
+Current-version and other-version exposures are separate; feedback follows the
+latest judgment per Run and scoped trap, across revisions. Unknown-scope records
+are excluded. Run checks describe the whole task and do not establish adoption
+or a causal effect. Missing/corrupt observation and Learning sources degrade
+independently without hiding the confirmed lesson. Reading this view does not
+initialize observation or modify stored history.
 
 **Create Agent experience candidate** prepares a deterministic local
 Trigger/Mistake/Fix draft for editing. Preview makes zero model calls and writes
@@ -1350,9 +1425,23 @@ method and claim boundary.
 bun run build          # Build CLI + MCP server binaries → dist/
 bun run build:cli      # dist/codetrap
 bun run build:serve    # dist/codetrap-serve
-bunx tsc --noEmit      # Type-check without emitting files
+bun run build:web     # Regenerate the embedded browser module bundle
+bun run check:web     # Verify browser source/artifact freshness
+bun run typecheck     # Strict project and DOM-only browser checks
 bun run release:preflight  # tests, builds, release assets, smoke test, npm dry-runs
 ```
+
+The Web console has a normal browser module entry. `dev` and the supported
+standalone build helper regenerate its embedded asset automatically. After
+editing browser source, run `build:web` before directly starting an existing
+source preview wrapper, then restart that process. Include the generated asset
+with its source change; CI and npm prepack check freshness. See
+[browser architecture and remaining type boundaries](docs/browser-architecture.md).
+
+Library list, filters, selected lesson and experience activity now live in typed
+browser modules. Loading failures offer a retry, and older requests cannot replace
+the current project or lesson after navigation. Other feature state is being
+migrated separately.
 
 ## Test
 

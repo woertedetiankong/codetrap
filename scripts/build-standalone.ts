@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { buildWebClient } from "./build-web";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
@@ -16,6 +17,7 @@ export type StandaloneBuildOptions = {
  * Runtime WASM instead of native sharp/onnxruntime addons beside the binary.
  */
 export async function buildCodetrapStandalone(options: StandaloneBuildOptions): Promise<void> {
+  await buildWebClient();
   const nodeEntry = Bun.resolveSync("@huggingface/transformers", process.cwd());
   const webEntry = resolve(dirname(nodeEntry), "transformers.web.js");
   if (!existsSync(webEntry)) {

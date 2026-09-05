@@ -21,7 +21,7 @@ describe("web client text", () => {
     expect(WEB_INDEX_HTML).toContain("impact.privacyCopy");
     expect(WEB_TEXT.zh["nav.impact"]).toBe("成效");
     expect(WEB_TEXT.zh["impact.intro"]).toContain("不把关联包装成因果结论");
-    expect(WEB_TEXT.zh["impact.notConfiguredCopy"]).toContain("主动为当前项目开启");
+    expect(WEB_TEXT.zh["impact.notConfiguredCopy"]).toContain("尚未生成本地观测记录");
     expect(WEB_TEXT.zh["impact.notConfiguredHint"]).toContain("不会改变真实概览或评测数据");
     expect(WEB_TEXT.zh["impact.previewDemo"]).toBe("预览一条示例轨迹");
     expect(WEB_TEXT.zh["impact.demoBadge"]).toContain("不会保存");
@@ -124,8 +124,7 @@ describe("web client text", () => {
     expect(detailIndex).toBeLessThan(workspaceIndex);
     expect(WEB_INDEX_HTML).toContain('<div class="stack" id="candidates">');
     expect(WEB_INDEX_HTML).toContain("minmax(320px, 0.62fr) 8px minmax(460px, 1.7fr) 8px minmax(250px, 0.68fr)");
-    // Opening straight into list + detail is the default; the workspace opens on demand.
-    expect(WEB_INDEX_HTML).toContain("savedQueueCollapsedRaw === null ? true");
+    // Default pane preferences are exercised by the browser platform tests.
   });
 
   test("keeps every colour in the token layer", () => {

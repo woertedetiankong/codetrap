@@ -7,13 +7,32 @@ import { TrapOperations } from "../lib/trap-operations";
 import { SessionOperations } from "../lib/session-operations";
 import { SessionStore } from "../lib/session-store";
 import { Phase2Operations } from "../lib/phase2-operations";
-import { addWebProject, loadWebProjectRegistry, resolveWebProjectRoot, webProjectsPath } from "../web/project-registry";
+import { addWebProject, loadWebProjectRegistry, resolveWebProjectRoot, webProjectsPath, webProjectRouteRef } from "../web/project-registry";
 import { createWebHandler } from "../web/server";
 import { tempDir, tempHome, tempProjectDir } from "./helpers";
 
 const TOKEN = "test-token";
 
 describe("web project registry", () => {
+  test("derives stable client route references without migrating the project registry", async () => {
+    const home = tempHome("codetrap-web-route-home-", { realpath: true, initCodetrap: true });
+    const project = tempProjectDir("codetrap-web-route-", { realpath: true });
+    const other = tempProjectDir("codetrap-web-route-other-", { realpath: true });
+    addWebProject(project, home);
+    addWebProject(other, home);
+    const before = readFileSync(webProjectsPath(home), "utf8");
+    const handler = createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project });
+    const first = await (await api(handler, "/api/bootstrap")).json();
+    const second = await (await api(handler, "/api/projects")).json();
+    const refs = first.projects.map((entry: { route_ref: string }) => entry.route_ref);
+    expect(refs).toEqual(second.projects.map((entry: { route_ref: string }) => entry.route_ref));
+    expect(new Set(refs).size).toBe(2);
+    expect(webProjectRouteRef(project + "/.")).toBe(webProjectRouteRef(project));
+    for (const ref of refs) expect(ref).toMatch(/^p-[a-f0-9]{24}$/);
+    expect(readFileSync(webProjectsPath(home), "utf8")).toBe(before);
+    expect(before).not.toContain("route_ref");
+  });
+
   test("loads, saves, and resolves manually added projects from absolute paths", () => {
     const home = tempHome("codetrap-web-home-", { realpath: true, initCodetrap: true });
     const project = tempProjectDir("codetrap-web-project-", { realpath: true });

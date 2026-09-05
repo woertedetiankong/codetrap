@@ -322,16 +322,19 @@ Overview, Run timelines, and Evals calibration bench. Evals keeps deterministic
 Search Eval metrics separate from observed feedback/validation ratios and shows
 unconfirmed review candidates that link back to their source Run. From a candidate,
 the user can author an exact query and expected fixture IDs, save a no-write preview,
-and explicitly accept, reject, or roll back the case. A project gets
-retrieval metrics only when it checks in `src/tests/fixtures/search-eval.json`;
-missing fixtures remain visibly unconfigured. Merely opening Impact or Evals is
+and explicitly accept, reject, or roll back the case. A project can prepare its
+own `.codetrap/evals/suite.json` from confirmed lessons, then add reviewed examples.
+An existing `src/tests/fixtures/search-eval.json` remains readable and can be
+explicitly copied into project data. Download exports the exact evaluation set;
+see the [evaluation set guide](project-evaluation-suites.md). Missing sets offer
+setup without substituting a maintainer benchmark. Merely opening Impact or Evals is
 read-only: when no ledger exists it shows an opt-in empty state without creating
 project identity, observation directories, SQLite files, or Eval cases. Only the
 labelled accept action writes the reviewed case, and rollback restores the exact
 previous fixture.
 
 The **Controlled comparison** lane can run two local, deterministic profiles
-against the checked-in fixture: FTS-only versus the case's configured retrieval
+against the selected project set: FTS-only versus the case's configured retrieval
 policy, or expected traps unavailable versus available. Choose a trial count and
 seed, click **Run controlled comparison**, then inspect regressions, changed cases,
 side-by-side metrics, fixture SHA, configuration fingerprint, and saved history.

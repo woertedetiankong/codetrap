@@ -1,3 +1,4 @@
+import { observationConnection, type ObservationConnection } from "./observation-connection";
 import type {
   CandidateStatusPayload,
   EvalExperimentPayload,
@@ -18,10 +19,11 @@ import type {
   TrapMissedPayload,
   ValidationReceipt,
 } from "../domain/observation";
+import { observationTrapScope } from "../lib/observation-feedback";
 import { openObservationLedgerReadOnly } from "../lib/observation-ledger";
 import { agentObservationHealth, type AgentObservationHealth } from "../lib/agent-observation";
 
-export type ObservationWebAvailability = "not_configured" | "ready";
+export type ObservationWebAvailability = "not_configured" | "ready" | "unavailable";
 
 export type ObservationWebRun = Pick<RunObservationProjection,
   | "id"
@@ -44,6 +46,7 @@ export type ObservationWebRun = Pick<RunObservationProjection,
 >;
 
 export interface ObservationWebTimelineEvent {
+  event_id?: string;
   seq: number;
   occurred_at: string;
   type: ObservationEvent["type"];
@@ -58,6 +61,7 @@ export interface ObservationOverviewWebPayload {
   overview: ObservationOverviewProjection | null;
   recent_runs: ObservationWebRun[];
   hook_health: AgentObservationHealth;
+  connection: ObservationConnection;
 }
 
 export interface ObservationRunsWebPayload {
@@ -74,26 +78,20 @@ export interface ObservationRunWebPayload {
 }
 
 export function observationOverviewWebPayload(projectRoot: string, limit = 50): ObservationOverviewWebPayload {
-  const ledger = openObservationLedgerReadOnly(projectRoot);
-  if (!ledger) {
-    return {
-      project_root: projectRoot,
-      availability: "not_configured",
-      overview: null,
-      recent_runs: [],
-      hook_health: agentObservationHealth(projectRoot),
-    };
-  }
+  const hook_health = agentObservationHealth(projectRoot);
   try {
-    return {
-      project_root: projectRoot,
-      availability: "ready",
-      overview: ledger.overview(),
-      recent_runs: ledger.listRuns(limit).map(observationWebRun),
-      hook_health: agentObservationHealth(projectRoot),
-    };
-  } finally {
-    ledger.close();
+    const ledger = openObservationLedgerReadOnly(projectRoot);
+    if (!ledger) return { project_root: projectRoot, availability: "not_configured", overview: null,
+      recent_runs: [], hook_health, connection: observationConnection(projectRoot, 0) };
+    try {
+      const overview = ledger.overview();
+      return { project_root: projectRoot, availability: "ready", overview,
+        recent_runs: ledger.listRuns(limit).map(observationWebRun), hook_health,
+        connection: observationConnection(projectRoot, overview.total_runs) };
+    } finally { ledger.close(); }
+  } catch {
+    return { project_root: projectRoot, availability: "unavailable", overview: null,
+      recent_runs: [], hook_health, connection: observationConnection(projectRoot, null) };
   }
 }
 
@@ -153,6 +151,7 @@ function observationWebRun(run: RunObservationProjection): ObservationWebRun {
 
 function observationTimelineEvent(event: ObservationEvent): ObservationWebTimelineEvent {
   return {
+    event_id: event.id,
     seq: event.seq,
     occurred_at: event.occurred_at,
     type: event.type,
@@ -189,11 +188,11 @@ function safeTimelineFacts(event: ObservationEvent): Record<string, string | num
     }
     case "trap/exposed": {
       const value = event.attributes as TrapExposurePayload;
-      return { trap_id: value.trap_id, rank: value.rank };
+      return { trap_id: value.trap_id, trap_scope: observationTrapScope(value.revision), rank: value.rank };
     }
     case "trap/feedback-recorded": {
       const value = event.attributes as TrapFeedbackPayload;
-      return { trap_id: value.trap_id, feedback: value.feedback };
+      return { trap_id: value.trap_id, trap_scope: observationTrapScope(value.revision), feedback: value.feedback };
     }
     case "trap/missed-reported": {
       const value = event.attributes as TrapMissedPayload;

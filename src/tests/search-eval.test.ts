@@ -5,6 +5,7 @@ import { TrapRepository } from "../db/repository";
 import {
   EvalEmbedder,
   evaluateSearchFixture,
+  evaluateSearchFixtureCases,
   readEvalFixture,
   retrievalMetricsForRanking,
 } from "../lib/search-eval";
@@ -17,6 +18,22 @@ describe("search evaluation fixture", () => {
     expect(report.failures).toEqual([]);
     expect(report.metrics.recall_at_5).toBeGreaterThanOrEqual(1);
     expect(report.metrics.mrr).toBeGreaterThanOrEqual(0.8);
+  });
+
+  test("negative retrieval cases reject false positives even with zero recall thresholds", async () => {
+    const report = await evaluateSearchFixtureCases({
+      traps: [fixture.traps[0]!],
+      queries: ["fetchWrapper", "zzqxvzzunknown"].map((query) => ({
+        query, mode: "fts", goldTrapIds: [], phaseGate: "dogfood",
+        judgment: "no_relevant_trap", minRecallAt3: 0, minRecallAt5: 0,
+      })),
+    }, new EvalEmbedder());
+    expect(report.cases[0]!.topResults.length).toBeGreaterThan(0);
+    expect(report.cases[0]!.passed).toBe(false);
+    expect(report.cases[1]!.topResults).toEqual([]);
+    expect(report.cases[1]!.passed).toBe(true);
+    expect(report.failures.map((item) => item.query)).toEqual(["fetchWrapper"]);
+    expect(report.noisy_hits.map((item) => item.query)).toEqual(["fetchWrapper"]);
   });
 
   test("excludes a gold result at rank 6 from Recall@5", () => {

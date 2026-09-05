@@ -1,22 +1,32 @@
-/*
- * Impact browser functions are authored as real functions, then serialized
- * into the existing inline client. Keeping HTML template literals here avoids
- * a fragile second level of backtick/${} escaping inside client-script.ts.
- */
-declare const state: any;
-declare function el(id: string): any;
-declare function t(key: string, params?: Record<string, unknown>): string;
-declare function escapeHtml(value: unknown): string;
-declare function escapeAttr(value: unknown): string;
-declare function valueLabel(value: unknown): string;
-declare function formatDisplayDate(value: unknown): string;
-declare function api(path: string, options?: Record<string, unknown>): Promise<any>;
-declare function syncWorkspaceRoute(replace?: boolean): void;
-declare function showStatus(message: string, isError?: boolean): void;
-declare function captureImpactScrollPosition(): { detail: number; queue: number };
-declare function restoreImpactScrollPosition(position: { detail: number; queue: number }): void;
+import type { createEvalSuiteUI } from "./client-eval-suite";
+import type { createRevisionUI } from "./client-revisions";
+import type { impactOverviewContent as overviewComponent } from "./client-impact-overview";
 
-export function renderImpactQueue() {
+// Transitional business-state adapter; dependencies are real runtime values.
+interface Dependencies {
+  state: any;
+  evalSuiteUI: ReturnType<typeof createEvalSuiteUI>;
+  revisionUI: ReturnType<typeof createRevisionUI>;
+  impactOverviewContent: typeof overviewComponent;
+  el(id: string): any;
+  t(key: string, params?: Record<string, unknown>): string;
+  escapeHtml(value: unknown): string;
+  escapeAttr(value: unknown): string;
+  valueLabel(value: unknown): string;
+  formatDisplayDate(value: unknown): string;
+  api(path: string, options?: Record<string, unknown>): Promise<any>;
+  syncWorkspaceRoute(replace?: boolean): void;
+  showStatus(message: string, isError?: boolean): void;
+  captureImpactScrollPosition(): { detail: number; queue: number };
+  restoreImpactScrollPosition(position: { detail: number; queue: number }): void;
+  loadImpactRun(runId: string): Promise<void>;
+  loadImpactEvals(): Promise<void>;
+  loadImpact(): Promise<void>;
+  jumpToTrap(scope: string, id: string | number): Promise<void>;
+}
+export function createImpactUI(deps: Dependencies) {
+  const { state, evalSuiteUI, revisionUI, impactOverviewContent, el, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, api, syncWorkspaceRoute, showStatus, captureImpactScrollPosition, restoreImpactScrollPosition, loadImpactRun, loadImpactEvals, loadImpact, jumpToTrap } = deps;
+function renderImpactQueue() {
   if (state.impactView === "evals") {
     renderImpactEvalQueue();
     return;
@@ -44,11 +54,8 @@ export function renderImpactQueue() {
     return;
   }
   if (!state.observationRuns.length) {
-    if (state.observationAvailability === "not_configured") {
-      el("candidates").innerHTML = `<div class="empty impact-queue-empty"><strong>${escapeHtml(t("impact.queueNotConfiguredTitle"))}</strong><span>${escapeHtml(t("impact.queueNotConfiguredCopy"))}</span></div>`;
-    } else {
-      el("candidates").innerHTML = '<div class="empty">' + escapeHtml(t("impact.noRunsCopy")) + "</div>";
-    }
+    const status = state.observationConnection?.state || "not_configured";
+    el("candidates").innerHTML = `<div class="empty impact-queue-empty"><strong>${escapeHtml(t("connection." + status + ".title"))}</strong><span>${escapeHtml(t("connection." + status + ".copy"))}</span></div>`;
     return;
   }
   el("candidates").innerHTML = state.observationRuns.map((run: any) => `
@@ -73,7 +80,7 @@ export function renderImpactQueue() {
  * it took. The opaque id stays on the page, but as identity rather than as the
  * largest text on it.
  */
-export function impactRunHeadline(run: any) {
+function impactRunHeadline(run: any) {
   const when = run.started_at ? impactRelativeTime(run.started_at) : t("impact.noStart");
   return t("impact.runHeadline", {
     client: run.source_client || "other",
@@ -82,13 +89,18 @@ export function impactRunHeadline(run: any) {
   });
 }
 
-export function impactStateDot(status: unknown) {
+function impactStateDot(status: unknown) {
   const value = String(status || "unknown");
   const dotState = value === "completed" ? "done" : value === "failed" ? "error" : value === "unknown" ? "idle" : "ongoing";
   return `<span class="impact-state ${dotState}"><i aria-hidden="true"></i><span>${escapeHtml(valueLabel(value))}</span></span>`;
 }
 
-export function renderImpactDetail() {
+function syncImpactOverviewLayout() {
+  document.querySelector(".shell")?.classList.toggle("impact-overview-mode", state.mainView === "impact" && state.impactView === "overview");
+}
+
+function renderImpactDetail() {
+  syncImpactOverviewLayout();
   const tabs = impactTabs(state.impactView);
   el("detail-title").textContent = state.impactView === "runs"
     ? t("impact.runTimeline")
@@ -125,73 +137,50 @@ export function renderImpactDetail() {
  * container back to the top and carry the control the user just clicked off
  * screen.
  */
-export function renderImpactDetailKeepingScroll() {
+function renderImpactDetailKeepingScroll() {
   const position = captureImpactScrollPosition();
   renderImpactDetail();
   restoreImpactScrollPosition(position);
 }
 
-export function renderImpactOverview() {
+function renderImpactOverview() {
   const tabs = impactTabs("overview");
   el("detail-meta").textContent = state.observationOverview?.last_event_at
     ? t("impact.lastEvent", { time: formatDisplayDate(state.observationOverview.last_event_at) })
     : t("impact.noLastEvent");
-  if (state.observationAvailability === "not_configured") {
-    el("detail").innerHTML = `<div class="impact-shell">${tabs}${renderAgentObservationHealthNotice()}${impactFirstRunContent("01", t("impact.notConfiguredTitle"), t("impact.notConfiguredCopy"))}</div>`;
+  if (state.observationConnection?.state === "unavailable") {
+    el("detail").innerHTML = `<div class="impact-shell impact-overview-workspace"><div class="impact-overview-content">${tabs}${renderObservationConnection()}${renderAgentObservationHealthNotice()}<button type="button" class="primary" data-impact-retry>${escapeHtml(t("impact.retry"))}</button></div></div>`;
     bindImpactTabs();
     return;
   }
   if (!state.observationOverview || state.observationOverview.total_runs === 0) {
-    el("detail").innerHTML = `<div class="impact-shell">${tabs}${renderAgentObservationHealthNotice()}${impactFirstRunContent("00", t("impact.noRunsTitle"), t("impact.noRunsCopy"))}</div>`;
+    el("detail").innerHTML = `<div class="impact-shell impact-overview-workspace"><div class="impact-overview-content">${tabs}${renderObservationConnection()}${renderAgentObservationHealthNotice()}${impactFirstRunContent("00", t("overview.evidenceTitle"), t("overview.evidenceCopy"))}</div></div>`;
     bindImpactTabs();
     return;
   }
-  const overview = state.observationOverview;
-  const evidence = overview.evidence || {};
-  const strip = impactStatsStrip(overview);
-  // Every tile is always rendered. A zero is the answer to "did anything come
-  // back from those exposures", so hiding it makes "none" indistinguishable
-  // from "not measured"; it is de-emphasised instead.
-  const metricTiles: [unknown, string][] = [
-    [overview.total_runs, t("impact.metric.runs")],
-    [overview.completed_runs, t("impact.metric.completed")],
-    [overview.exposure_count, t("impact.metric.exposures")],
-    [overview.validation_passed, t("impact.metric.validation")],
-    [overview.helpful_feedback, t("impact.metric.helpful")],
-  ];
-  el("detail").innerHTML = `<div class="impact-shell">
-    ${tabs}
-    ${renderAgentObservationHealthNotice()}
-    <section class="impact-hero">
-      <div class="impact-hero-grid">
-        <div>
-          <div class="impact-kicker">${escapeHtml(t("impact.kicker"))}</div>
-          <h2>${escapeHtml(t("impact.headline"))}</h2>
-          <p>${escapeHtml(t("impact.intro"))}</p>
-          ${strip.length ? `<div class="impact-stats-strip">${strip.map((group: string) => `<span>${escapeHtml(group)}</span>`).join("")}</div>` : ""}
-        </div>
-        <div class="impact-hero-side">
-          <div class="impact-local-badge">${escapeHtml(t("impact.localOnly"))}</div>
-        </div>
-      </div>
-    </section>
-    ${metricTiles.length ? `<section class="impact-metrics">${metricTiles.map(([value, label]) => impactMetric(value, label)).join("")}</section>` : ""}
-    ${overview.partial_or_unknown_runs > 0 ? `<section class="impact-notice warn" style="margin-top:12px"><h3>${escapeHtml(t("impact.partialTitle"))}</h3><p>${escapeHtml(t("impact.partialCopy"))}</p></section>` : ""}
-    <section class="impact-grid">
-      <div class="impact-card">
-        <h3>${escapeHtml(t("impact.evidenceMix"))}</h3>
-        ${impactMixBar(evidence)}
-      </div>
-      <div class="impact-notice">
-        <h3>${escapeHtml(t("impact.privacyTitle"))}</h3>
-        <p>${escapeHtml(t("impact.privacyCopy"))}</p>
-      </div>
-    </section>
-  </div>`;
+  el("detail").innerHTML = `<div class="impact-shell impact-overview-workspace"><div class="impact-overview-content">
+    ${tabs}${renderObservationConnection()}${renderAgentObservationHealthNotice()}
+    ${impactOverviewContent(state.observationOverview, state.observationRuns, {
+      text: t, escape: escapeHtml, relativeTime: impactRelativeTime, duration: impactDuration, valueLabel,
+    })}
+  </div></div>`;
   bindImpactTabs();
+  document.querySelectorAll<HTMLButtonElement>("[data-overview-run]").forEach((button) => {
+    button.addEventListener("click", () => loadImpactRun(button.dataset.overviewRun!));
+  });
 }
 
-export function renderAgentObservationHealthNotice() {
+function renderObservationConnection() {
+  const connection = state.observationConnection;
+  if (!connection) return "";
+  return `<section class="observation-connection" data-connection-state="${escapeAttr(connection.state)}" aria-label="${escapeAttr(t("connection.label"))}">
+    <div><span class="overview-eyebrow">${escapeHtml(t("connection.label"))}</span><strong>${escapeHtml(t("connection." + connection.state + ".title"))}</strong></div>
+    <div class="connection-clients">${connection.clients.map((client: any) => `<span><b>${client.client === "codex" ? "Codex" : "Claude Code"}</b> ${escapeHtml(t("connection.client." + client.status))}</span>`).join("")}</div>
+    <p>${escapeHtml(t("connection." + connection.state + ".copy"))}</p>
+  </section>`;
+}
+
+function renderAgentObservationHealthNotice() {
   const health = state.observationHookHealth;
   if (!health || health.status === "healthy") return "";
   if (health.status === "unavailable") {
@@ -215,36 +204,7 @@ export function renderAgentObservationHealthNotice() {
   </section>`;
 }
 
-export function impactStatsStrip(overview: any) {
-  const groups: string[] = [];
-  groups.push(t("impact.strip.runs", { runs: Number(overview.total_runs || 0).toLocaleString(), completed: Number(overview.completed_runs || 0).toLocaleString() }));
-  groups.push(t("impact.strip.exposures", { count: Number(overview.exposure_count || 0).toLocaleString() }));
-  groups.push(t("impact.strip.validations", { count: Number(overview.validation_passed || 0).toLocaleString() }));
-  groups.push(t("impact.strip.helpful", { count: Number(overview.helpful_feedback || 0).toLocaleString() }));
-  return groups;
-}
-
-export function impactMixBar(evidence: any) {
-  const items: [string, number, string][] = [
-    ["observed", Number(evidence.observed_fact || 0), t("impact.observedFacts")],
-    ["human", Number(evidence.human_label || 0), t("impact.humanLabels")],
-    ["inference", Number(evidence.derived_inference || 0), t("impact.derivedInferences")],
-    ["eval", Number(evidence.controlled_eval || 0), t("impact.controlledEvals")],
-  ].filter(([, value]) => Number(value) > 0) as [string, number, string][];
-  const total = items.reduce((sum, [, value]) => sum + value, 0);
-  if (!total) return "";
-  // One class means the bar would be a single full-width block, which says
-  // nothing a sentence does not say better.
-  if (items.length === 1) {
-    const [key, value, label] = items[0]!;
-    return `<p class="impact-mix-single ${escapeAttr(key)}"><b>${escapeHtml(value.toLocaleString())}</b> ${escapeHtml(label)}<small>${escapeHtml(t("impact.mixSingle"))}</small></p>`;
-  }
-  const bar = items.map(([key, value]) => `<span class="impact-mix-seg ${escapeAttr(key)}" style="width:${((value / total) * 100).toFixed(2)}%"></span>`).join("");
-  const legend = items.map(([key, value, label]) => `<span class="impact-mix-item ${escapeAttr(key)}"><i aria-hidden="true"></i><b>${escapeHtml(value.toLocaleString())}</b>${escapeHtml(label)}</span>`).join("");
-  return `<div class="impact-mix-bar" role="img" aria-label="${escapeAttr(t("impact.evidenceMix"))}">${bar}</div><div class="impact-mix-legend">${legend}</div>`;
-}
-
-export function renderImpactRunDetail() {
+function renderImpactRunDetail() {
   const demo = Boolean(state.observationDemoRun);
   const payload = state.observationDemoRun || state.observationRunDetail;
   const run = payload?.run;
@@ -288,16 +248,21 @@ export function renderImpactRunDetail() {
   bindImpactEventControls();
 }
 
-export function impactFirstRunContent(mark: string, title: string, copy: string) {
-  const actions = `<button type="button" class="primary" data-impact-demo-preview>${escapeHtml(t("impact.previewDemo"))}</button>
-    <button type="button" class="secondary" data-impact-guide aria-expanded="${state.observationGuideOpen}">${escapeHtml(t(state.observationGuideOpen ? "impact.hideConnectionGuide" : "impact.showConnectionGuide"))}</button>
-    <button type="button" class="secondary" data-impact-tab="evals">${escapeHtml(t("impact.viewOfflineEvals"))}</button>`;
-  return `${impactEmptyContent(mark, title, copy, actions, t("impact.notConfiguredHint"))}
-    ${impactOnboardingFlow()}
-    ${state.observationGuideOpen ? impactConnectionGuide() : ""}`;
+function impactFirstRunContent(_mark: string, title: string, copy: string) {
+  return `<section class="overview-welcome">
+    <div class="overview-welcome-main"><span class="overview-eyebrow">${escapeHtml(t("overview.kicker"))}</span>
+      <h2>${escapeHtml(t("overview.welcomeTitle"))}</h2><p>${escapeHtml(t("overview.welcomeCopy"))}</p>
+      <div class="impact-empty-actions"><button type="button" class="primary" data-impact-guide aria-expanded="${state.observationGuideOpen}">${escapeHtml(t(state.observationGuideOpen ? "impact.hideConnectionGuide" : "impact.showConnectionGuide"))}</button>
+      <button type="button" class="secondary" data-impact-demo-preview>${escapeHtml(t("impact.previewDemo"))}</button></div>
+      <small>${escapeHtml(t("impact.notConfiguredHint"))}</small>
+    </div>
+    <div class="overview-welcome-flow">${impactOnboardingFlow()}</div>
+  </section>
+  <section class="overview-empty-status"><div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(copy)}</p></div><button type="button" class="ghost" data-impact-tab="evals">${escapeHtml(t("impact.viewOfflineEvals"))} <span aria-hidden="true">↗</span></button></section>
+  ${state.observationGuideOpen ? impactConnectionGuide() : ""}`;
 }
 
-export function impactOnboardingFlow() {
+function impactOnboardingFlow() {
   const steps = [
     ["01", "impact.flowAgentTitle", "impact.flowAgentCopy"],
     ["02", "impact.flowMetadataTitle", "impact.flowMetadataCopy"],
@@ -307,7 +272,7 @@ export function impactOnboardingFlow() {
     <article><span>${index}</span><div><strong>${escapeHtml(t(title))}</strong><p>${escapeHtml(t(copy))}</p></div></article>`).join("")}</section>`;
 }
 
-export function impactConnectionGuide() {
+function impactConnectionGuide() {
   return `<section class="impact-connection-guide">
     <div class="impact-connection-head"><div><span>${escapeHtml(t("impact.connectionKicker"))}</span><h3>${escapeHtml(t("impact.connectionTitle"))}</h3></div><span class="pill info">${escapeHtml(t("impact.automaticBadge"))}</span></div>
     <p>${escapeHtml(t("impact.connectionCopy"))}</p>
@@ -324,11 +289,11 @@ export function impactConnectionGuide() {
   </section>`;
 }
 
-export function impactAutoClient(label: string, preview: string, apply: string) {
+function impactAutoClient(label: string, preview: string, apply: string) {
   return `<article><strong>${escapeHtml(label)}</strong><span>${escapeHtml(t("impact.automaticPreview"))}</span><code>${escapeHtml(preview)}</code><span>${escapeHtml(t("impact.automaticApply"))}</span><code>${escapeHtml(apply)}</code></article>`;
 }
 
-export function createImpactDemoRun() {
+function createImpactDemoRun() {
   const completedAt = Date.now();
   const startedAt = completedAt - 42_000;
   const occurredAt = (offset: number) => new Date(startedAt + offset).toISOString();
@@ -360,7 +325,7 @@ export function createImpactDemoRun() {
   };
 }
 
-export function openImpactDemo() {
+function openImpactDemo() {
   if (!state.observationDemoRun) state.observationDemoRun = createImpactDemoRun();
   state.observationGuideOpen = false;
   state.observationRunId = null;
@@ -372,7 +337,7 @@ export function openImpactDemo() {
   renderImpactDetail();
 }
 
-export function closeImpactDemo() {
+function closeImpactDemo() {
   state.observationDemoRun = null;
   state.impactView = "overview";
   syncWorkspaceRoute();
@@ -381,7 +346,7 @@ export function closeImpactDemo() {
   renderImpactDetail();
 }
 
-export function bindImpactOnboarding() {
+function bindImpactOnboarding() {
   document.querySelectorAll("[data-impact-demo-preview], [data-impact-demo-open]").forEach((button: any) => {
     button.addEventListener("click", openImpactDemo);
   });
@@ -408,7 +373,7 @@ export function bindImpactOnboarding() {
   });
 }
 
-export function impactTabs(active: string) {
+function impactTabs(active: string) {
   return `<div class="impact-tabs" role="tablist" aria-label="${escapeAttr(t("nav.impact"))}">
     <button type="button" role="tab" aria-selected="${active === "overview"}" class="${active === "overview" ? "active" : ""}" data-impact-tab="overview">${escapeHtml(t("impact.overview"))}</button>
     <button type="button" role="tab" aria-selected="${active === "runs"}" class="${active === "runs" ? "active" : ""}" data-impact-tab="runs">${escapeHtml(t("impact.runs"))}</button>
@@ -416,7 +381,7 @@ export function impactTabs(active: string) {
   </div>`;
 }
 
-export function bindImpactTabs() {
+function bindImpactTabs() {
   document.querySelectorAll("[data-impact-tab]").forEach((button: any) => {
     button.addEventListener("click", () => {
       if (button.dataset.impactTab === "overview") {
@@ -453,7 +418,7 @@ export function bindImpactTabs() {
   bindImpactOnboarding();
 }
 
-export function renderImpactEvals() {
+function renderImpactEvals() {
   const payload = state.observationEvals;
   el("detail-meta").textContent = t("evals.localReadOnly");
   if (!payload) {
@@ -474,8 +439,9 @@ export function renderImpactEvals() {
         <h2>${escapeHtml(t("evals.headline"))}</h2>
         <p>${escapeHtml(t("evals.intro"))}</p>
       </div>
-      <div class="evals-verdict"><span>${escapeHtml(t("evals.noSingleScore"))}</span><strong>4</strong><small>${escapeHtml(t("evals.evidenceLanes"))}</small></div>
+
     </section>
+    <section class="evals-section" id="eval-suite-panel"></section>
     <section class="evals-lanes" aria-label="${escapeAttr(t("evals.evidenceLanes"))}">
       ${evalLane("01", t("evals.retrievalLane"), t("evals.retrievalLaneCopy"), retrieval.availability === "ready" ? "ready" : "setup")}
       ${evalLane("02", t("evals.controlledLane"), t("evals.controlledLaneCopy"), controlled.availability === "partial" ? "review" : controlled.experiments?.length ? "ready" : "setup")}
@@ -504,9 +470,10 @@ export function renderImpactEvals() {
   bindImpactTabs();
   bindEvalControls();
   bindControlledEvalControls();
+  void evalSuiteUI.mount(el("eval-suite-panel"), state.projectRoot);
 }
 
-export function renderImpactEvalQueue() {
+function renderImpactEvalQueue() {
   const payload = state.observationEvals;
   const candidates = filteredEvalCandidates();
   el("queue-title").textContent = t("evals.reviewQueue");
@@ -537,8 +504,9 @@ export function renderImpactEvalQueue() {
   bindEvalRunLinks(el("candidates"));
 }
 
-export function renderRetrievalEval(retrieval: any) {
+function renderRetrievalEval(retrieval: any) {
   if (retrieval.availability === "ready") {
+    if (!retrieval.total_cases) return `<p class="impact-notice">${escapeHtml(t("suite.noCases"))}</p>`;
     return `<div class="eval-metric-grid">
       ${evalScoreMetric(retrieval.recall_at_3, "Recall@3", t("evals.cases", { count: retrieval.total_cases }))}
       ${evalScoreMetric(retrieval.recall_at_5, "Recall@5", t("evals.cases", { count: retrieval.total_cases }))}
@@ -547,10 +515,10 @@ export function renderRetrievalEval(retrieval: any) {
     </div><p class="eval-source">${escapeHtml(t("evals.fixtureSource", { source: retrieval.source }))}</p>`;
   }
   const invalid = retrieval.availability === "invalid";
-  return `<div class="impact-notice ${invalid ? "error" : ""}"><h3>${escapeHtml(t(invalid ? "evals.fixtureInvalidTitle" : "evals.fixtureMissingTitle"))}</h3><p>${escapeHtml(t(invalid ? "evals.fixtureInvalidCopy" : "evals.fixtureMissingCopy", { source: retrieval.source }))}</p><code>${escapeHtml(retrieval.source || "src/tests/fixtures/search-eval.json")}</code></div>`;
+  return `<div class="impact-notice ${invalid ? "error" : ""}"><h3>${escapeHtml(t(invalid ? "evals.fixtureInvalidTitle" : "evals.fixtureMissingTitle"))}</h3><p>${escapeHtml(t(invalid ? "evals.fixtureInvalidCopy" : "evals.fixtureMissingCopy", { source: retrieval.source }))}</p><code>${escapeHtml(retrieval.source || ".codetrap/evals/suite.json")}</code></div>`;
 }
 
-export function renderControlledEvals(controlled: any) {
+function renderControlledEvals(controlled: any) {
   const availability = controlled?.availability || "not_configured";
   if (availability !== "ready" && availability !== "partial") {
     const invalid = availability === "invalid";
@@ -559,7 +527,7 @@ export function renderControlledEvals(controlled: any) {
   const profiles = controlled.profiles || [];
   const experiments = controlled.experiments || [];
   const corruptResults = controlled.corrupt_results || [];
-  const partialWarning = availability === "partial"
+  const partialWarning = corruptResults.length > 0
     ? `<div class="impact-notice warn controlled-store-warning" role="status"><h3>${escapeHtml(t("evals.controlledPartialTitle"))}</h3><p>${escapeHtml(t("evals.controlledPartialCopy", { count: corruptResults.length }))}</p><code>${escapeHtml(corruptResults.slice(0, 3).map((item: any) => item.file).join(", "))}</code></div>`
     : "";
   const experiment = selectedControlledExperiment(controlled);
@@ -572,12 +540,13 @@ export function renderControlledEvals(controlled: any) {
     : `<span class="controlled-no-history">${escapeHtml(t("evals.noExperiments"))}</span>`;
   return `<div class="controlled-eval-bench">
     <div class="controlled-blueprint" aria-hidden="true"><span>BASELINE</span><i></i><span>CANDIDATE</span></div>
+    ${controlled.can_run === false ? `<p class="impact-notice">${escapeHtml(t("suite.runUnavailable"))}</p>` : ""}
     <form class="controlled-run-form" data-controlled-eval-form>
       <div class="controlled-run-copy"><span>${escapeHtml(t("evals.controlledQuestionLabel"))}</span><strong>${escapeHtml(profile ? t(`evals.profile.${profile.id}.name`) : "—")}</strong><p>${escapeHtml(profile ? t(`evals.profile.${profile.id}.question`) : "")}</p></div>
       <label class="eval-field"><span>${escapeHtml(t("evals.profileLabel"))}</span><select name="profile">${profiles.map((item: any) => `<option value="${escapeAttr(item.id)}" ${item.id === state.controlledEvalProfile ? "selected" : ""}>${escapeHtml(t(`evals.profile.${item.id}.name`))}</option>`).join("")}</select></label>
       <label class="eval-field"><span>${escapeHtml(t("evals.trialsLabel"))}</span><select name="trials">${[1, 2, 3, 4, 5].map((count) => `<option value="${count}" ${Number(state.controlledEvalTrials) === count ? "selected" : ""}>${escapeHtml(t("evals.trialCount", { count }))}</option>`).join("")}</select></label>
       <label class="eval-field controlled-seed"><span>${escapeHtml(t("evals.seedLabel"))}</span><input name="seed" maxlength="80" value="${escapeAttr(state.controlledEvalSeed)}"></label>
-      <button type="submit" class="primary controlled-run-button" ${state.controlledEvalBusy ? "disabled" : ""}>${escapeHtml(t(state.controlledEvalBusy ? "evals.runningExperiment" : "evals.runExperiment"))}</button>
+      <button type="submit" class="primary controlled-run-button" ${state.controlledEvalBusy || controlled.can_run === false ?  "disabled" : ""}>${escapeHtml(t(state.controlledEvalBusy ? "evals.runningExperiment" : "evals.runExperiment"))}</button>
       <div class="controlled-guardrails"><span>0 ${escapeHtml(t("evals.modelCalls"))}</span><span>${escapeHtml(t("evals.inMemoryOnly"))}</span><span>${escapeHtml(t("evals.fixtureUnchanged"))}</span></div>
     </form>
     ${partialWarning}
@@ -587,16 +556,16 @@ export function renderControlledEvals(controlled: any) {
   </div>`;
 }
 
-export function selectedControlledExperiment(controlled: any = state.observationEvals?.controlled) {
+function selectedControlledExperiment(controlled: any = state.observationEvals?.controlled) {
   const experiments = controlled?.experiments || [];
   return experiments.find((item: any) => item.id === state.controlledEvalExperimentId) || experiments[0] || null;
 }
 
-export function renderControlledEmpty() {
+function renderControlledEmpty() {
   return `<div class="controlled-empty"><span>Δ</span><div><strong>${escapeHtml(t("evals.noExperimentTitle"))}</strong><p>${escapeHtml(t("evals.noExperimentCopy"))}</p></div></div>`;
 }
 
-export function renderControlledExperiment(experiment: any) {
+function renderControlledExperiment(experiment: any) {
   const summary = experiment.summary || {};
   const hasRegression = Number(summary.regressions || 0) > 0;
   const attentionCases = controlledExperimentCases(experiment);
@@ -620,11 +589,11 @@ export function renderControlledExperiment(experiment: any) {
   </article>`;
 }
 
-export function renderControlledSide(kind: string, identity: any, metrics: any, failed: number, duration: number) {
+function renderControlledSide(kind: string, identity: any, metrics: any, failed: number, duration: number) {
   return `<section class="controlled-side ${escapeAttr(kind)}"><span>${escapeHtml(kind === "baseline" ? t("evals.baseline") : t("evals.candidate"))}</span><h4>${escapeHtml(identity?.id ? t(`evals.side.${identity.id}`) : "—")}</h4><div><b>${escapeHtml(formatControlledScore(metrics?.recall_at_3))}</b><small>Recall@3</small></div><div><b>${escapeHtml(formatControlledScore(metrics?.mrr))}</b><small>MRR</small></div><div><b>${escapeHtml(failed || 0)}</b><small>${escapeHtml(t("evals.failed"))}</small></div><footer>${escapeHtml(t("evals.averageDuration", { duration: duration || 0 }))}</footer></section>`;
 }
 
-export function controlledCaseFilters() {
+function controlledCaseFilters() {
   return `<div class="eval-filters controlled-case-filters" aria-label="${escapeAttr(t("evals.caseFilterLabel"))}">${[
     ["attention", "evals.filterAttention"],
     ["regressed", "evals.filterRegressions"],
@@ -632,20 +601,20 @@ export function controlledCaseFilters() {
   ].map(([value, key]) => `<button type="button" data-controlled-case-filter="${value}" class="${state.controlledEvalCaseFilter === value ? "active" : ""}">${escapeHtml(t(key))}</button>`).join("")}</div>`;
 }
 
-export function controlledExperimentCases(experiment: any) {
+function controlledExperimentCases(experiment: any) {
   const cases = experiment?.cases || [];
   if (state.controlledEvalCaseFilter === "regressed") return cases.filter((item: any) => item.classification === "regressed");
   if (state.controlledEvalCaseFilter === "attention") return cases.filter((item: any) => item.classification !== "unchanged_pass");
   return cases;
 }
 
-export function renderControlledCase(item: any) {
+function renderControlledCase(item: any) {
   const baselineTop = item.baseline?.top_results?.[0]?.title || t("evals.noTopResult");
   const candidateTop = item.candidate?.top_results?.[0]?.title || t("evals.noTopResult");
   return `<article class="controlled-case ${escapeAttr(item.classification)}" id="controlled-${escapeAttr(item.id)}"><div class="controlled-case-index"><span>${escapeHtml(t(`evals.classification.${item.classification}`))}</span><b>#${escapeHtml(item.evidence?.query_index || "—")}</b></div><div class="controlled-case-main"><h4>${escapeHtml(item.query)}</h4><p>${escapeHtml(t("evals.expectedIds", { ids: item.gold_trap_ids?.length ? item.gold_trap_ids.map((id: any) => `#${id}`).join(", ") : t("evals.noRelevantTrap") }))}</p><div class="controlled-case-compare"><span><i>${escapeHtml(t("evals.baseline"))}</i><b>${escapeHtml(item.baseline?.passed ? t("evals.pass") : t("evals.fail"))}</b><small>R@3 ${escapeHtml(formatControlledScore(item.baseline?.recallAt3))} · ${escapeHtml(baselineTop)}</small></span><em>→</em><span><i>${escapeHtml(t("evals.candidate"))}</i><b>${escapeHtml(item.candidate?.passed ? t("evals.pass") : t("evals.fail"))}</b><small>R@3 ${escapeHtml(formatControlledScore(item.candidate?.recallAt3))} · ${escapeHtml(candidateTop)}</small></span></div></div><footer><code>${escapeHtml(item.evidence?.fixture || "")}</code><span>${escapeHtml(t("evals.fixtureQueryIndex", { index: item.evidence?.query_index || "—" }))}</span></footer></article>`;
 }
 
-export function bindControlledEvalControls() {
+function bindControlledEvalControls() {
   const form = document.querySelector("[data-controlled-eval-form]") as any;
   if (form) {
     form.querySelector('[name="profile"]')?.addEventListener("change", (event: any) => {
@@ -676,7 +645,7 @@ export function bindControlledEvalControls() {
   });
 }
 
-export async function runControlledEval(form: any) {
+async function runControlledEval(form: any) {
   if (state.controlledEvalBusy) return;
   const data = new FormData(form);
   state.controlledEvalProfile = String(data.get("profile") || "memory_contribution_v1");
@@ -707,16 +676,16 @@ export async function runControlledEval(form: any) {
   }
 }
 
-export function formatControlledScore(value: unknown) {
+function formatControlledScore(value: unknown) {
   return value === null || value === undefined ? "—" : Number(value).toFixed(2);
 }
 
-export function formatControlledDelta(value: unknown) {
+function formatControlledDelta(value: unknown) {
   const number = Number(value || 0);
   return `${number > 0 ? "+" : ""}${number.toFixed(2)} ms`;
 }
 
-export function renderObservedEvals(observed: any, availability: string) {
+function renderObservedEvals(observed: any, availability: string) {
   if (!observed) {
     return `<div class="impact-notice"><h3>${escapeHtml(t("evals.observationMissingTitle"))}</h3><p>${escapeHtml(t("evals.observationMissingCopy"))}</p></div>`;
   }
@@ -738,26 +707,26 @@ export function renderObservedEvals(observed: any, availability: string) {
   </div>`;
 }
 
-export function evalLane(index: string, title: string, copy: string, status: string) {
+function evalLane(index: string, title: string, copy: string, status: string) {
   return `<article class="eval-lane ${escapeAttr(status)}"><span>${escapeHtml(index)}</span><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div><i></i></article>`;
 }
 
-export function evalScoreMetric(value: unknown, label: string, note: string) {
+function evalScoreMetric(value: unknown, label: string, note: string) {
   const score = value === null || value === undefined ? "—" : Math.round(Number(value) * 1000) / 10 + "%";
   return `<div class="eval-score"><span>${escapeHtml(label)}</span><strong>${escapeHtml(score)}</strong><small>${escapeHtml(note)}</small></div>`;
 }
 
-export function evalCountMetric(value: unknown, label: string, note: string) {
+function evalCountMetric(value: unknown, label: string, note: string) {
   return `<div class="eval-score"><span>${escapeHtml(label)}</span><strong>${escapeHtml(Number(value || 0).toLocaleString())}</strong><small>${escapeHtml(note)}</small></div>`;
 }
 
-export function evalRateMetric(metric: any, label: string) {
+function evalRateMetric(metric: any, label: string) {
   const value = metric?.value;
   const display = value === null || value === undefined ? "—" : Math.round(Number(value) * 100) + "%";
   return `<div class="eval-rate"><div class="eval-rate-dial" style="--rate:${escapeAttr(value === null || value === undefined ? 0 : Math.max(0, Math.min(1, Number(value))))}"><strong>${escapeHtml(display)}</strong></div><div><span>${escapeHtml(label)}</span><small>${escapeHtml(t("evals.ratio", { numerator: metric?.numerator || 0, denominator: metric?.denominator || 0 }))}</small></div></div>`;
 }
 
-export function evalCandidateFilters() {
+function evalCandidateFilters() {
   return `<div class="eval-filters" role="group" aria-label="${escapeAttr(t("evals.filterLabel"))}">${[
     ["all", "evals.filterAll"],
     ["miss", "evals.filterMiss"],
@@ -766,7 +735,7 @@ export function evalCandidateFilters() {
   ].map(([value, key]) => `<button type="button" class="${state.evalCandidateFilter === value ? "active" : ""}" data-eval-filter="${value}">${escapeHtml(t(key))}</button>`).join("")}</div>`;
 }
 
-export function filteredEvalCandidates() {
+function filteredEvalCandidates() {
   // Review works on grouped findings: one row per normalized signature, not
   // one row per occurrence.
   const candidates = state.observationEvals?.candidate_groups || [];
@@ -776,9 +745,9 @@ export function filteredEvalCandidates() {
   return candidates;
 }
 
-export function renderEvalCandidate(candidate: any) {
+function renderEvalCandidate(candidate: any) {
   const detail = candidate.trap_id !== null && candidate.trap_id !== undefined
-    ? t("evals.trapEvidence", { id: candidate.trap_id })
+    ? [candidate.trap_scope ? valueLabel(candidate.trap_scope) : "", t("evals.trapEvidence", { id: candidate.trap_id })].filter(Boolean).join(" · ")
     : candidate.validation_kind ? t("evals.validationEvidence", { kind: valueLabel(candidate.validation_kind) }) : t("evals.runEvidence");
   const selected = candidate.id === state.evalReviewCandidateId;
   const statusClass = candidate.review_status === "accepted" ? "approved" : candidate.review_status === "rejected" ? "danger" : "warn";
@@ -802,24 +771,24 @@ export function renderEvalCandidate(candidate: any) {
 }
 
 /** Latest Run the finding was seen in — the most useful one to open. */
-export function evalGroupLatestRunId(group: any) {
+function evalGroupLatestRunId(group: any) {
   const runs = group.run_ids || [];
   return runs.length ? runs[runs.length - 1] : group.run_id;
 }
 
 /** Name the finding by what it concerns, not by the Run it happened to occur in. */
-export function evalGroupTitle(group: any) {
-  if (group.trap_id !== null && group.trap_id !== undefined) return t("evals.groupTrapTitle", { id: group.trap_id });
+function evalGroupTitle(group: any) {
+  if (group.trap_id !== null && group.trap_id !== undefined) return [group.trap_scope ? valueLabel(group.trap_scope) : "", t("evals.groupTrapTitle", { id: group.trap_id })].filter(Boolean).join(" · ");
   if (group.validation_kind) return t("evals.groupValidationTitle", { kind: valueLabel(group.validation_kind) });
   return t("evals.groupRunTitle", { run: evalGroupLatestRunId(group) });
 }
 
-export function selectedEvalCandidate() {
+function selectedEvalCandidate() {
   if (!state.evalReviewCandidateId) return null;
   return (state.observationEvals?.candidate_groups || []).find((group: any) => group.id === state.evalReviewCandidateId) || null;
 }
 
-export function renderEvalReviewPanel(candidate: any, payload: any) {
+function renderEvalReviewPanel(candidate: any, payload: any) {
   if (!candidate) {
     return `<div class="impact-notice eval-review-intro"><h3>${escapeHtml(t("evals.groundTruthTitle"))}</h3><p>${escapeHtml(t("evals.groundTruthCopy"))}</p></div>`;
   }
@@ -827,7 +796,8 @@ export function renderEvalReviewPanel(candidate: any, payload: any) {
   const draft = localReview?.case || candidate.draft_case || {};
   const rejectionReason = localReview?.rejectionReason || "";
   const preview = state.evalReviewPreview;
-  const fixtureTraps = payload?.fixture_traps || [];
+  const oldTarget = candidate?.fixture_path === "src/tests/fixtures/search-eval.json" && payload?.retrieval?.source !== candidate.fixture_path;
+  const fixtureTraps = oldTarget ? payload?.legacy_fixture_traps || [] : payload?.fixture_traps || [];
   const error = state.evalReviewError
     ? `<div class="impact-notice error eval-review-error"><strong>${escapeHtml(t("evals.actionFailed"))}</strong><p>${escapeHtml(state.evalReviewError)}</p></div>`
     : "";
@@ -852,7 +822,7 @@ export function renderEvalReviewPanel(candidate: any, payload: any) {
     <form class="eval-review-form" data-eval-review-form>
       <label class="eval-field eval-query-field"><span>${escapeHtml(t("evals.queryLabel"))}</span><small>${escapeHtml(t("evals.queryHelp"))}</small><textarea name="query" rows="3" placeholder="${escapeAttr(t("evals.queryPlaceholder"))}">${escapeHtml(draft.query || "")}</textarea></label>
       <div class="eval-review-grid"><label class="eval-field"><span>${escapeHtml(t("evals.modeLabel"))}</span><select name="mode">${["fts", "hybrid", "semantic"].map((mode) => `<option value="${mode}" ${(draft.mode || "hybrid") === mode ? "selected" : ""}>${escapeHtml(mode)}</option>`).join("")}</select></label><label class="eval-field"><span>${escapeHtml(t("evals.judgmentLabel"))}</span><select name="judgment">${["miss", "noisy_hit", "useful_hit", "no_relevant_trap"].map((value) => `<option value="${value}" ${judgment === value ? "selected" : ""}>${escapeHtml(valueLabel(value))}</option>`).join("")}</select></label></div>
-      <fieldset class="eval-trap-picker"><legend>${escapeHtml(t("evals.expectedLabel"))}</legend><p>${escapeHtml(t("evals.expectedHelp"))}</p><div>${trapOptions}</div></fieldset>
+      <fieldset class="eval-trap-picker"><legend>${escapeHtml(t("evals.expectedLabel"))}</legend><p>${escapeHtml(t("evals.expectedHelp"))}</p><div>${trapOptions}</div>${oldTarget ? `<p>${escapeHtml(t("suite.oldTarget"))}</p>` : ""}</fieldset>
       <label class="eval-field"><span>${escapeHtml(t("evals.noteLabel"))}</span><input name="note" value="${escapeAttr(draft.note || "")}" placeholder="${escapeAttr(t("evals.notePlaceholder"))}"></label>
       <label class="eval-field eval-reject-field"><span>${escapeHtml(t("evals.rejectReasonLabel"))}</span><input name="rejectionReason" value="${escapeAttr(rejectionReason)}" placeholder="${escapeAttr(t("evals.rejectReasonPlaceholder"))}"></label>
       ${preview ? `<div class="eval-preview"><span>${escapeHtml(t("evals.previewReady"))}</span><strong>${escapeHtml(t("evals.previewCounts", { before: preview[0]?.before_query_count ?? 0, after: preview[0]?.after_query_count ?? 0 }))}</strong><code>${escapeHtml(preview[0]?.path || payload?.retrieval?.source || "")}</code><small>${escapeHtml(t("evals.previewNotWritten"))}</small></div>` : ""}
@@ -861,12 +831,12 @@ export function renderEvalReviewPanel(candidate: any, payload: any) {
   </section>`;
 }
 
-export function renderEvalCaseSummary(draft: any) {
+function renderEvalCaseSummary(draft: any) {
   const ids = Array.isArray(draft.goldTrapIds) && draft.goldTrapIds.length ? draft.goldTrapIds.map((id: any) => `#${id}`).join(", ") : t("evals.noRelevantTrap");
   return `<dl class="eval-case-summary"><div><dt>${escapeHtml(t("evals.queryLabel"))}</dt><dd>${escapeHtml(draft.query || "—")}</dd></div><div><dt>${escapeHtml(t("evals.judgmentLabel"))}</dt><dd>${escapeHtml(valueLabel(draft.judgment || "unknown"))}</dd></div><div><dt>${escapeHtml(t("evals.expectedLabel"))}</dt><dd>${escapeHtml(ids)}</dd></div></dl>`;
 }
 
-export function bindEvalControls() {
+function bindEvalControls() {
   document.querySelectorAll("[data-eval-filter]").forEach((button: any) => {
     button.addEventListener("click", () => {
       snapshotEvalReviewDraftFromDom();
@@ -912,12 +882,12 @@ export function bindEvalControls() {
   bindEvalRunLinks(el("detail"));
 }
 
-export function syncEvalDeferredNotice() {
+function syncEvalDeferredNotice() {
   const notice = document.querySelector("[data-eval-deferred-update]") as HTMLElement | null;
   if (notice) notice.hidden = !state.evalExternalChangesDeferred;
 }
 
-export function evalReviewDraftFromForm(form: any, normalize = true) {
+function evalReviewDraftFromForm(form: any, normalize = true) {
   const data = new FormData(form);
   const judgment = String(data.get("judgment") || "miss");
   const query = String(data.get("query") || "");
@@ -931,7 +901,7 @@ export function evalReviewDraftFromForm(form: any, normalize = true) {
   };
 }
 
-export function snapshotEvalReviewDraftFromDom() {
+function snapshotEvalReviewDraftFromDom() {
   const candidate = selectedEvalCandidate();
   const form = document.querySelector("[data-eval-review-form]") as any;
   if (!candidate || !form) return state.evalReviewDraft;
@@ -943,7 +913,7 @@ export function snapshotEvalReviewDraftFromDom() {
   return state.evalReviewDraft;
 }
 
-export async function runEvalReviewAction(action: string, form: any) {
+async function runEvalReviewAction(action: string, form: any) {
   const candidate = selectedEvalCandidate();
   if (!candidate || state.evalReviewBusy) return;
   if (action === "accept" && !confirm(t("evals.confirmAccept"))) return;
@@ -977,31 +947,26 @@ export async function runEvalReviewAction(action: string, form: any) {
   }
 }
 
-export function bindEvalRunLinks(root: any = document) {
+function bindEvalRunLinks(root: any = document) {
   root.querySelectorAll("[data-eval-run]").forEach((button: any) => {
     button.addEventListener("click", () => loadImpactRun(button.dataset.evalRun));
   });
 }
 
-export function impactMetric(value: unknown, label: string) {
-  const count = Number(value || 0);
-  return `<div class="impact-metric${count === 0 ? " zero" : ""}"><strong>${escapeHtml(count.toLocaleString())}</strong><span>${escapeHtml(label)}</span></div>`;
-}
-
-export function impactSmallMetric(value: unknown, label: string) {
+function impactSmallMetric(value: unknown, label: string) {
   return `<div class="metric"><div class="metric-value">${escapeHtml(value ?? "—")}</div><div class="metric-label">${escapeHtml(label)}</div></div>`;
 }
 
-export function impactEmpty(mark: string, title: string, copy: string) {
+function impactEmpty(mark: string, title: string, copy: string) {
   el("detail-meta").textContent = state.projectRoot || t("empty.noProjects");
   return `<div class="impact-shell">${impactEmptyContent(mark, title, copy)}</div>`;
 }
 
-export function impactEmptyContent(mark: string, title: string, copy: string, actions = "", hint = "") {
+function impactEmptyContent(mark: string, title: string, copy: string, actions = "", hint = "") {
   return `<section class="impact-empty"><div><div class="impact-empty-mark">${escapeHtml(mark)}</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(copy)}</p>${actions ? `<div class="impact-empty-actions">${actions}</div>` : ""}${hint ? `<span class="impact-empty-hint">${escapeHtml(hint)}</span>` : ""}</div></section>`;
 }
 
-export function renderImpactEvent(event: any, baseIso: string | null = null) {
+function renderImpactEvent(event: any, baseIso: string | null = null) {
   const category = impactEventCategory(event.type);
   const keyline = impactEventKeyline(event.type, event.facts || {});
   const offset = impactEventOffset(event.occurred_at, baseIso);
@@ -1010,7 +975,7 @@ export function renderImpactEvent(event: any, baseIso: string | null = null) {
     : "";
   const factEntries = Object.entries(event.facts || {})
     .filter(([, value]) => value !== null)
-    .map(([key, value]) => `<span class="impact-fact"><strong>${escapeHtml(t("impact.fact." + key))}:</strong> ${impactFactMarkup(key, value)}</span>`)
+    .map(([key, value]) => `<span class="impact-fact"><strong>${escapeHtml(t("impact.fact." + key))}:</strong> ${impactFactMarkup(key, value, event.facts?.trap_scope)}</span>`)
     .join("");
   return `<details class="impact-event ${escapeAttr(event.evidence_class)} cat-${escapeAttr(category)}" id="impact-event-${escapeAttr(String(event.seq))}">
     <summary>
@@ -1022,12 +987,13 @@ export function renderImpactEvent(event: any, baseIso: string | null = null) {
     </summary>
     <div class="impact-event-body">
       <div class="impact-facts">${factEntries || '<span class="subtle">' + escapeHtml(t("impact.eventFacts")) + "</span>"}</div>
+      ${!state.observationDemoRun && event.event_id && ["trap/exposed", "trap/feedback-recorded"].includes(event.type) && ["project", "global"].includes(event.facts?.trap_scope) ? `<button type="button" class="ghost" data-experience-review="${escapeAttr(event.event_id)}">${escapeHtml(t("revision.open"))}</button>` : ""}
       <span class="subtle impact-event-sensitivity">${escapeHtml(valueLabel(event.sensitivity))}</span>
     </div>
   </details>`;
 }
 
-export function impactEventCategory(type: string) {
+function impactEventCategory(type: string) {
   if (type === "trap/search-completed") return "search";
   if (type === "trap/exposed") return "expose";
   if (type === "trap/feedback-recorded" || type === "trap/missed-reported") return "feedback";
@@ -1040,14 +1006,14 @@ export function impactEventCategory(type: string) {
   return "other";
 }
 
-export function impactEvidencePillClass(evidenceClass: string) {
+function impactEvidencePillClass(evidenceClass: string) {
   if (evidenceClass === "human_label") return "warn";
   if (evidenceClass === "derived_inference") return "proposed";
   if (evidenceClass === "controlled_eval") return "approved";
   return "";
 }
 
-export function impactEventGlyph(category: string) {
+function impactEventGlyph(category: string) {
   const paths: Record<string, string> = {
     run: '<path d="M3.5 2.5l6 3.5-6 3.5z"/>',
     search: '<circle cx="5" cy="5" r="3.2"/><path d="M7.4 7.4L10.5 10.5"/>',
@@ -1062,7 +1028,7 @@ export function impactEventGlyph(category: string) {
   return `<svg viewBox="0 0 12 12" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${paths[category] || '<circle cx="6" cy="6" r="3.4"/>'}</svg>`;
 }
 
-export function impactEventKeyline(type: string, facts: Record<string, unknown>) {
+function impactEventKeyline(type: string, facts: Record<string, unknown>) {
   const preferences: Record<string, string[]> = {
     "run/started": ["source_client"],
     "run/completed": ["duration_ms"],
@@ -1089,7 +1055,7 @@ export function impactEventKeyline(type: string, facts: Record<string, unknown>)
   return parts.join(" · ");
 }
 
-export function impactEventOffset(occurredAt: unknown, baseIso: string | null) {
+function impactEventOffset(occurredAt: unknown, baseIso: string | null) {
   const at = Date.parse(String(occurredAt || ""));
   const base = baseIso ? Date.parse(baseIso) : NaN;
   if (!Number.isFinite(at)) return formatDisplayDate(occurredAt);
@@ -1097,7 +1063,7 @@ export function impactEventOffset(occurredAt: unknown, baseIso: string | null) {
   return impactOffsetLabel(Math.max(0, at - base));
 }
 
-export function impactOffsetLabel(ms: number) {
+function impactOffsetLabel(ms: number) {
   if (ms < 1000) return "+" + Math.round(ms) + "ms";
   if (ms < 10000) return "+" + (ms / 1000).toFixed(1) + "s";
   if (ms < 60000) return "+" + Math.round(ms / 1000) + "s";
@@ -1105,7 +1071,7 @@ export function impactOffsetLabel(ms: number) {
   return "+" + Math.round(ms / 60000) + " min";
 }
 
-export function impactRelativeTime(value: unknown) {
+function impactRelativeTime(value: unknown) {
   const at = Date.parse(String(value || ""));
   if (!Number.isFinite(at)) return formatDisplayDate(value);
   const diff = Date.now() - at;
@@ -1116,14 +1082,14 @@ export function impactRelativeTime(value: unknown) {
   return formatDisplayDate(value);
 }
 
-export function impactFactMarkup(key: string, value: unknown) {
-  if (key === "trap_id" || key === "expected_trap_id") {
-    return `<button type="button" class="impact-trap-link" data-impact-trap="${escapeAttr(String(value))}" title="${escapeAttr(t("impact.openTrap", { id: value }))}">${escapeHtml(impactFactValue(key, value))}</button>`;
+function impactFactMarkup(key: string, value: unknown, scope: unknown = null) {
+  if ((key === "trap_id" || key === "expected_trap_id") && (scope === "project" || scope === "global")) {
+    return `<button type="button" class="impact-trap-link" data-impact-trap="${escapeAttr(String(value))}" data-trap-scope="${scope}" title="${escapeAttr(t("impact.openTrap", { id: value }))}">${escapeHtml(impactFactValue(key, value))}</button>`;
   }
   return escapeHtml(impactFactValue(key, value));
 }
 
-export function impactGantt(events: any[], baseIso: string | null) {
+function impactGantt(events: any[], baseIso: string | null) {
   if (!baseIso || !events || events.length < 2) return "";
   const base = Date.parse(baseIso);
   if (!Number.isFinite(base)) return "";
@@ -1142,7 +1108,7 @@ export function impactGantt(events: any[], baseIso: string | null) {
   return `<div class="impact-gantt" role="group" aria-label="${escapeAttr(t("impact.ganttLabel"))}"><span class="impact-gantt-track">${hits}</span></div>`;
 }
 
-export function impactEventFilters(timeline: any[]) {
+function impactEventFilters(timeline: any[]) {
   if (!timeline || timeline.length < 3) return "";
   const present = new Set<string>(timeline.map((event) => impactEventCategory(event.type)));
   const chips: [string, string][] = [["all", "impact.filter.all"]];
@@ -1155,7 +1121,7 @@ export function impactEventFilters(timeline: any[]) {
   return `<div class="impact-event-filters" role="group" aria-label="${escapeAttr(t("impact.runTimeline"))}">${chips.map(([value, key]) => `<button type="button" class="${(state.impactEventFilter || "all") === value ? "active" : ""}" data-impact-event-filter="${escapeAttr(value)}">${escapeHtml(t(key))}</button>`).join("")}</div>`;
 }
 
-export function impactFilteredEvents(timeline: any[]) {
+function impactFilteredEvents(timeline: any[]) {
   const filter = state.impactEventFilter || "all";
   const events = timeline || [];
   if (filter === "all") return events;
@@ -1163,7 +1129,10 @@ export function impactFilteredEvents(timeline: any[]) {
   return events.filter((event) => impactEventCategory(event.type) === filter);
 }
 
-export function bindImpactEventControls() {
+function bindImpactEventControls() {
+  document.querySelectorAll<HTMLButtonElement>("[data-experience-review]").forEach(button => {
+    button.addEventListener("click", () => void revisionUI.openEvent(state.projectRoot, button.dataset.experienceReview!));
+  });
   document.querySelectorAll("[data-impact-event-filter]").forEach((button: any) => {
     button.addEventListener("click", () => {
       state.impactEventFilter = button.dataset.impactEventFilter || "all";
@@ -1182,31 +1151,24 @@ export function bindImpactEventControls() {
     });
   });
   document.querySelectorAll("[data-impact-trap]").forEach((button: any) => {
-    button.addEventListener("click", () => impactOpenTrap(button.dataset.impactTrap));
+    button.addEventListener("click", () => impactOpenTrap(button.dataset.impactTrap, button.dataset.trapScope));
   });
 }
 
-export async function impactOpenTrap(id: unknown) {
+async function impactOpenTrap(id: unknown, scope: unknown) {
   const numeric = Number(id);
-  if (!Number.isFinite(numeric)) return;
-  const known = (state.traps || []).find((trap: any) => Number(trap.id) === numeric);
-  if (known) {
-    await jumpToTrap(known.scope, known.id);
-    return;
-  }
-  await jumpToTrap("project", numeric);
-  const found = (state.traps || []).some((trap: any) => Number(trap.id) === numeric);
-  if (!found) await jumpToTrap("global", numeric);
+  if (!Number.isSafeInteger(numeric) || numeric < 1 || (scope !== "project" && scope !== "global")) return;
+  await jumpToTrap(scope, numeric);
 }
 
-export function impactFactValue(key: string, value: unknown) {
+function impactFactValue(key: string, value: unknown) {
   if (key === "duration_ms") return impactDuration(Number(value));
   if (key === "trap_id" || key === "expected_trap_id") return "#" + value;
   if (typeof value === "number") return value.toLocaleString();
   return valueLabel(value);
 }
 
-export function impactDuration(value: unknown) {
+function impactDuration(value: unknown) {
   if (value === null || value === undefined) return "—";
   const ms = Number(value);
   if (ms < 1000) return Math.round(ms) + " ms";
@@ -1214,94 +1176,12 @@ export function impactDuration(value: unknown) {
   return (ms / 60000).toFixed(1) + " min";
 }
 
-export function impactTokens(run: any) {
+function impactTokens(run: any) {
   const total = Number(run.input_tokens || 0) + Number(run.output_tokens || 0);
   return total ? total.toLocaleString() : "—";
 }
 
-declare function loadImpactRun(runId: string): Promise<void>;
-declare function loadImpactEvals(): Promise<void>;
-declare function loadImpact(): Promise<void>;
-declare function jumpToTrap(scope: string, id: string | number): Promise<void>;
 
-const CLIENT_IMPACT_FUNCTIONS = [
-  renderImpactQueue,
-  renderImpactDetail,
-  renderImpactDetailKeepingScroll,
-  renderImpactOverview,
-  renderAgentObservationHealthNotice,
-  renderImpactRunDetail,
-  impactRunHeadline,
-  impactFirstRunContent,
-  impactOnboardingFlow,
-  impactConnectionGuide,
-  impactAutoClient,
-  createImpactDemoRun,
-  openImpactDemo,
-  closeImpactDemo,
-  bindImpactOnboarding,
-  renderImpactEvals,
-  renderImpactEvalQueue,
-  impactTabs,
-  bindImpactTabs,
-  renderRetrievalEval,
-  renderControlledEvals,
-  selectedControlledExperiment,
-  renderControlledEmpty,
-  renderControlledExperiment,
-  renderControlledSide,
-  controlledCaseFilters,
-  controlledExperimentCases,
-  renderControlledCase,
-  bindControlledEvalControls,
-  runControlledEval,
-  formatControlledScore,
-  formatControlledDelta,
-  renderObservedEvals,
-  evalLane,
-  evalScoreMetric,
-  evalCountMetric,
-  evalRateMetric,
-  evalCandidateFilters,
-  filteredEvalCandidates,
-  renderEvalCandidate,
-  evalGroupLatestRunId,
-  evalGroupTitle,
-  selectedEvalCandidate,
-  renderEvalReviewPanel,
-  renderEvalCaseSummary,
-  bindEvalControls,
-  evalReviewDraftFromForm,
-  snapshotEvalReviewDraftFromDom,
-  syncEvalDeferredNotice,
-  runEvalReviewAction,
-  bindEvalRunLinks,
-  impactMetric,
-  impactSmallMetric,
-  impactStatsStrip,
-  impactMixBar,
-  impactStateDot,
-  impactEmpty,
-  impactEmptyContent,
-  renderImpactEvent,
-  impactEventCategory,
-  impactEvidencePillClass,
-  impactEventGlyph,
-  impactEventKeyline,
-  impactEventOffset,
-  impactOffsetLabel,
-  impactRelativeTime,
-  impactFactMarkup,
-  impactGantt,
-  impactEventFilters,
-  impactFilteredEvents,
-  bindImpactEventControls,
-  impactOpenTrap,
-  impactFactValue,
-  impactDuration,
-  impactTokens,
-];
 
-export const WEB_IMPACT_CLIENT_SCRIPT = CLIENT_IMPACT_FUNCTIONS
-  .map((fn) => `    ${fn.toString().replace(/\n/g, "\n    ")}`)
-  .join("\n\n");
+return { renderImpactQueue, syncImpactOverviewLayout, renderImpactDetail, syncEvalDeferredNotice, snapshotEvalReviewDraftFromDom };
+}

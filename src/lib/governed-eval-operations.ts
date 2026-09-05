@@ -1,3 +1,4 @@
+import { LEGACY_EVAL_SUITE, projectEvalPath, readProjectSuite, requireEvalPath, type EvalSuitePath } from "./project-eval-suite";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { CandidateTrap } from "../domain/session";
@@ -19,7 +20,7 @@ import {
 } from "./search-eval";
 
 const EVAL_REVIEW_LOCK = ".eval-review.lock";
-export const GOVERNED_EVAL_FIXTURE = "src/tests/fixtures/search-eval.json";
+export const GOVERNED_EVAL_FIXTURE = LEGACY_EVAL_SUITE; // Compatibility export for historical callers.
 
 export type GovernedEvalReviewStatus =
   | "review_required"
@@ -44,11 +45,13 @@ export interface GovernedEvalReviewState {
   review_ref: GovernedEvalReviewRef | null;
   review_issue: "multiple_linked_candidates" | null;
   draft_case: EvalQuery | null;
+  fixture_path: EvalSuitePath | null;
 }
 
 export interface GovernedEvalFixtureTrap {
   id: number;
   title: string;
+  source_ref?: { scope: string | null; trap_id: number | null; revision: string | null };
 }
 
 export interface GovernedEvalPreviewFile {
@@ -71,11 +74,13 @@ export class GovernedEvalOperations {
     this.phase2 = new Phase2Operations(projectRoot, traps);
   }
 
-  fixtureTraps(): GovernedEvalFixtureTrap[] {
-    const path = this.fixturePath();
+  fixtureTraps(target: EvalSuitePath = projectEvalPath(this.projectRoot)): GovernedEvalFixtureTrap[] {
+    const path = join(this.projectRoot, target);
     if (!existsSync(path)) return [];
     try {
-      return readEvalFixture(path).traps.map((trap, index) => ({ id: index + 1, title: trap.title }));
+      const fixture = readProjectSuite(this.projectRoot, target).fixture;
+      return fixture.traps.map((trap, index) => ({ id: index + 1, title: trap.title,
+        ...(fixture.codetrap_suite ? { source_ref: fixture.codetrap_suite.refs[index] } : {}) }));
     } catch {
       return [];
     }
@@ -91,6 +96,7 @@ export class GovernedEvalOperations {
         review_ref: null,
         review_issue: "multiple_linked_candidates",
         draft_case: null,
+        fixture_path: null,
       };
     }
     return reviewStateFrom(linked[0]);
@@ -251,12 +257,15 @@ export class GovernedEvalOperations {
     source: ObservationEvalCandidateProjection,
     input: Record<string, unknown>
   ): Record<string, unknown> {
-    const fixture = readEvalFixture(this.fixturePath());
+    const existing = this.requireAtMostOneLinked(source.id)?.candidate.destination_payload;
+    const target = existing ? existing.fixture_path === undefined ? LEGACY_EVAL_SUITE : requireEvalPath(existing.fixture_path) : projectEvalPath(this.projectRoot);
+    const { fixture, corpus_sha256 } = readProjectSuite(this.projectRoot, target);
+    if (existing?.corpus_sha256 && existing.corpus_sha256 !== corpus_sha256) throw new Error("The evaluation corpus changed. Start a new review.");
     const query = normalizeDogfoodCase({
       ...input,
       source: `observation:${source.id}`,
     }, fixture);
-    return { ...this.sourcePayload(source), case: query };
+    return { ...this.sourcePayload(source), ...(existing && existing.fixture_path === undefined ? {} : { fixture_path: target, corpus_sha256 }), case: query };
   }
 
   private sourcePayload(source: ObservationEvalCandidateProjection): Record<string, unknown> {
@@ -308,10 +317,6 @@ export class GovernedEvalOperations {
     return linked[0] ?? null;
   }
 
-  private fixturePath(): string {
-    return join(this.projectRoot, GOVERNED_EVAL_FIXTURE);
-  }
-
   private withLock<T>(fn: () => T): T {
     const codetrapDir = join(this.projectRoot, CODETRAP_DIR);
     mkdirSync(codetrapDir, { recursive: true });
@@ -326,6 +331,7 @@ function emptyReviewState(): GovernedEvalReviewState {
     review_ref: null,
     review_issue: null,
     draft_case: null,
+    fixture_path: null,
   };
 }
 
@@ -354,6 +360,7 @@ function reviewStateFrom(linked: LinkedCandidate): GovernedEvalReviewState {
     },
     review_issue: null,
     draft_case: (candidate.destination_payload?.case as EvalQuery | undefined) ?? null,
+    fixture_path: candidate.destination_payload?.fixture_path === undefined ? LEGACY_EVAL_SUITE : requireEvalPath(candidate.destination_payload.fixture_path),
   };
 }
 

@@ -28,6 +28,7 @@ export type LearningProgressRecord = {
   status: LearningStatus;
   feedback: LearningFeedback | null;
   linked_run_id: string | null;
+  practice_note: string | null;
   updated_at: string;
 };
 
@@ -65,6 +66,7 @@ export type LearningPromotionState = {
   delivery_state: CandidateTrap["delivery_state"] | null;
   revision: number | null;
   accepted_trap_id: number | null;
+  accepted_scope: "project" | "global" | null;
   title: string | null;
 };
 
@@ -98,6 +100,7 @@ export class LearningImpactStore {
       status: insight.consulted_count > 0 ? "learned" : "not_started",
       feedback: null,
       linked_run_id: null,
+      practice_note: null,
       updated_at: insight.last_consulted_at ?? insight.shelved_at,
       legacy_derived: insight.consulted_count > 0,
     };
@@ -107,9 +110,13 @@ export class LearningImpactStore {
     return this.read().promotions.find((item) => item.actor_ref === actorRef && item.insight_id === insightId) ?? null;
   }
 
+  listPromotions(actorRef = LOCAL_LEARNING_ACTOR): LearningPromotionRecord[] {
+    return this.read().promotions.filter((item) => item.actor_ref === actorRef);
+  }
+
   updateProgress(
     insight: InsightRecord,
-    updates: Partial<Pick<LearningProgressRecord, "status" | "feedback" | "linked_run_id">>,
+    updates: Partial<Pick<LearningProgressRecord, "status" | "feedback" | "linked_run_id" | "practice_note">>,
     now = new Date(),
     actorRef = LOCAL_LEARNING_ACTOR
   ): LearningProgressRecord {
@@ -121,6 +128,7 @@ export class LearningImpactStore {
         ...(updates.status !== undefined ? { status: learningStatus(updates.status) } : {}),
         ...(updates.feedback !== undefined ? { feedback: learningFeedback(updates.feedback) } : {}),
         ...(updates.linked_run_id !== undefined ? { linked_run_id: nullableId(updates.linked_run_id, "linked_run_id") } : {}),
+        ...(updates.practice_note !== undefined ? { practice_note: practiceNote(updates.practice_note) } : {}),
         updated_at: now.toISOString(),
       };
       document.progress = [
@@ -156,6 +164,7 @@ export class LearningImpactStore {
       status: insight.consulted_count > 0 ? "learned" : "not_started",
       feedback: null,
       linked_run_id: null,
+      practice_note: null,
       updated_at: insight.last_consulted_at ?? insight.shelved_at,
     };
   }
@@ -210,6 +219,25 @@ export class LearningImpactOperations {
       progress: this.store.progress(insight),
       promotion: this.resolvePromotion(this.store.promotion(insight.id)),
     };
+  }
+
+  updatePracticeNote(insightId: string, value: unknown): LearningImpactState {
+    const context = this.insightContext(insightId);
+    const note = practiceNote(value);
+    this.store.updateProgress(context.insight, { practice_note: note }, this.now());
+    // Personal writing never enters shared Insight content, candidates or telemetry.
+    return this.state(context.insight);
+  }
+
+  sourcesForTrap(id: number, scope: "project" | "global") {
+    const library = this.phase2.learningLibrary();
+    const insights = new Map(library.insights.map((insight) => [insight.id, insight]));
+    return this.store.listPromotions().flatMap((record) => {
+      const insight = insights.get(record.insight_id);
+      const promotion = this.resolvePromotion(record);
+      if (!insight || promotion?.status !== "accepted" || promotion.accepted_trap_id !== id || promotion.accepted_scope !== scope) return [];
+      return [{ insight_id: insight.id, title: insight.title, session_id: promotion.session_id, candidate_id: promotion.candidate_id }];
+    });
   }
 
   updateStatus(insightId: string, status: unknown): LearningImpactState {
@@ -360,6 +388,7 @@ export class LearningImpactOperations {
         delivery_state: candidate.delivery_state ?? null,
         revision: candidate.revision ?? null,
         accepted_trap_id: candidate.accepted_trap_id ?? null,
+        accepted_scope: candidate.accepted_scope === "project" || candidate.accepted_scope === "global" ? candidate.accepted_scope : null,
         title: candidate.trap.title,
       };
     } catch {
@@ -371,6 +400,7 @@ export class LearningImpactOperations {
         delivery_state: null,
         revision: null,
         accepted_trap_id: null,
+        accepted_scope: null,
         title: null,
       };
     }
@@ -483,6 +513,7 @@ function parseProgressRecord(value: unknown): LearningProgressRecord {
     status: learningStatus(value.status),
     feedback: value.feedback === null ? null : learningFeedback(value.feedback),
     linked_run_id: nullableId(value.linked_run_id, "linked_run_id"),
+    practice_note: practiceNote(value.practice_note ?? null),
     updated_at: isoTimestamp(value.updated_at, "updated_at"),
   };
 }
@@ -545,4 +576,10 @@ function isoTimestamp(value: unknown, field: string): string {
 function clipped(value: string, max: number): string {
   const text = value.trim().replace(/\r\n/g, "\n");
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+function practiceNote(value: unknown): string | null {
+  if (value === null || value === "") return null;
+  if (typeof value !== "string" || value.length > 1000) throw new Error("practiceNote must be a string of at most 1000 characters or null.");
+  return value.trim() || null;
 }

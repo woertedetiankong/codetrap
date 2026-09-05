@@ -29,11 +29,12 @@ import {
   type RunStartedPayload,
   type SearchReceipt,
   type SourceClient,
-  type TrapFeedback,
   type TrapFeedbackPayload,
   type TrapMissedPayload,
   type ValidationReceipt,
 } from "../domain/observation";
+import { foldObservationFeedback, observationTrapScope } from "./observation-feedback";
+import { projectTrapExperience } from "./trap-experience";
 import { CODETRAP_DIR } from "./constants";
 import { ensureProjectIdentity, readProjectIdentity } from "./project-identity";
 
@@ -240,6 +241,27 @@ export class ObservationLedger {
     return this.eventsForRun(runId);
   }
 
+  lessonRevisionEvents(id: number, revision: string): ObservationEvent[] {
+    return queryAll<ObservationRow>(this.db, `
+      SELECT ${EVENT_COLUMNS} FROM observation_events
+      WHERE project_id = ? AND type IN ('trap/exposed', 'trap/feedback-recorded')
+        AND json_extract(attributes_json, '$.trap_id') = ?
+        AND json_extract(attributes_json, '$.revision') = ?
+      ORDER BY recorded_at, id
+    `, this.projectId, id, revision).map(eventFromRow);
+  }
+
+  trapExperience(id: number, scope: "project" | "global", revision: string, offset = 0, limit = 20) {
+    const events = queryAll<ObservationRow>(this.db, `
+      SELECT ${EVENT_COLUMNS} FROM observation_events
+      WHERE project_id = ? AND type IN ('trap/exposed', 'trap/feedback-recorded')
+        AND json_extract(attributes_json, '$.trap_id') = ?
+        AND substr(json_extract(attributes_json, '$.revision'), 1, ?) = ?
+      ORDER BY recorded_at, id
+    `, this.projectId, id, scope.length + 1, `${scope}:`).map(eventFromRow);
+    return projectTrapExperience(events, revision, (runId) => this.getRun(runId), offset, limit);
+  }
+
   overview(): ObservationOverviewProjection {
     const events = this.allEvents();
     const eventsByRun = new Map<string, ObservationEvent[]>();
@@ -255,8 +277,7 @@ export class ObservationLedger {
     let exposureCount = 0;
     let validationPassed = 0;
     let validationFailed = 0;
-    let helpfulFeedback = 0;
-    let harmfulFeedback = 0;
+    const feedback = foldObservationFeedback(events);
     let lastEventAt: string | null = null;
 
     for (const event of events) {
@@ -267,11 +288,6 @@ export class ObservationLedger {
         const status = (event.attributes as ValidationReceipt).status;
         if (status === "passed") validationPassed += 1;
         if (status === "failed") validationFailed += 1;
-      }
-      if (event.type === "trap/feedback-recorded") {
-        const feedback = (event.attributes as TrapFeedbackPayload).feedback;
-        if (feedback === "helpful") helpfulFeedback += 1;
-        if (feedback === "harmful") harmfulFeedback += 1;
       }
       if (lastEventAt === null || event.occurred_at > lastEventAt) lastEventAt = event.occurred_at;
     }
@@ -286,8 +302,13 @@ export class ObservationLedger {
       exposure_count: exposureCount,
       validation_passed: validationPassed,
       validation_failed: validationFailed,
-      helpful_feedback: helpfulFeedback,
-      harmful_feedback: harmfulFeedback,
+      helpful_feedback: feedback.current.filter((event) => event.attributes.feedback === "helpful").length,
+      harmful_feedback: feedback.current.filter((event) => event.attributes.feedback === "harmful").length,
+      irrelevant_feedback: feedback.current.filter((event) => event.attributes.feedback === "irrelevant").length,
+      rated_exposures: feedback.ratedExposures,
+      superseded_feedback: feedback.superseded,
+      miss_reports: events.filter((event) => event.type === "trap/missed-reported" ||
+        (event.type === "trap/feedback-recorded" && (event.attributes as TrapFeedbackPayload).feedback === "should_have_matched")).length,
       last_event_at: lastEventAt,
       evidence,
     };
@@ -295,29 +316,19 @@ export class ObservationLedger {
 
   evals(): ObservationEvalsProjection {
     const eventsByRun = new Map<string, ObservationEvent[]>();
-    for (const event of this.allEvents()) {
+    const runEvents = this.allEvents().filter((event) => event.run_id !== null);
+    const feedback = foldObservationFeedback(runEvents);
+    const currentFeedbackIds = new Set(feedback.current.map((event) => event.id));
+    for (const event of runEvents) {
       if (event.run_id === null) continue;
       const grouped = eventsByRun.get(event.run_id) ?? [];
       grouped.push(event);
       eventsByRun.set(event.run_id, grouped);
     }
 
-    // Exposure ratings fold to one current judgment per (Run, trap): a later
-    // rating of the same exposure replaces the earlier one instead of being
-    // counted beside it, so correcting a rating cannot inflate both the
-    // numerator and the denominator of the observed rates.
-    const currentExposureRating = new Map<string, {
-      feedback: TrapFeedback;
-      trapId: number;
-      event: ObservationEvent;
-      run: RunObservationProjection;
-    }>();
-    let supersededFeedback = 0;
-    // Feedback with no trap_id cannot be folded (there is no exposure identity
-    // to replace), so each one stands as its own judgment.
-    let unattributedHelpfulFeedback = 0;
-    let unattributedIrrelevantFeedback = 0;
-    let unattributedHarmfulFeedback = 0;
+    let helpfulFeedback = 0;
+    let irrelevantFeedback = 0;
+    let harmfulFeedback = 0;
     let missReports = 0;
     let validationPassed = 0;
     let validationFailed = 0;
@@ -351,26 +362,15 @@ export class ObservationLedger {
             candidates.push(observationEvalCandidate(event, run, "reported_miss", value.trap_id, null));
             continue;
           }
-          if (value.trap_id === null) {
-            // No exposure identity to fold on, so this judgment stands alone
-            // and its finding, if any, is queued immediately.
-            if (value.feedback === "helpful") {
-              unattributedHelpfulFeedback += 1;
-            } else if (value.feedback === "irrelevant") {
-              unattributedIrrelevantFeedback += 1;
-              candidates.push(observationEvalCandidate(event, run, "irrelevant_guidance", null, null));
-            } else {
-              unattributedHarmfulFeedback += 1;
-              candidates.push(observationEvalCandidate(event, run, "harmful_guidance", null, null));
-            }
-            continue;
+          if (!currentFeedbackIds.has(event.id)) continue;
+          if (value.feedback === "helpful") helpfulFeedback += 1;
+          else if (value.feedback === "irrelevant") {
+            irrelevantFeedback += 1;
+            candidates.push(observationEvalCandidate(event, run, "irrelevant_guidance", value.trap_id, null));
+          } else {
+            harmfulFeedback += 1;
+            candidates.push(observationEvalCandidate(event, run, "harmful_guidance", value.trap_id, null));
           }
-          const key = exposureRatingKey(runId, value.trap_id);
-          if (currentExposureRating.has(key)) supersededFeedback += 1;
-          // Candidates for rated exposures are emitted from the folded value
-          // after every event is seen, so a rating corrected to helpful leaves
-          // the review queue instead of lingering as a stale finding.
-          currentExposureRating.set(key, { feedback: value.feedback, trapId: value.trap_id, event, run });
           continue;
         }
         if (event.type === "trap/missed-reported") {
@@ -403,25 +403,6 @@ export class ObservationLedger {
       }
     }
 
-    let ratedHelpfulFeedback = 0;
-    let ratedIrrelevantFeedback = 0;
-    let ratedHarmfulFeedback = 0;
-    for (const current of currentExposureRating.values()) {
-      if (current.feedback === "helpful") {
-        ratedHelpfulFeedback += 1;
-      } else if (current.feedback === "irrelevant") {
-        ratedIrrelevantFeedback += 1;
-        candidates.push(observationEvalCandidate(current.event, current.run, "irrelevant_guidance", current.trapId, null));
-      } else if (current.feedback === "harmful") {
-        ratedHarmfulFeedback += 1;
-        candidates.push(observationEvalCandidate(current.event, current.run, "harmful_guidance", current.trapId, null));
-      }
-    }
-    const ratedExposures = currentExposureRating.size;
-    const helpfulFeedback = ratedHelpfulFeedback + unattributedHelpfulFeedback;
-    const irrelevantFeedback = ratedIrrelevantFeedback + unattributedIrrelevantFeedback;
-    const harmfulFeedback = ratedHarmfulFeedback + unattributedHarmfulFeedback;
-
     candidates.sort((left, right) =>
       right.occurred_at.localeCompare(left.occurred_at) ||
       right.event_seq - left.event_seq ||
@@ -429,17 +410,18 @@ export class ObservationLedger {
     );
     const candidateGroups = groupObservationEvalCandidates(candidates);
     const decidedValidations = validationPassed + validationFailed;
+    const rated = feedback.current.filter((event) => event.attributes.trap_id !== null);
     return {
       project_id: this.projectId,
       total_runs: runs.length,
       complete_runs: runs.filter((run) => run.completeness === "complete").length,
       partial_or_unknown_runs: runs.filter((run) => run.completeness !== "complete").length,
       evaluable_runs: evaluableRuns.size,
-      rated_exposures: ratedExposures,
+      rated_exposures: feedback.ratedExposures,
       helpful_feedback: helpfulFeedback,
       irrelevant_feedback: irrelevantFeedback,
       harmful_feedback: harmfulFeedback,
-      superseded_feedback: supersededFeedback,
+      superseded_feedback: feedback.superseded,
       miss_reports: missReports,
       runs_with_explicit_feedback: explicitFeedbackRuns.size,
       runs_with_miss_report: missReportRuns.size,
@@ -447,8 +429,8 @@ export class ObservationLedger {
       validation_failed: validationFailed,
       failed_after_exposure_runs: failedAfterExposureRuns.size,
       rates: {
-        helpful: observationRate(ratedHelpfulFeedback, ratedExposures),
-        noise: observationRate(ratedIrrelevantFeedback + ratedHarmfulFeedback, ratedExposures),
+        helpful: observationRate(rated.filter((event) => event.attributes.feedback === "helpful").length, feedback.ratedExposures),
+        noise: observationRate(rated.filter((event) => event.attributes.feedback !== "helpful").length, feedback.ratedExposures),
         miss_report: observationRate(missReportRuns.size, explicitFeedbackRuns.size),
         validation_pass: observationRate(validationPassed, decidedValidations),
       },
@@ -545,6 +527,8 @@ function observationEvalCandidate(
     occurred_at: event.occurred_at,
     reason,
     trap_id: trapId,
+    trap_scope: trapId !== null && event.type === "trap/feedback-recorded"
+      ? observationTrapScope((event.attributes as TrapFeedbackPayload).revision) : null,
     validation_kind: validationKind,
     evidence_class: event.evidence_class,
     source_client: run.source_client,
@@ -552,10 +536,6 @@ function observationEvalCandidate(
     review_status: "review_required",
     ground_truth: "unconfirmed",
   };
-}
-
-function exposureRatingKey(runId: string, trapId: number): string {
-  return `${runId}\u0000${trapId}`;
 }
 
 /**
@@ -580,6 +560,7 @@ function groupObservationEvalCandidates(
         group_key: groupKey,
         reason: candidate.reason,
         trap_id: candidate.trap_id,
+        trap_scope: candidate.trap_scope,
         validation_kind: candidate.validation_kind,
         occurrence_count: 1,
         run_ids: [candidate.run_id],
@@ -604,7 +585,7 @@ function groupObservationEvalCandidates(
 function observationEvalGroupKey(candidate: ObservationEvalCandidateProjection): string {
   return [
     candidate.reason,
-    candidate.trap_id === null ? "-" : String(candidate.trap_id),
+    candidate.trap_id === null ? "-" : candidate.trap_scope ? `${candidate.trap_scope}:${candidate.trap_id}` : String(candidate.trap_id),
     candidate.validation_kind ?? "-",
   ].join("|");
 }

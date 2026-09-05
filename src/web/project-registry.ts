@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -101,4 +102,13 @@ function uniqueProjects(projects: WebProject[]): WebProject[] {
     out.push(project);
   }
   return out;
+}
+
+/** Local route identity; never used as authorization or persisted to the registry. */
+export function webProjectRouteRef(root: string): string {
+  return "p-" + createHash("sha256").update(resolveScopePath(root)).digest("hex").slice(0, 24);
+}
+
+export function webProjectForClient(project: WebProject) {
+  return { ...project, route_ref: webProjectRouteRef(project.root) };
 }

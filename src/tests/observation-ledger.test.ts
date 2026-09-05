@@ -355,7 +355,38 @@ describe("Observation Ledger v1", () => {
     // The retracted harmful rating leaves the review queue with it.
     expect(evals.candidates).toEqual([]);
     expect(evals.candidate_groups).toEqual([]);
+    expect(ledger.overview()).toMatchObject({ helpful_feedback: 1, harmful_feedback: 0, superseded_feedback: 1 });
     ledger.close();
+  });
+
+  test("keeps scoped IDs separate, folds revisions, and agrees across Overview and Evals", () => {
+    const ledger = openObservationLedger(tempProject());
+    try {
+      const ratings = [
+        ["project:v1", "harmful"], ["global:v1", "harmful"],
+        ["project:v2", "helpful"], ["legacy-rev", "irrelevant"],
+      ] as const;
+      ledger.appendMany(ratings.map(([revision, feedback], index) =>
+        event(ledger.projectId, `scope-${index}`, "run-scopes", index, "trap/feedback-recorded", {
+          trap_id: 1, revision, feedback, note_fingerprint: null,
+        }, { evidence_class: "human_label" })
+      ));
+      const expected = { rated_exposures: 3, superseded_feedback: 1,
+        helpful_feedback: 1, harmful_feedback: 1, irrelevant_feedback: 1 };
+      expect(ledger.overview()).toMatchObject(expected);
+      expect(ledger.evals()).toMatchObject({ ...expected,
+        rates: { helpful: { numerator: 1, denominator: 3, value: 0.3333 } } });
+      expect(ledger.evals().candidate_groups.map((group) => [group.group_key, group.trap_scope]).sort()).toEqual([
+        ["harmful_guidance|global:1|-", "global"], ["irrelevant_guidance|1|-", null],
+      ]);
+      // Matching reasons still form separate groups across the two scopes.
+      ledger.append(event(ledger.projectId, "scope-4", "run-scopes", 4, "trap/feedback-recorded", {
+        trap_id: 1, revision: "project:v3", feedback: "harmful", note_fingerprint: null,
+      }, { evidence_class: "human_label" }));
+      expect(ledger.evals().candidate_groups.filter((group) => group.reason === "harmful_guidance")
+        .map((group) => group.trap_scope).sort()).toEqual(["global", "project"]);
+      expect(ledger.listRunEvents("run-scopes")).toHaveLength(5);
+    } finally { ledger.close(); }
   });
 
   test("rates distinct exposures separately and keeps the latest judgment per exposure", () => {

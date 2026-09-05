@@ -1,3 +1,4 @@
+import { PROJECT_EVAL_SUITE, LEGACY_EVAL_SUITE, projectEvalPath, readProjectSuite, type EvalSuitePath } from "../lib/project-eval-suite";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -19,14 +20,14 @@ import {
 import { reportDogfood } from "../lib/search-eval";
 import type { ObservationWebAvailability } from "./observation-view";
 
-export const PROJECT_SEARCH_EVAL_FIXTURE = "src/tests/fixtures/search-eval.json";
+export const PROJECT_SEARCH_EVAL_FIXTURE = PROJECT_EVAL_SUITE;
 
 export type RetrievalEvalAvailability = "not_configured" | "ready" | "invalid";
 export type ControlledEvalAvailability = RetrievalEvalAvailability | "partial";
 
 export interface RetrievalEvalWebSummary {
   availability: RetrievalEvalAvailability;
-  source: typeof PROJECT_SEARCH_EVAL_FIXTURE;
+  source: EvalSuitePath;
   mode: "deterministic";
   total_cases: number;
   recall_at_3: number | null;
@@ -45,6 +46,7 @@ export type ObservationEvalWebCandidate = Omit<Pick<ObservationEvalCandidateProj
   | "occurred_at"
   | "reason"
   | "trap_id"
+  | "trap_scope"
   | "validation_kind"
   | "evidence_class"
   | "source_client"
@@ -76,7 +78,9 @@ export interface ObservationEvalsWebPayload {
   candidates: ObservationEvalWebCandidate[];
   candidate_groups: ObservationEvalWebCandidateGroup[];
   fixture_traps: GovernedEvalFixtureTrap[];
+  legacy_fixture_traps: GovernedEvalFixtureTrap[];
   controlled: {
+    can_run: boolean;
     availability: ControlledEvalAvailability;
     profiles: ControlledEvalProfileInfo[];
     experiments: ControlledEvalExperiment[];
@@ -91,7 +95,8 @@ export async function observationEvalsWebPayload(
 ): Promise<ObservationEvalsWebPayload> {
   const retrieval = await retrievalEvalWebSummary(projectRoot);
   const fixtureTraps = governed?.fixtureTraps() ?? [];
-  const controlled = controlledEvalWebPayload(projectRoot, retrieval.availability);
+  const legacyTraps = governed?.fixtureTraps(LEGACY_EVAL_SUITE) ?? [];
+  const controlled = controlledEvalWebPayload(projectRoot, retrieval.availability, retrieval.total_cases > 0);
   const ledger = openObservationLedgerReadOnly(projectRoot);
   if (!ledger) {
     return {
@@ -102,6 +107,7 @@ export async function observationEvalsWebPayload(
       candidates: [],
       candidate_groups: [],
       fixture_traps: fixtureTraps,
+      legacy_fixture_traps: legacyTraps,
       controlled,
     };
   }
@@ -116,6 +122,7 @@ export async function observationEvalsWebPayload(
       candidates: webCandidates,
       candidate_groups: groups.map((group) => observationEvalWebCandidateGroup(group, webCandidates)),
       fixture_traps: fixtureTraps,
+      legacy_fixture_traps: legacyTraps,
       controlled,
     };
   } finally {
@@ -125,29 +132,23 @@ export async function observationEvalsWebPayload(
 
 function controlledEvalWebPayload(
   projectRoot: string,
-  fixtureAvailability: RetrievalEvalAvailability
+  fixtureAvailability: RetrievalEvalAvailability,
+  hasCases: boolean,
 ): ObservationEvalsWebPayload["controlled"] {
   const operations = new ControlledEvalOperations(projectRoot);
-  if (fixtureAvailability !== "ready") {
-    return {
-      availability: fixtureAvailability,
-      profiles: operations.profiles(),
-      experiments: [],
-      corrupt_results: [],
-      issue: fixtureAvailability === "invalid" ? "fixture_evaluation_failed" : null,
-    };
-  }
   try {
     const history = operations.history();
     return {
-      availability: history.corrupt_results.length ? "partial" : "ready",
+      can_run: fixtureAvailability === "ready" && hasCases,
+      availability: history.corrupt_results.length ? "partial" : fixtureAvailability === "ready" ? "ready" : history.experiments.length ? "partial" : fixtureAvailability,
       profiles: operations.profiles(),
       experiments: history.experiments,
       corrupt_results: history.corrupt_results,
-      issue: history.corrupt_results.length ? "controlled_result_store_partial" : null,
+      issue: history.corrupt_results.length ? "controlled_result_store_partial" : fixtureAvailability === "invalid" ? "fixture_evaluation_failed" : null,
     };
   } catch {
     return {
+      can_run: false,
       availability: "invalid",
       profiles: operations.profiles(),
       experiments: [],
@@ -158,13 +159,15 @@ function controlledEvalWebPayload(
 }
 
 async function retrievalEvalWebSummary(projectRoot: string): Promise<RetrievalEvalWebSummary> {
-  const fixture = join(projectRoot, PROJECT_SEARCH_EVAL_FIXTURE);
-  if (!existsSync(fixture)) return emptyRetrievalSummary("not_configured", null);
+  const source = projectEvalPath(projectRoot);
+  const fixture = join(projectRoot, source);
+  if (!existsSync(fixture)) return emptyRetrievalSummary("not_configured", null, source);
   try {
+    readProjectSuite(projectRoot, source);
     const report = await reportDogfood(fixture, false);
     return {
       availability: "ready",
-      source: PROJECT_SEARCH_EVAL_FIXTURE,
+      source,
       mode: "deterministic",
       total_cases: report.total_cases,
       recall_at_3: report.metrics.recall_at_3,
@@ -176,17 +179,18 @@ async function retrievalEvalWebSummary(projectRoot: string): Promise<RetrievalEv
       issue: null,
     };
   } catch {
-    return emptyRetrievalSummary("invalid", "fixture_evaluation_failed");
+    return emptyRetrievalSummary("invalid", "fixture_evaluation_failed", source);
   }
 }
 
 function emptyRetrievalSummary(
   availability: Extract<RetrievalEvalAvailability, "not_configured" | "invalid">,
-  issue: string | null
+  issue: string | null,
+  source: EvalSuitePath,
 ): RetrievalEvalWebSummary {
   return {
     availability,
-    source: PROJECT_SEARCH_EVAL_FIXTURE,
+    source,
     mode: "deterministic",
     total_cases: 0,
     recall_at_3: null,
@@ -223,6 +227,7 @@ function observationEvalWebCandidateGroup(
     review_ref: source?.review_ref ?? null,
     review_issue: source?.review_issue ?? null,
     draft_case: source?.draft_case ?? null,
+    fixture_path: source?.fixture_path ?? null,
   };
 }
 
@@ -236,6 +241,7 @@ function observationEvalWebCandidate(
     review_ref: null,
     review_issue: null,
     draft_case: null,
+    fixture_path: null,
   };
   return {
     id: candidate.id,
@@ -244,6 +250,7 @@ function observationEvalWebCandidate(
     occurred_at: candidate.occurred_at,
     reason: candidate.reason,
     trap_id: candidate.trap_id,
+    trap_scope: candidate.trap_scope,
     validation_kind: candidate.validation_kind,
     evidence_class: candidate.evidence_class,
     source_client: candidate.source_client,

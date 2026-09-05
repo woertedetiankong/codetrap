@@ -1,4 +1,6 @@
-export const WEB_SHELL_CLIENT_SCRIPT = `    const SHELL_LAYOUT_KEY = "codetrap-shell-layout";
+// Legacy layout logic, extracted without changing interactions.
+export function createShell({ state, el, t }) {
+    const SHELL_LAYOUT_KEY = "codetrap-shell-layout";
     const SHELL_SIDEBAR_KEY = "codetrap-sidebar-collapsed";
     const SHELL_QUEUE_KEY = "codetrap-queue-collapsed";
     const SHELL_DESKTOP_QUERY = "(min-width: 1061px)";
@@ -413,4 +415,6 @@ export const WEB_SHELL_CLIENT_SCRIPT = `    const SHELL_LAYOUT_KEY = "codetrap-s
       window.addEventListener("mousemove", updateShellPeekFromPointer);
       document.addEventListener("mouseleave", clearShellPeek);
     }
-`;
+
+return { setSidebarCollapsed, setQueueCollapsed, renderSidebarToggle, initShellResizers };
+}

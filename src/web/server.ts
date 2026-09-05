@@ -1,3 +1,6 @@
+import { EvalSuiteOperations } from "../lib/eval-suite-operations";
+import { ExperienceRevisions } from "../lib/experience-revisions";
+import { revisionView, revisionContext } from "./revision-view";
 import { randomBytes } from "node:crypto";
 import { DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL, EmbeddingProviderUnavailableError } from "../lib/embedder";
 import { CATEGORIES, SCOPES, SEVERITIES } from "../lib/constants";
@@ -20,6 +23,7 @@ import {
 import { WEB_INDEX_HTML } from "./static";
 import {
   addWebProject,
+  webProjectForClient,
   loadWebProjectRegistry,
   resolveWebProjectRoot,
   type WebProject,
@@ -33,6 +37,7 @@ import { observationEvalsWebPayload } from "./evals-view";
 import { GovernedEvalOperations } from "../lib/governed-eval-operations";
 import { ControlledEvalOperations, type ControlledEvalProfile } from "../lib/controlled-eval";
 import { LearningImpactOperations, type LearningImpactState } from "../lib/learning-impact";
+import { trapExperienceWebPayload } from "./experience-view";
 
 export interface WebServerOptions {
   cwd?: string;
@@ -141,7 +146,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
   if (request.method === "GET" && url.pathname === "/api/bootstrap") {
     const registry = loadWebProjectRegistry(context.home);
     return jsonResponse({
-      projects: registry.projects,
+      projects: registry.projects.map(webProjectForClient),
       current_project_root: context.currentProjectRoot,
       options: {
         categories: [...CATEGORIES],
@@ -153,14 +158,15 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
   }
 
   if (request.method === "GET" && url.pathname === "/api/projects") {
-    return jsonResponse(loadWebProjectRegistry(context.home));
+    const registry = loadWebProjectRegistry(context.home);
+    return jsonResponse({ ...registry, projects: registry.projects.map(webProjectForClient) });
   }
 
   if (request.method === "POST" && url.pathname === "/api/projects") {
     const body = await readJsonBody(request);
     const path = stringBodyField(body, "path");
     const project = addWebProject(path, context.home);
-    return jsonResponse({ project, projects: loadWebProjectRegistry(context.home).projects });
+    return jsonResponse({ project: webProjectForClient(project), projects: loadWebProjectRegistry(context.home).projects.map(webProjectForClient) });
   }
 
   if (request.method === "GET" && url.pathname === "/api/sessions") {
@@ -211,6 +217,90 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     const details = trapOperations(projectRoot, context.home).getTrapDetails(id, scope);
     if (!details) throw new WebHttpError(404, `Trap #${id} not found.`);
     return jsonResponse(toTrapDetailsJson(details));
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/trap/experience") {
+    const projectRoot = projectRootFromQuery(url, context);
+    const scope = requiredQuery(url, "scope");
+    const id = Number(requiredQuery(url, "id"));
+    const offset = Number(url.searchParams.get("offset") ?? "0");
+    if ((scope !== "project" && scope !== "global") || !Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(offset) || offset < 0) {
+      throw new WebHttpError(400, "An explicit project/global scope, positive trap ID, and non-negative integer offset are required.");
+    }
+    const details = trapOperations(projectRoot, context.home).getTrapDetails(id, scope);
+    if (!details) throw new WebHttpError(404, `Trap #${id} not found.`);
+    return jsonResponse(trapExperienceWebPayload(projectRoot, id, scope, `${scope}:${details.trap.updated_at}`,
+      learningImpactOperations(projectRoot, context.home), offset));
+  }
+
+  if (url.pathname.startsWith("/api/eval-suite")) {
+    if (request.method === "GET") {
+      const project = projectRootFromQuery(url, context);
+      const operations = new EvalSuiteOperations(project, trapOperations(project, context.home));
+      try {
+        if (url.pathname === "/api/eval-suite") return jsonResponse(operations.suite.status());
+        if (url.pathname === "/api/eval-suite/preview") {
+          const origin = requiredQuery(url, "origin");
+          if (origin !== "library" && origin !== "legacy") throw new Error("Choose library or legacy.");
+          return jsonResponse(operations.suite.preview(origin));
+        }
+        if (url.pathname === "/api/eval-suite/export") return jsonResponse(operations.suite.export(requiredQuery(url, "digest")));
+      } catch (error) { throw new WebHttpError(400, error instanceof Error ? error.message : String(error)); }
+    }
+    if (request.method === "POST") {
+      const body = await readJsonBody(request);
+      const project = projectRootFromBody(body, context);
+      const operations = new EvalSuiteOperations(project, trapOperations(project, context.home));
+      const action = url.pathname.slice("/api/eval-suite/".length);
+      if (["create", "case-accept"].includes(action) && body.executor !== "user") throw new WebHttpError(403, "An explicit user decision is required.");
+      try {
+        if (action === "create") {
+          const origin = stringBodyField(body, "origin");
+          if (origin !== "library" && origin !== "legacy") throw new Error("Choose library or legacy.");
+          return jsonResponse(operations.suite.create(origin, stringBodyField(body, "digest")));
+        }
+        if (action === "case-preview") return jsonResponse(operations.previewCase(recordBodyField(body, "input")));
+        if (action === "case-accept") return jsonResponse(operations.acceptCase(recordBodyField(body, "input"), stringBodyField(body, "digest"), stringBodyField(body, "requestId")));
+      } catch (error) { throw new WebHttpError(409, error instanceof Error ? error.message : String(error)); }
+    }
+    throw new WebHttpError(404, "Not found");
+  }
+
+  if (url.pathname.startsWith("/api/experience-revisions")) {
+    if (request.method === "GET") {
+      const projectRoot = projectRootFromQuery(url, context);
+      const revisions = new ExperienceRevisions(projectRoot, context.home);
+      try {
+        if (url.pathname === "/api/experience-revisions/context") return jsonResponse(revisionContext(revisions.context(requiredQuery(url, "eventId"))));
+        if (url.pathname === "/api/experience-revisions/item") return jsonResponse(revisionView(revisions.get(requiredQuery(url, "id"))));
+        if (url.pathname === "/api/experience-revisions") {
+          const scope = requiredQuery(url, "scope");
+          const trapId = Number(requiredQuery(url, "trapId"));
+          if ((scope !== "project" && scope !== "global") || !Number.isSafeInteger(trapId) || trapId < 1) throw new Error("An explicit scope and positive trap ID are required.");
+          return jsonResponse(revisions.list(scope, trapId));
+        }
+      } catch (error) { throw new WebHttpError(400, error instanceof Error ? error.message : String(error)); }
+    }
+    if (request.method === "POST") {
+      const body = await readJsonBody(request);
+      const projectRoot = projectRootFromBody(body, context);
+      const revisions = new ExperienceRevisions(projectRoot, context.home);
+      const action = url.pathname.slice("/api/experience-revisions/".length);
+      if (["feedback", "accept", "reject", "rollback"].includes(action) && body.executor !== "user") throw new WebHttpError(403, "This action requires an explicit user decision.");
+      try {
+        if (action === "feedback") return jsonResponse(revisions.feedback(stringBodyField(body, "eventId"), stringBodyField(body, "feedback"), stringBodyField(body, "requestId")));
+        if (action === "draft") return jsonResponse(revisionView(revisions.save(stringBodyField(body, "id"), stringBodyField(body, "eventId"), recordBodyField(body, "draft"), optionalStringBodyField(body, "digest"))));
+        if (["evaluate", "accept", "reject", "rollback"].includes(action)) {
+          const id = stringBodyField(body, "id");
+          const digest = stringBodyField(body, "digest");
+          const result = action === "evaluate" ? await revisions.evaluate(id, digest)
+            : action === "accept" ? revisions.accept(id, digest)
+            : action === "reject" ? revisions.reject(id, digest) : revisions.rollback(id, digest);
+          return jsonResponse(revisionView(result));
+        }
+      } catch (error) { throw new WebHttpError(409, error instanceof Error ? error.message : String(error)); }
+    }
+    throw new WebHttpError(404, "Not found");
   }
 
   if (request.method === "GET" && url.pathname === "/api/observations/overview") {
@@ -331,6 +421,14 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).updateStatus(
       stringBodyField(body, "id"),
       stringBodyField(body, "status")
+    )));
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/learning/practice-note") {
+    const body = await readJsonBody(request);
+    const projectRoot = projectRootFromBody(body, context);
+    return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).updatePracticeNote(
+      stringBodyField(body, "id"), body.practiceNote
     )));
   }
 

@@ -1,7 +1,7 @@
 # codetrap Mature Product Roadmap v2.3: Agent Experience Compiler
 
 Date: 2026-06-22 (v1)
-Updated: 2026-09-02 (v2.3 implementation status)
+Updated: 2026-09-04 (v2.3 implementation status)
 Status: Product direction / long-term roadmap — authoritative parent plan
 Scope: Parent plan for codetrap mature product evolution
 Clients served: **Codex and Claude Code, symmetrically** (Cursor and others: future)
@@ -13,7 +13,7 @@ handoff) — see §19.
 
 ## Status Dashboard
 
-> Updated: 2026-09-02
+> Updated: 2026-09-04
 
 | Milestone | Status | Updated | Evidence | Note |
 |---|---|---|---|---|
@@ -42,8 +42,20 @@ handoff) — see §19.
 | Learning Impact | **Done** | 2026-08-31 | [handoff](tasks/2026-08-31-learning-impact/handoff.md) | Personal progress, feedback, Run context, deterministic editable drafting, and governed Inbox promotion are separate from Insight content and confirmed memory; tests and OpenCLI pass. |
 | Local Hugging Face embeddings | **Done** | 2026-09-02 | [handoff](tasks/2026-09-02-local-huggingface-embeddings/handoff.md) | Two q8 profiles now use pinned checksum-verified artifacts, repairable settings, race-safe caches, and embedded standalone WASM; full tests and real executable inference pass. |
 | Observation reliability hardening | **Done** | 2026-09-02 | [handoff](tasks/2026-09-02-observation-reliability-hardening/handoff.md) | Active Evals drafts and old Run links survive refresh; Hook health and deferred updates are visible; recovery is preview-first and failure-closed; corrupt Hook state cannot hide healthy Ledger data; project-bound responses cannot cross-contaminate views; healthy controlled history survives corrupt artifacts. |
+| Personal Impact foundation | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-impact-foundation/handoff.md) | Scoped ratings and links, strict negative evaluation, typed Overview, and responsive navigation pass tests and browser checks. |
+| Learning to experience evidence | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-learning-experience-path/handoff.md) | Private practice notes, scoped accepted provenance, paginated task evidence and bundled-browser navigation pass 555 tests. |
+| Workspace navigation and observation readiness | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-workspace-navigation/handoff.md) | Project/item routes, phone list/reader transitions, and separate configuration/evidence status pass all 562 tests in sequential batches. |
+| Feedback to reviewed experience revision | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-feedback-revision-loop/handoff.md) | Real scoped feedback, frozen positive/negative checks, explicit acceptance, atomic receipts and safe rollback; 574 tests pass. Real-task benefit remains unverified. |
+| Project evaluation sets | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-project-eval-storage/handoff.md) | Local corpus preparation, reviewed examples, controlled comparison, legacy destination compatibility and portable download; 584 tests pass. |
+| Browser module entry and typed startup | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-browser-module-entry/handoff.md) | Module imports replace source serialization; typed session/network/bootstrap contracts and generated-asset gates preserve existing flows; 581 tests pass. Full business-state typing remains open. |
+| Typed Library state and recovery | **Done** | 2026-09-04 | [handoff](tasks/2026-09-04-library-state/handoff.md) | Library DTO/state/rendering, request generations, retries and slow Back navigation pass 593 tests. Review/Learning/Impact migrations remain open. |
 
 ### Closed decisions by date
+
+- 2026-09-04 Library is the first complete strict browser business slice: response decoding, scoped selection, async generations, localized retries and cache-independent Back navigation. Continue with Review drafts and selection; see the [Library handoff](tasks/2026-09-04-library-state/handoff.md).
+- 2026-09-04 Browser delivery uses a normal module entry and prebuilt embedded artifact, with strict startup/platform types and an explicit legacy workspace boundary. Dev/standalone regenerate it; CI and npm prepack check freshness. Continue business-state typing by feature rather than relaxing compiler checks. See [browser architecture](browser-architecture.md).
+- 2026-09-04 The [original product audit](reviews/2026-09-04-product-audit.md) is retained as a baseline. Use its [implementation status](reviews/2026-09-04-product-audit-status.md) to distinguish completed correctness, revision and project Eval storage work from pending frontend, performance and real-outcome validation.
+- 2026-09-04 Product Evals prefer a private project suite, with explicit legacy copying and historical destination compatibility. Fixture positions remain separate from scoped source identities. Export downloads frozen bytes; corpus replacement and cross-device identity are deferred. See the [evaluation-set contract](project-evaluation-suites.md).
 
 - 2026-09-02 Local semantic search defaults to the reviewed
   `jina-embeddings-v2-base-zh` q8 profile and offers Qwen3-Embedding-0.6B q8 as

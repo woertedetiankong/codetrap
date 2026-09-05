@@ -108,6 +108,65 @@ describe("Learning Impact", () => {
     }
   });
 
+  test("saves and clears private practice notes without shared, candidate, or telemetry changes", () => {
+    const project = learningProject(false);
+    const operations = learningOperations(project);
+    const id = "insight-learning-impact";
+    const original = readFileSync(insightsPath(project), "utf8");
+    const preview = operations.preview(id);
+    const created = operations.createCandidate(id, preview.draft);
+    const sessions = new SessionStore(project);
+    const candidate = sessions.getCandidate(created.candidate.id, created.session_id);
+    expect(operations.updatePracticeNote(id, "  MY_PRIVATE_PRACTICE  ").progress.practice_note).toBe("MY_PRIVATE_PRACTICE");
+    expect(existsSync(join(project, ".codetrap", "observations", "ledger.sqlite"))).toBe(false);
+    expect(readFileSync(insightsPath(project), "utf8")).toBe(original);
+    expect(sessions.getCandidate(created.candidate.id, created.session_id)).toEqual(candidate);
+    const recorder = new ObservationRunRecorder(project);
+    recorder.start({ run_id: "private-run", device_id: "test", source_client: "codex", source_session_ref: null,
+      repository_revision: null, branch: null, model_provider: null, model_name: null, completeness: "complete" });
+    operations.linkRun(id, "private-run");
+    let ledger = openObservationLedgerReadOnly(project)!;
+    const before = ledger.listRunEvents("private-run");
+    ledger.close();
+    operations.updatePracticeNote(id, "Different private plan");
+    ledger = openObservationLedgerReadOnly(project)!;
+    expect(ledger.listRunEvents("private-run")).toEqual(before);
+    ledger.close();
+    expect(operations.updatePracticeNote(id, "").progress.practice_note).toBeNull();
+    expect(operations.updatePracticeNote(id, null).progress.practice_note).toBeNull();
+    for (const value of [42, {}, undefined, "a".repeat(1001)]) expect(() => operations.updatePracticeNote(id, value)).toThrow("practiceNote");
+    expect(() => operations.updatePracticeNote("missing", "note")).toThrow();
+  });
+
+  test("resolves accepted source identity using the actual destination scope", () => {
+    const project = learningProject(false);
+    const operations = learningOperations(project);
+    const id = "insight-learning-impact";
+    const created = operations.createCandidate(id, operations.preview(id).draft);
+    expect(operations.sourcesForTrap(1, "project")).toEqual([]);
+    new SessionStore(project).acceptCandidate(created.candidate.id, { sessionId: created.session_id, trapId: 1, scope: "global", evidenceId: null });
+    const source = operations.sourcesForTrap(1, "global");
+    expect(source).toHaveLength(1);
+    expect(source[0]).toMatchObject({ insight_id: id, session_id: created.session_id, candidate_id: created.candidate.id });
+    expect(operations.sourcesForTrap(1, "project")).toEqual([]);
+    expect(operations.sourcesForTrap(2, "global")).toEqual([]);
+    expect(operations.state(JSON.parse(readFileSync(insightsPath(project), "utf8")).insights[0]).promotion).toMatchObject({ accepted_scope: "global", accepted_trap_id: 1 });
+  });
+
+  test("reads existing progress documents with no practice note without rewriting them", () => {
+    const project = learningProject(false);
+    const operations = learningOperations(project);
+    const store = new LearningImpactStore(project);
+    operations.updateStatus("insight-learning-impact", "learned");
+    const document = JSON.parse(readFileSync(store.path(), "utf8"));
+    delete document.progress[0].practice_note;
+    const legacy = JSON.stringify(document);
+    writeFileSync(store.path(), legacy);
+    const insight = JSON.parse(readFileSync(insightsPath(project), "utf8")).insights[0];
+    expect(operations.state(insight).progress.practice_note).toBeNull();
+    expect(readFileSync(store.path(), "utf8")).toBe(legacy);
+  });
+
   test("exposes progress, preview, and Candidate Inbox staging through token-authenticated Web routes", async () => {
     const project = learningProject(false);
     const home = tempHome("codetrap-learning-impact-home-", { realpath: true, initCodetrap: true });
@@ -124,6 +183,12 @@ describe("Learning Impact", () => {
     });
     expect(status.status).toBe(200);
     expect((await status.json()).progress.status).toBe("in_progress");
+
+    const practice = await api(handler, "/api/learning/practice-note", { projectRoot: project, id: insight.id, practiceNote: "A concrete next action" });
+    expect(practice.status).toBe(200);
+    expect((await practice.json()).progress.practice_note).toBe("A concrete next action");
+    expect((await api(handler, "/api/learning/practice-note", { projectRoot: project, id: insight.id, practiceNote: false })).status).toBe(400);
+    expect((await handler(new Request("http://codetrap.local/api/learning/practice-note", { method: "POST", body: "{}" }))).status).toBe(401);
 
     const previewResponse = await api(handler, "/api/learning/candidate/preview", {
       projectRoot: project, id: insight.id,
