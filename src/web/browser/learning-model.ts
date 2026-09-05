@@ -1,7 +1,7 @@
 import type { LearningImpactState } from "../../domain/learning-impact";
 import { draftFields, draftPayload, learningKey, parseCreation, parseImpact, parsePreview, type LearningFields, type LearningTarget } from "./learning-data";
 
-interface Draft<T> { value: T; version: number }
+interface Draft<T> { value: T; version: number; baseline?: string }
 interface Entry { practice?: Draft<string>; proposal?: Draft<LearningFields>; error: string; validatedVersion?: number }
 type Action = "practice" | "status" | "feedback" | "run" | "begin" | "preview" | "create";
 export function createLearningModel(deps: {
@@ -21,7 +21,7 @@ export function createLearningModel(deps: {
   function editPractice(target: LearningTarget, value: string, saved: string) {
     const e = entry(target);
     const pending = operation?.action === "practice" && learningKey(operation.target) === learningKey(target);
-    e.practice = value === saved && !pending ? undefined : { value, version: ++version };
+    e.practice = value === saved && !pending ? undefined : { value, version: ++version, baseline: e.practice?.baseline ?? saved };
     e.error = ""; deps.changed(target, "draft");
   }
   function editProposal(target: LearningTarget, fields: LearningFields) {
@@ -67,6 +67,7 @@ export function createLearningModel(deps: {
         const raw = await deps.api("/api/learning/" + paths[key], { method: "POST", body: JSON.stringify({ ...common, ...update }) });
         const impact = parseImpact(raw, t);
         if (action === "practice" && e.practice === practice) e.practice = undefined;
+        if (action === "practice" && e.practice) e.practice.baseline = impact.progress.practice_note || "";
         revision++; deps.applyImpact(t, impact);
       }
       const messages: Record<Action, string> = { practice: "experience.practiceSaved", status: "status.learningProgressUpdated", feedback: "status.learningFeedbackUpdated", run: "status.learningRunUpdated", begin: "learningFlow.draftReady", preview: "status.agentCandidatePreviewed", create: "status.agentCandidateCreated" };

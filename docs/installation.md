@@ -415,8 +415,9 @@ and open it in your default browser. The launch token is removed from the
 visible URL after it is copied into session storage. Connection failures, missing
 credentials and rejected credentials have distinct recovery messages. Retry a
 temporary connection failure in place, or paste the current service's full launch
-link to reauthorize without reloading. Unsaved drafts remain in tab memory;
-closing or reloading can still lose them. The console notices
+link to reauthorize without reloading. Review/Evals drafts remain in tab memory;
+closing or reloading can still lose them. Learning has separate browser backups
+and an explicit recovery flow. The console notices
 session and candidate updates made by agents or other terminals while
 preserving any unsaved candidate draft.
 
@@ -433,8 +434,21 @@ and Insight across article/project navigation, language changes and in-place
 reauthorization. Preview validates the submitted version without replacing newer
 input. Save practice notes explicitly; sending a proposal creates a pending
 Candidate Inbox item for review, not confirmed memory. Discard affects only the
-selected note or proposal. Unsaved drafts remain in tab memory and can be lost on
-close or reload.
+selected note or proposal. Learning also backs up drafts in this browser for 30
+days. Reopen an authorized page at the same address/port in the same browser
+profile, then inspect and restore or delete the offered copy. Server-note changes
+are called out and separate tab versions are preserved. Restore never replays a
+save/send or restores validation/approval. Successful explicit save/send or discard
+removes that tab's copy, not another tab's newer edits.
+
+Browser backups are local, readable browser data, not encrypted project storage or
+cross-device sync. Clearing browser data removes them. Up to 100 draft snapshots
+of at most 64 KiB each are supported; valid expired snapshots are cleaned on access,
+and malformed/unsupported records are skipped with a notice. A storage failure
+keeps editing available with a visible warning and the last successful backup;
+keep the tab open and save explicitly if the latest text could not be backed up.
+Drafts for removed or inaccessible items are not restored into a different item;
+they expire normally. Review/Evals durable recovery remains separate future work.
 
 New source-derived collections use a fingerprinted source-unit inventory. Core
 knowledge and examples route to ordered Insights; substantive background and

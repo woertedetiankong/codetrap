@@ -418,7 +418,8 @@ not an authorization credential or portable identity after moving the project.
 Existing view-only hashes still work. On phones, Learning and Library switch
 between list and reader, keep filters collapsed initially, and use one main
 scroll region. Back/Forward within the tab also restores reading position.
-Unsaved practice notes still require saving before a reload. An expired launch link shows a persistent
+Learning notes/proposals can be recovered from this browser after a reload when
+the browser backup succeeds. An expired launch link shows a persistent
 recovery page instead of a partially initialized console. Impact navigation stays
 available during loading, empty, and error states; when observation is off, the
 Overview offers a direct read-only path to any checked-in offline Evals.
@@ -792,8 +793,14 @@ project and Insight while you switch articles, projects, language or views. Prev
 checks the submitted version without rewriting your text; newer edits remain
 unvalidated until you preview again. Save a practice note explicitly, then submit
 an experience proposal to the Candidate Inbox for review. These drafts survive
-in-place reauthorization, but closing or reloading the tab can still lose unsaved
-work.
+in-place reauthorization. While you edit, Learning also backs up raw drafts to this
+browser for 30 days. After reload or reopening the same browser address, **Recover
+browser drafts** lets you inspect, restore or delete a copy. Restoring does not
+save, submit or restore prior validation. A changed saved practice note is called
+out; concurrent-tab versions stay separate. If browser storage fails, a visible
+warning tells you that the latest edits may exist only in the open tab. Backups
+are local to the browser profile and origin, including port; clearing browser data
+removes them. They are not a server save or cross-device sync.
 
 New source-derived collections also carry an auditable source-unit inventory.
 The agent first inventories the article or captured conversation sample, then
@@ -843,8 +850,9 @@ or rewrites the Insight.
 The **How will you put this into practice?** card saves a personal note of up to
 1,000 characters in local Learning progress. Unsaved text survives chapter and
 view changes within the tab, including newer typing while an earlier save
-finishes. Save before reloading or closing the tab; clear the text and save to
-remove the note. Notes never enter shared Insight content, candidate drafts, or
+finishes. A successful browser backup enables explicit recovery after reload or
+reopening for up to 30 days; Save still writes the actual Learning progress.
+Clear the text and save to remove the note. Notes never enter shared Insight content, candidate drafts, or
 observation events.
 
 Accepted Learning candidates expose **View confirmed lesson**, using the actual
@@ -1369,7 +1377,8 @@ service's full launch URL into the recovery form to reconnect in the same tab;
 the address and port must match. Your current route and local edits remain, and
 failed writes are never automatically replayed. If the service stopped, recovery
 shows a restart command using the current port. Avoid closing or reloading a tab
-with unsaved drafts. The console polls for
+with unsaved Review/Evals drafts or a Learning storage warning. Learning browser
+backups have a separate explicit recovery flow. The console polls for
 candidate/session changes made by agents or other terminals, but pauses
 application of external updates while a candidate form has unsaved edits. Open
 the blue `Impact` view to see real local Observation Overview totals, browse
@@ -1458,8 +1467,9 @@ drafts for each project/session/candidate across navigation and locale changes;
 background updates defer while editing, and action completion stays bound to its
 original candidate. Learning practice/proposal drafts and action state now use
 strict modules too, with source-identity validation, captured payloads and guarded
-list retries. Use Save for durable storage: in-tab drafts are not autosaved across
-a forced reload. Review presentation, Learning collection/filter presentation and
+list retries. Learning browser backups add explicit recovery after reload/reopen;
+Review/Evals drafts remain in-tab only. Save still writes the actual project data.
+Review presentation, Learning collection/filter presentation and
 Run-choice loading, and broader Impact state retain explicit migration boundaries.
 
 ## Test

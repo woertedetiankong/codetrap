@@ -1488,6 +1488,7 @@ export function mountWorkspace(boot) {
       return `<section class="section learning-agent-card draft-open">
         <div class="learning-agent-heading"><div><div class="eyebrow">${escapeHtml(t("learningImpact.localDraft"))}</div><div class="title">${escapeHtml(t("title.agentExperienceDraft"))}</div></div><span class="pill scope">${escapeHtml(t("learningImpact.inboxOnly"))}</span></div>
         <p>${escapeHtml(t("hint.agentCandidateEdit"))}</p>
+        ${promotion ? '<p>' + escapeHtml(t("learningRecovery.promoted")) + '</p><button type="button" class="ghost" id="open-learning-candidate-review">' + escapeHtml(t("action.openCandidateReview")) + '</button>' : ''}
         <form id="learning-agent-candidate-form" class="learning-agent-form">
           <label class="full"><span>${escapeHtml(t("label.title"))}</span><input name="title" value="${escapeAttr(draft.title)}"></label>
           <label class="full"><span>${escapeHtml(t("label.context"))}</span><textarea name="context">${escapeHtml(draft.context)}</textarea></label>
@@ -1538,6 +1539,8 @@ export function mountWorkspace(boot) {
       el("detail").innerHTML = `
         <div class="scroll">
           <p id="learning-flow-error" class="inline-error" role="alert" hidden></p>
+          <p id="learning-draft-storage" class="subtle" role="status"></p>
+          <section id="learning-draft-recovery" class="section learning-agent-card" hidden></section>
           <div class="section learning-intro">
             ${breadcrumb}
             <div class="title learning-title">${escapeHtml(insight.title)}</div>

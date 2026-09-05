@@ -76,3 +76,9 @@ test("Learning response decoding rejects wrong routes, source identities and mal
   for (const invalid of [{ ...payload, project_root: "/beta" }, { ...payload, scope: "project" }, { ...payload, insights: [insight, insight] }, { ...payload, insights: [{ ...insight, library_key: b.libraryKey }] }, { ...payload, insights: [{ ...insight, tags: "bad" }] }]) expect(() => parseLearningLibrary(invalid, a.project, "all")).toThrow();
   expect(() => parsePreview(preview(b), a)).toThrow("identity mismatch");
 });
+test("unrelated status actions do not replace the original practice draft baseline", async () => {
+  const { model } = setup(async () => impact(a, "Updated elsewhere"));
+  model.editPractice(a, "Local edits", "Original baseline");
+  await model.act(a, "status", "learned");
+  expect(model.entry(a)?.practice?.baseline).toBe("Original baseline");
+});

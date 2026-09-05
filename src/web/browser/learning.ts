@@ -1,6 +1,7 @@
 import type { LearningImpactState } from "../../domain/learning-impact";
 import { createLearningModel } from "./learning-model";
 import { learningKey, targetOf, type LearningFields, type LearningInsight, type LearningTarget } from "./learning-data";
+import { createLearningRecovery } from "./learning-recovery";
 import type { Translate } from "./platform";
 export function createLearningWorkflow(deps: {
   current(): LearningInsight | null; active(): boolean; externalBusy(): boolean;
@@ -15,9 +16,19 @@ export function createLearningWorkflow(deps: {
   const selected = (target: LearningTarget) => deps.active() && current() && learningKey(current()!) === learningKey(target);
   const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T | null;
   const model = createLearningModel({ api: deps.api, blocked: deps.externalBusy,
-    changed(target, part) { if (selected(target)) { if (part === "render") render(); else if (part === "draft") hints(); } if (part === "busy") { locks(); deps.busyChanged(); } },
+    changed(target, part) { recovery.sync(target); if (selected(target)) { if (part === "render") render(); else if (part === "draft") hints(); } if (part === "busy") { locks(); deps.busyChanged(); } },
     applyImpact: deps.applyImpact, created: deps.created,
     notify(key, target, error) { deps.showStatus(deps.t(selected(target) ? key : error ? "learningFlow.failedElsewhere" : "learningFlow.completedElsewhere", { title: target.title, project: target.project }), error); },
+  });
+  const recovery = createLearningRecovery({
+    entry: target => model.entry(target), current: deps.current, active: deps.active,
+    busy: () => model.busy || deps.externalBusy(), t: deps.t, escapeHtml: deps.escapeHtml,
+    restore(snapshot, insight) {
+      const target = targetOf(insight);
+      if (snapshot.kind === "practice") model.editPractice(target, snapshot.value, insight.learning_impact.progress.practice_note || "");
+      else model.editProposal(target, snapshot.value);
+      render();
+    },
   });
   function render() {
     const scroll = document.querySelector("#detail > .scroll")?.scrollTop || 0;
@@ -33,6 +44,7 @@ export function createLearningWorkflow(deps: {
   function locks() {
     if (!deps.active()) return;
     const busy = model.busy || deps.externalBusy();
+    const insight = deps.current(); if (insight) recovery.render(insight);
     for (const id of ["save-learning-practice", "discard-learning-practice", "begin-learning-candidate", "preview-learning-candidate", "create-learning-candidate", "cancel-learning-candidate", "learning-run-link"]) {
       const control = el<HTMLButtonElement | HTMLSelectElement>(id); if (control) control.disabled = busy;
     }
@@ -83,7 +95,7 @@ export function createLearningWorkflow(deps: {
       <p id="learning-practice-hint">${esc(t("experience.practiceHint"))}</p><textarea id="learning-practice-note" rows="3" maxlength="1000" aria-describedby="learning-practice-hint" placeholder="${esc(t("experience.practicePlaceholder"))}">${esc(value)}</textarea>
       <div class="learning-practice-footer"><span id="learning-practice-state" role="status"></span><button type="button" id="discard-learning-practice" class="ghost" ${entry?.practice ? "" : "hidden"}>${esc(t("review.discard"))}</button><button type="button" class="primary" id="save-learning-practice">${esc(t("experience.savePractice"))}</button></div></section>`;
   }
-  window.addEventListener("beforeunload", event => { if (model.hasDrafts() || model.busy) { event.preventDefault(); event.returnValue = ""; } });
+  window.addEventListener("beforeunload", event => { if (model.hasDrafts() && !recovery.safeToLeave() || model.busy) { event.preventDefault(); event.returnValue = ""; } });
   return { get busy() { return model.busy; }, get revision() { return model.revision; }, capture, bind, practice, syncBusy: locks,
     entry: (insight: LearningInsight) => model.entry(targetOf(insight)),
   };

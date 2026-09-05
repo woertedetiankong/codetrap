@@ -1247,6 +1247,10 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .learning-agent-form textarea { width: 100%; color: var(--ink); font-weight: 500; }
     .learning-agent-form textarea { min-height: 88px; resize: vertical; line-height: 1.5; }
     .learning-agent-form textarea.tall { min-height: 150px; }
+    #learning-draft-recovery[hidden] { display: none; }
+    #learning-draft-recovery select { width: 100%; min-width: 0; }
+    .learning-recovery-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 13px; }
+    #learning-draft-storage { margin: 10px 14px; font-size: 13px; }
     .learning-agent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .inline-error { padding: 10px 11px; border: 1px solid color-mix(in srgb, var(--danger), transparent 58%); border-radius: 9px; color: var(--danger); background: color-mix(in srgb, var(--danger), transparent 94%); font-size: 13px; line-height: 1.45; }
 

@@ -22,6 +22,8 @@ browser/entry.ts
         +-- learning.ts    typed practice/proposal/action coordination
         |     +-- learning-model.ts  source-scoped drafts and captured operations
         |     +-- learning-data.ts   workflow transport validation
+        |     +-- learning-recovery.ts    browser backup/recovery UI
+        |           +-- learning-draft-store.ts  bounded immutable snapshots
         +-- client-review  pure review selection and payload helpers
         +-- client-impact  injected factory, five public operations
         +-- experience actions, revision and evaluation-set controllers
@@ -116,8 +118,8 @@ Recovery hides the shell instead of removing it, preserving its DOM, handlers an
 in-memory Review drafts. Reauthorization restores an already loaded workspace
 without bootstrapping it again; existing failed view reads retain their explicit
 retry controls. Browser Back/Forward while disconnected is applied after reconnect.
-Drafts are not durable autosave: closing/reloading or moving to a different origin
-is not protected by this in-place recovery. New tabs still require authorization;
+In-place authorization recovery does not itself persist drafts across reloads or
+origins. Learning adds browser-local backups below; Review/Evals remain in-tab only. New tabs still require authorization;
 there is no cookie, automatic cross-tab credential sharing or unauthenticated
 credential endpoint. See the [access recovery handoff](tasks/2026-09-05-web-access-recovery/handoff.md).
 
@@ -217,8 +219,9 @@ request guards do not replace it.
 source-project/Insight identity. The workspace's selected project or all-projects
 filter is not the ownership key. Navigation, locale/layout changes and authorization
 reconnection retain each draft. Discard removes only the chosen note or proposal;
-closing/reloading is still outside the in-tab guarantee. The unload guard includes
-Learning drafts and pending operations; this is not durable autosave.
+browser-local backups below add explicit reload/reopen recovery. The unload guard
+covers pending operations and Learning drafts whose backup failed or disappeared.
+A successfully backed-up Learning draft can leave without the unsaved-work prompt.
 
 All workflow actions capture the source and visible fields before awaiting. Practice
 saves retain newer typing, including a change back to the original saved value while
@@ -247,6 +250,48 @@ finishes. Failures remain scoped to the original draft and writes are not replay
 Legacy collection rename/reorder, Run-choice hydration, filters and presentation are
 separate boundaries; backend cross-process write/version semantics are unchanged.
 
+
+## Learning browser draft recovery
+
+`learning-draft-store.ts` stores one immutable record per edit under
+`codetrap-learning-draft:<random UUID>` in localStorage. Each tab writes the next
+snapshot before removing its own previous key. On storage failure, the last
+successful copy remains recoverable; the editor keeps the newest raw text and
+shows a warning. Records include only version, random snapshot identity, timestamp,
+source target, draft kind/raw fields and (for practice) the original saved note.
+No credential, request, validation or approval state is serialized.
+
+Supported records expire 30 days after the last successful edit snapshot. The
+store enforces 100 valid snapshots and 64 KiB of UTF-8 serialized content per
+snapshot, with no eviction of another live draft to make room. Reads validate
+schema, timestamps, source identity and fields. Expiry cleanup touches supported
+valid records only. Malformed/future schemas are ignored with a notice and are
+not migrated or interpreted as executable/model state.
+
+`learning-recovery.ts` offers only snapshots for the loaded source project/Insight,
+after normal authorization and source reads. It displays saved text using textContent,
+with explicit restore/delete. Restoring never overwrites an active draft of the same
+kind; practice-baseline differences and existing proposal review records are visible.
+A successful restoration first backs up the new in-tab draft, then removes the
+inspected source key. Restored proposals start unvalidated. The existing backend
+preview/create validators and explicit review lifecycle remain authoritative.
+
+Concurrent writers have different immutable keys. Saving, discarding or consuming
+one copy cannot delete another tab's newer key. Storage events update recovery
+choices without replacing editor fields. If a selected snapshot disappears, the
+selection becomes invalid and both actions disable until the user chooses again.
+This protects browser backups, not backend cross-process write concurrency. An
+unconfirmed send remains recoverable and exposes its existing review record after
+a fresh read, without automatic retry. An acknowledged practice save updates a
+newer draft's baseline; unrelated status/feedback actions preserve the original base.
+
+Recovery is scoped to the browser profile and origin (including port); it is not
+cloud/server persistence or encrypted storage. Browser-data clearing, expiry,
+storage denial or quota can remove/prevent recovery. Deleted/unregistered source
+items never restore into a substitute; supported leftover snapshots expire on
+later access. Review/Evals persistence and a global draft-management page remain
+separate work.
+
 ## Verification
 
 Behavior tests cover launch-token refresh, denied storage, real header/body
@@ -261,4 +306,5 @@ the entry migration; it is not counted as a passing test. A complete run must
 record results for every file. See the [implementation handoff](tasks/2026-09-04-browser-module-entry/handoff.md)
 for the earlier module-delivery evidence; the [Library handoff](tasks/2026-09-04-library-state/handoff.md) records that slice,
 the [Review handoff](tasks/2026-09-04-review-state/handoff.md) records its state, and
-the [Learning workflow handoff](tasks/2026-09-05-learning-workflow/handoff.md) records the current slice.
+the [Learning workflow handoff](tasks/2026-09-05-learning-workflow/handoff.md) records its state, and
+the [draft recovery handoff](tasks/2026-09-05-learning-draft-recovery/handoff.md) records the latest slice.
