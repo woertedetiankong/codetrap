@@ -1,10 +1,13 @@
+import { createFormDrafts } from "./browser/form-drafts";
+import type { FormFields } from "./browser/form-draft-store";
 import type { createEvalSuiteUI } from "./client-eval-suite";
 import type { createRevisionUI } from "./client-revisions";
 import type { impactOverviewContent as overviewComponent } from "./client-impact-overview";
 
-// Transitional business-state adapter; dependencies are real runtime values.
+import type { ImpactState } from "./client-impact-state";
+// Rendering remains separate from typed state and request ownership.
 interface Dependencies {
-  state: any;
+  state: ImpactState & { projectRoot: string; mainView: string };
   evalSuiteUI: ReturnType<typeof createEvalSuiteUI>;
   revisionUI: ReturnType<typeof createRevisionUI>;
   impactOverviewContent: typeof overviewComponent;
@@ -26,6 +29,45 @@ interface Dependencies {
 }
 export function createImpactUI(deps: Dependencies) {
   const { state, evalSuiteUI, revisionUI, impactOverviewContent, el, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, api, syncWorkspaceRoute, showStatus, captureImpactScrollPosition, restoreImpactScrollPosition, loadImpactRun, loadImpactEvals, loadImpact, jumpToTrap } = deps;
+  const backups = createFormDrafts(t);
+  const candidateDrafts = new Map<string, { fields: FormFields; context: string }>();
+  const runDrafts = new Map<string, { fields: FormFields; context: string }>();
+  const candidateKey = (project: string, id: string) => JSON.stringify([project, id]);
+  const suiteContext = () => JSON.stringify({ source: state.observationEvals?.retrieval.source, sha: state.observationEvals?.retrieval.sha256, traps: state.observationEvals?.fixture_traps, legacy: state.observationEvals?.legacy_fixture_traps, legacySha: state.observationEvals?.legacy_fixture_sha256 });
+  const reviewContext = (candidate: any) => JSON.stringify([suiteContext(), candidate?.review_status, candidate?.review_ref, candidate?.draft_case, candidate?.fixture_path]);
+  const runContext = () => JSON.stringify([suiteContext(), state.observationEvals?.controlled.profiles]);
+  function installCandidateFields(id: string, fields: FormFields) {
+    state.evalReviewDraft = { candidateId: id, case: { query: fields.query || "", mode: fields.mode || "hybrid", judgment: fields.judgment || "miss", goldTrapIds: JSON.parse(fields.goldTrapIds || "[]"), note: fields.note || "" }, rejectionReason: fields.rejectionReason || "" };
+    state.evalReviewPreview = null;
+  }
+  function mountEvalRecovery() {
+    const candidate = selectedEvalCandidate(), project = state.projectRoot;
+    const panel = document.querySelector<HTMLElement>(".eval-review-workbench");
+    if (panel && candidate && project) {
+      const host = document.createElement("div"); panel.prepend(host);
+      backups.mount(host, () => {
+        const current = selectedEvalCandidate();
+        if (!current || state.projectRoot !== project || current.id !== candidate.id) return null;
+        return { form: "eval-candidate", owner: [project, candidate.id], context: reviewContext(current), active: !!state.evalReviewDraft && state.evalReviewDraft.candidateId === candidate.id, editable: ["review_required", "draft", "rolled_back"].includes(current.review_status), busy: state.evalReviewBusy,
+          discard: () => { candidateDrafts.delete(candidateKey(project, candidate.id)); state.evalReviewDraft = null; state.evalReviewPreview = null; backups.remember("eval-candidate", [project, candidate.id], "cleared", null); renderImpactDetailKeepingScroll(); },
+          restore: fields => { candidateDrafts.set(candidateKey(project, candidate.id), { fields, context: reviewContext(current) }); backups.remember("eval-candidate", [project, candidate.id], reviewContext(current), fields); installCandidateFields(candidate.id, fields); renderImpactDetailKeepingScroll(); } };
+      });
+    }
+    const form = document.querySelector<HTMLFormElement>("[data-controlled-eval-form]");
+    if (form && project) {
+      const entry = runDrafts.get(project);
+      if (entry) for (const [name, value] of Object.entries(entry.fields)) { const c = form.elements.namedItem(name); if (c instanceof HTMLInputElement || c instanceof HTMLSelectElement) c.value = value; }
+      const host = document.createElement("div"); form.before(host);
+      backups.mount(host, () => state.projectRoot !== project ? null : { form: "eval-run", owner: [project], context: runContext(), active: runDrafts.has(project), editable: !!state.observationEvals?.controlled.can_run, busy: state.controlledEvalBusy,
+        discard: () => { runDrafts.delete(project); backups.remember("eval-run", [project], "cleared", null); state.controlledEvalProfile = "memory_contribution_v1"; state.controlledEvalTrials = 2; state.controlledEvalSeed = "codetrap-controlled-v1"; renderImpactDetailKeepingScroll(); },
+        restore: fields => { runDrafts.set(project, { fields, context: runContext() }); backups.remember("eval-run", [project], runContext(), fields); state.controlledEvalProfile = fields.profile; state.controlledEvalTrials = Number(fields.trials); state.controlledEvalSeed = fields.seed; renderImpactDetailKeepingScroll(); } });
+      form.addEventListener("input", () => {
+        const data = new FormData(form), fields = { profile: String(data.get("profile") || ""), trials: String(data.get("trials") || ""), seed: String(data.get("seed") || "") };
+        const context = runDrafts.get(project)?.context || runContext(); runDrafts.set(project, { fields, context }); backups.remember("eval-run", [project], context, fields);
+      });
+    }
+  }
+  window.addEventListener("beforeunload", event => { if (!backups.safeToLeave() || state.evalReviewBusy || state.controlledEvalBusy) { event.preventDefault(); event.returnValue = ""; } });
 function renderImpactQueue() {
   if (state.impactView === "evals") {
     renderImpactEvalQueue();
@@ -293,7 +335,7 @@ function impactAutoClient(label: string, preview: string, apply: string) {
   return `<article><strong>${escapeHtml(label)}</strong><span>${escapeHtml(t("impact.automaticPreview"))}</span><code>${escapeHtml(preview)}</code><span>${escapeHtml(t("impact.automaticApply"))}</span><code>${escapeHtml(apply)}</code></article>`;
 }
 
-function createImpactDemoRun() {
+function createImpactDemoRun(): NonNullable<ImpactState["observationDemoRun"]> {
   const completedAt = Date.now();
   const startedAt = completedAt - 42_000;
   const occurredAt = (offset: number) => new Date(startedAt + offset).toISOString();
@@ -313,14 +355,14 @@ function createImpactDemoRun() {
       exposure_count: 1,
       validation_count: 1,
       feedback_count: 0,
-      event_count: 5,
+      event_count: 5, contains_sensitive_body: false, evidence: { observed_fact: 5, human_label: 0, derived_inference: 0, controlled_eval: 0 },
     },
     timeline: [
-      { seq: 1, type: "run/started", occurred_at: occurredAt(0), evidence_class: "observed_fact", sensitivity: "metadata_only", facts: { source_client: "codex", completeness: "complete" } },
-      { seq: 2, type: "trap/search-completed", occurred_at: occurredAt(7_000), evidence_class: "observed_fact", sensitivity: "metadata_only", facts: { mode: "hybrid", result_count: 1, diagnostic_count: 0 } },
-      { seq: 3, type: "trap/exposed", occurred_at: occurredAt(8_000), evidence_class: "observed_fact", sensitivity: "metadata_only", facts: { trap_id: 7, rank: 1 } },
-      { seq: 4, type: "validation/completed", occurred_at: occurredAt(34_000), evidence_class: "observed_fact", sensitivity: "metadata_only", facts: { kind: "test", status: "passed", passed: 3, failed: 0, duration_ms: 1_100 } },
-      { seq: 5, type: "run/completed", occurred_at: occurredAt(42_000), evidence_class: "observed_fact", sensitivity: "metadata_only", facts: { status: "completed", completeness: "complete", duration_ms: 42_000 } },
+      { seq: 1, type: "run/started", occurred_at: occurredAt(0), evidence_class: "observed_fact", sensitivity: "metadata", facts: { source_client: "codex", completeness: "complete" } },
+      { seq: 2, type: "trap/search-completed", occurred_at: occurredAt(7_000), evidence_class: "observed_fact", sensitivity: "metadata", facts: { mode: "hybrid", result_count: 1, diagnostic_count: 0 } },
+      { seq: 3, type: "trap/exposed", occurred_at: occurredAt(8_000), evidence_class: "observed_fact", sensitivity: "metadata", facts: { trap_id: 7, rank: 1 } },
+      { seq: 4, type: "validation/completed", occurred_at: occurredAt(34_000), evidence_class: "observed_fact", sensitivity: "metadata", facts: { kind: "test", status: "passed", passed: 3, failed: 0, duration_ms: 1_100 } },
+      { seq: 5, type: "run/completed", occurred_at: occurredAt(42_000), evidence_class: "observed_fact", sensitivity: "metadata", facts: { status: "completed", completeness: "complete", duration_ms: 42_000 } },
     ],
   };
 }
@@ -470,6 +512,7 @@ function renderImpactEvals() {
   bindImpactTabs();
   bindEvalControls();
   bindControlledEvalControls();
+  mountEvalRecovery();
   void evalSuiteUI.mount(el("eval-suite-panel"), state.projectRoot);
 }
 
@@ -617,6 +660,7 @@ function renderControlledCase(item: any) {
 function bindControlledEvalControls() {
   const form = document.querySelector("[data-controlled-eval-form]") as any;
   if (form) {
+    form.querySelectorAll("input,select").forEach((control: HTMLInputElement | HTMLSelectElement) => control.disabled = state.controlledEvalBusy);
     form.querySelector('[name="profile"]')?.addEventListener("change", (event: any) => {
       state.controlledEvalProfile = event.target.value;
       renderImpactDetailKeepingScroll();
@@ -647,6 +691,7 @@ function bindControlledEvalControls() {
 
 async function runControlledEval(form: any) {
   if (state.controlledEvalBusy) return;
+  const project = state.projectRoot, submitted = runDrafts.get(state.projectRoot);
   const data = new FormData(form);
   state.controlledEvalProfile = String(data.get("profile") || "memory_contribution_v1");
   state.controlledEvalTrials = Number(data.get("trials") || 2);
@@ -658,18 +703,21 @@ async function runControlledEval(form: any) {
     const result = await api("/api/observations/controlled-evals/run", {
       method: "POST",
       body: JSON.stringify({
-        projectRoot: state.projectRoot,
+        projectRoot: project,
         profile: state.controlledEvalProfile,
         trials: state.controlledEvalTrials,
         seed: state.controlledEvalSeed,
       }),
     });
+    if (result.success !== true || result.experiment?.status !== "completed" || typeof result.experiment.id !== "string") throw new Error(t("error.invalidResponse"));
+    if (runDrafts.get(project) === submitted) { runDrafts.delete(project); backups.remember("eval-run", [project], "cleared", null); }
+    if (state.projectRoot !== project) return;
     state.controlledEvalExperimentId = result.experiment.id;
     state.controlledEvalCaseFilter = "attention";
     await loadImpactEvals();
     showStatus(t("evals.controlledRunComplete"));
   } catch (error) {
-    state.controlledEvalError = error instanceof Error ? error.message : String(error);
+    if (state.projectRoot === project) state.controlledEvalError = error instanceof Error ? error.message : String(error);
   } finally {
     state.controlledEvalBusy = false;
     if (state.mainView === "impact" && state.impactView === "evals") renderImpactDetail();
@@ -792,6 +840,8 @@ function renderEvalReviewPanel(candidate: any, payload: any) {
   if (!candidate) {
     return `<div class="impact-notice eval-review-intro"><h3>${escapeHtml(t("evals.groundTruthTitle"))}</h3><p>${escapeHtml(t("evals.groundTruthCopy"))}</p></div>`;
   }
+  const saved = candidateDrafts.get(candidateKey(state.projectRoot, candidate.id));
+  if (!state.evalReviewDraft && saved && saved.context === reviewContext(candidate)) installCandidateFields(candidate.id, saved.fields);
   const localReview = state.evalReviewDraft?.candidateId === candidate.id ? state.evalReviewDraft : null;
   const draft = localReview?.case || candidate.draft_case || {};
   const rejectionReason = localReview?.rejectionReason || "";
@@ -849,8 +899,11 @@ function bindEvalControls() {
   document.querySelectorAll("[data-eval-review]").forEach((button: any) => {
     button.addEventListener("click", () => {
       state.evalExternalChangesDeferred = false;
+      snapshotEvalReviewDraftFromDom();
       state.evalReviewCandidateId = button.dataset.evalReview;
       state.evalReviewDraft = null;
+      const saved = candidateDrafts.get(candidateKey(state.projectRoot, button.dataset.evalReview));
+      if (saved && saved.context === reviewContext(selectedEvalCandidate())) installCandidateFields(button.dataset.evalReview, saved.fields);
       state.evalReviewPreview = null;
       state.evalReviewError = "";
       renderImpactDetail();
@@ -859,14 +912,21 @@ function bindEvalControls() {
   });
   document.querySelector("[data-eval-review-close]")?.addEventListener("click", () => {
     state.evalExternalChangesDeferred = false;
+    snapshotEvalReviewDraftFromDom();
     state.evalReviewCandidateId = null;
     state.evalReviewDraft = null;
     state.evalReviewPreview = null;
     state.evalReviewError = "";
     renderImpactDetailKeepingScroll();
   });
-  const form = document.querySelector("[data-eval-review-form]") as any;
+  const form = document.querySelector<HTMLFormElement>("[data-eval-review-form]");
   if (form) {
+    form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input,select,textarea").forEach(control => control.disabled = state.evalReviewBusy);
+    form.dataset.candidateId = selectedEvalCandidate()?.id;
+    form.dataset.project = state.projectRoot;
+    form.dataset.context = reviewContext(selectedEvalCandidate());
+    form.addEventListener("input", snapshotEvalReviewDraftFromDom);
+    form.addEventListener("change", snapshotEvalReviewDraftFromDom);
     form.querySelector('[name="judgment"]')?.addEventListener("change", (event: any) => {
       const noRelevant = event.target.value === "no_relevant_trap";
       form.querySelectorAll('[name="goldTrapIds"]').forEach((input: any) => {
@@ -903,13 +963,19 @@ function evalReviewDraftFromForm(form: any, normalize = true) {
 
 function snapshotEvalReviewDraftFromDom() {
   const candidate = selectedEvalCandidate();
-  const form = document.querySelector("[data-eval-review-form]") as any;
-  if (!candidate || !form) return state.evalReviewDraft;
+  const form = document.querySelector<HTMLFormElement>("[data-eval-review-form]");
+  if (!candidate || !form || form.dataset.candidateId !== candidate.id || form.dataset.project !== state.projectRoot || form.dataset.context !== reviewContext(candidate) || state.evalReviewBusy) return state.evalReviewDraft;
   state.evalReviewDraft = {
     candidateId: candidate.id,
     case: evalReviewDraftFromForm(form, false),
     rejectionReason: String(new FormData(form).get("rejectionReason") || ""),
   };
+  const fields = { ...state.evalReviewDraft.case, goldTrapIds: JSON.stringify(state.evalReviewDraft.case.goldTrapIds), rejectionReason: state.evalReviewDraft.rejectionReason };
+  const key = candidateKey(state.projectRoot, candidate.id), context = candidateDrafts.get(key)?.context || reviewContext(candidate);
+  const base = candidate.draft_case;
+  const baseline = { query: base?.query || "", mode: base?.mode || "hybrid", judgment: base?.judgment || (["irrelevant_guidance", "harmful_guidance"].includes(candidate.reason) ? "noisy_hit" : "miss"), goldTrapIds: JSON.stringify(base?.goldTrapIds || []), note: base?.note || "", rejectionReason: "" };
+  if (JSON.stringify(fields) === JSON.stringify(baseline)) { candidateDrafts.delete(key); state.evalReviewDraft = null; backups.remember("eval-candidate", [state.projectRoot, candidate.id], context, null); }
+  else { candidateDrafts.set(key, { fields, context }); backups.remember("eval-candidate", [state.projectRoot, candidate.id], context, fields); }
   return state.evalReviewDraft;
 }
 
@@ -919,15 +985,18 @@ async function runEvalReviewAction(action: string, form: any) {
   if (action === "accept" && !confirm(t("evals.confirmAccept"))) return;
   if (action === "reject" && !confirm(t("evals.confirmReject"))) return;
   if (action === "rollback" && !confirm(t("evals.confirmRollback"))) return;
+  const project = state.projectRoot, key = candidateKey(project, candidate.id);
+  const selected = () => state.projectRoot === project && state.evalReviewCandidateId === candidate.id;
   const submittedDraft = form ? evalReviewDraftFromForm(form) : null;
   const rejectionReason = form ? String(new FormData(form).get("rejectionReason") || "").trim() : "";
-  if (submittedDraft) state.evalReviewDraft = { candidateId: candidate.id, case: submittedDraft, rejectionReason };
+  snapshotEvalReviewDraftFromDom();
+  const submitted = candidateDrafts.get(key);
   state.evalReviewBusy = true;
   state.evalReviewError = "";
   renderImpactDetail();
   try {
     const body: Record<string, unknown> = {
-      projectRoot: state.projectRoot,
+      projectRoot: project,
       observationCandidateId: candidate.id,
     };
     if (action === "draft" || action === "accept") body.draft = submittedDraft;
@@ -936,11 +1005,15 @@ async function runEvalReviewAction(action: string, form: any) {
       method: "POST",
       body: JSON.stringify(body),
     });
+    if (result.success !== true || result.observation_candidate_id !== candidate.id || action === "draft" && !Array.isArray(result.preview)) throw new Error(t("error.invalidResponse"));
+    if (candidateDrafts.get(key) === submitted) { candidateDrafts.delete(key); backups.remember("eval-candidate", [project, candidate.id], "cleared", null); }
+    if (!selected()) return;
+    state.evalReviewDraft = null;
     state.evalReviewPreview = action === "draft" ? result.preview : null;
     await loadImpactEvals();
     showStatus(t(`evals.status.${action}`));
   } catch (error) {
-    state.evalReviewError = error instanceof Error ? error.message : String(error);
+    if (selected()) state.evalReviewError = error instanceof Error ? error.message : String(error);
   } finally {
     state.evalReviewBusy = false;
     if (state.mainView === "impact" && state.impactView === "evals") renderImpactDetail();

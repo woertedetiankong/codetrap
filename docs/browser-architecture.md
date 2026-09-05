@@ -119,7 +119,7 @@ in-memory Review drafts. Reauthorization restores an already loaded workspace
 without bootstrapping it again; existing failed view reads retain their explicit
 retry controls. Browser Back/Forward while disconnected is applied after reconnect.
 In-place authorization recovery does not itself persist drafts across reloads or
-origins. Learning adds browser-local backups below; Review/Evals remain in-tab only. New tabs still require authorization;
+origins. Learning, Review and Evals add browser-local backups below. New tabs still require authorization;
 there is no cookie, automatic cross-tab credential sharing or unauthenticated
 credential endpoint. See the [access recovery handoff](tasks/2026-09-05-web-access-recovery/handoff.md).
 
@@ -158,12 +158,14 @@ scroll restoration, Learning/Run links and revision-history controllers remain.
 `workspace.js` and `shell.js` are explicit legacy JavaScript boundaries.
 `workspace.d.ts` defines the typed startup handoff into that workspace; it does
 not imply that thousands of existing business-state accesses are checked.
-Impact and cross-feature navigation retain their pre-existing dynamic state types.
-Library state/DTOs, Review state/draft/action coordination and Learning practice/
-proposal/status actions are typed. Review and Learning presentation, Learning list/
-filter/collection state and broader Impact state remain migration boundaries under
-audit F8. Learning list reads now validate workflow identity/fields and have guarded
-loading/error/retry transitions in the legacy adapter.
+Library, Review, Learning workflow/catalog and Impact business state have typed
+owners or typed state factories. `client-learning-catalog.ts` owns catalog requests,
+collection mutations and Run-choice loading; `client-impact-state.ts`,
+`client-impact-data.ts` and `client-impact-requests.ts` own Impact state and read
+contracts. `latest-request.ts` supplies request generations. Destination-specific
+Review/Learning templates, shell wiring and some presentation helpers remain
+JavaScript boundaries under audit F8. The five-stage slice does not claim that
+all legacy templates or cross-feature navigation are strictly typed.
 The root TypeScript checks were not relaxed to conceal those boundaries.
 
 Factories receive actual state, DOM, API and navigation dependencies and expose
@@ -186,10 +188,9 @@ every destination-specific metadata schema rendered by those legacy templates.
 Drafts are raw form strings keyed by `(project root, session ID, candidate ID)`.
 Input events capture them before navigation; newly rendered forms restore only
 that candidate's draft. Locale/view/project/Back changes do not discard another
-candidate's edits. Drafts live in this tab's memory, not persistent autosave; the
-beforeunload guard warns about unsubmitted drafts or pending actions. Browser
-policies may limit that warning, and forcibly closing/reloading still loses the
-in-memory draft. Explicit Save writes through the existing backend operation.
+candidate's edits. Raw edits also receive immutable browser backups. The unload
+guard covers pending actions and failed/missing backups. Explicit Save writes
+through the existing backend operation; backup recovery never submits an action.
 
 Foreground requests use generations and `cache: "no-store"`; late successes and
 failures cannot install another project's or session's candidates. Project reset
@@ -247,8 +248,11 @@ explicit item routes remain missing, and malformed responses have localized retr
 Learning and Review notify each other when their action locks change, so returning
 to another view does not leave its controls disabled after the original operation
 finishes. Failures remain scoped to the original draft and writes are not replayed.
-Legacy collection rename/reorder, Run-choice hydration, filters and presentation are
-separate boundaries; backend cross-process write/version semantics are unchanged.
+The typed catalog adapter owns rename/reorder and Run-choice requests. A read
+validates project and collection membership identities; collection actions capture
+their original project. Run-choice errors expose retry. Filters have a typed state
+shape while their presentation remains in the workspace. Backend cross-process
+write/version semantics are unchanged.
 
 
 ## Learning browser draft recovery
@@ -289,8 +293,53 @@ Recovery is scoped to the browser profile and origin (including port); it is not
 cloud/server persistence or encrypted storage. Browser-data clearing, expiry,
 storage denial or quota can remove/prevent recovery. Deleted/unregistered source
 items never restore into a substitute; supported leftover snapshots expire on
-later access. Review/Evals persistence and a global draft-management page remain
-separate work.
+later access. Review/Evals persistence is described below; a global backup-management
+page is outside the current scope.
+
+## Review and Evals browser recovery
+
+`snapshot-store.ts` is shared by the existing Learning namespace and
+`form-draft-store.ts` (`codetrap-form-draft:`). Each namespace permits 100 valid
+immutable snapshots, 64 KiB per snapshot and 30-day retention. The form decoder
+allowlists editable string fields and identities. It excludes tokens, previews,
+execution parameters beyond user-editable controls, request IDs and authorization.
+`form-drafts.ts` renders inspect/restore/delete and optional discard controls;
+concurrent tabs keep independent copies and storage events never replace an editor.
+
+Review owner is project/session/candidate; context includes candidate content,
+revision, kind and review state. Evals owners are project/finding, project/case,
+and project/run-parameters. Context includes the frozen evaluation-set SHA and
+legacy destination SHA where applicable. Changed/missing/processed sources remain
+inspectable but cannot directly restore. New values return only to the editor;
+acceptance and evaluation execution still require explicit actions.
+
+Draft clearing binds to the acknowledged version. In particular, accepting a case
+in a closed dialog cannot clear a new dialog's later draft, even if backing up that
+new draft failed. Evals DOM forms carry their rendered source context: an external
+server draft must never cause old DOM fields to be saved under its new version.
+
+Impact request channels independently reject stale success/error completions.
+Project/route resets invalidate A/B/A reads; active editing defers source changes.
+Unchanged background payloads do not rerender or display an external-change notice.
+Collection, evaluation and candidate actions stay bound to their original target.
+The types of rendered DTOs are checked by the project TypeScript build; the pure
+snapshot/Review/Learning controllers also remain under the DOM-only typecheck.
+
+Learning-only completion is a complete product path. Practice notes, task links
+and experience proposals are optional; the UI must not make Library entry a
+condition of learning progress.
+
+## Growing observation history
+
+Readonly Ledger projections use a bounded process cache (8 MiB total, 24 entries,
+4 MiB per entry). Main/WAL/journal identity, size, mtime and ctime invalidate cached
+results. Each connection still checks schema and sets `busy_timeout` before any
+SQL; uncertain file state or changes during reads bypass caching. No database
+connection or raw event list is cached, and callers get independent result copies.
+Recent Runs use two bulk queries instead of one event query per Run.
+See [measured cold and repeated reads](tasks/2026-09-05-five-stage-product-polish/performance.md).
+First reads and reads after appends still rebuild projections; this is not a claim
+of constant-time reads under continuous ingestion.
 
 ## Verification
 
@@ -307,4 +356,4 @@ record results for every file. See the [implementation handoff](tasks/2026-09-04
 for the earlier module-delivery evidence; the [Library handoff](tasks/2026-09-04-library-state/handoff.md) records that slice,
 the [Review handoff](tasks/2026-09-04-review-state/handoff.md) records its state, and
 the [Learning workflow handoff](tasks/2026-09-05-learning-workflow/handoff.md) records its state, and
-the [draft recovery handoff](tasks/2026-09-05-learning-draft-recovery/handoff.md) records the latest slice.
+the [draft recovery handoff](tasks/2026-09-05-learning-draft-recovery/handoff.md) records its checkpoint. The [five-stage handoff](tasks/2026-09-05-five-stage-product-polish/handoff.md) records the latest product optimization and actual-task evidence.

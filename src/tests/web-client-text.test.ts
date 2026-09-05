@@ -32,8 +32,8 @@ describe("web client text", () => {
     expect(WEB_TEXT.zh["impact.hookHealthRecovery"]).toContain("--apply");
     expect(WEB_TEXT.en["impact.hookHealthUnavailableCopy"]).toContain("Ledger is still available");
     expect(WEB_TEXT.en["impact.hookHealthUnavailableAction"]).toContain("will not delete or reset");
-    expect(WEB_TEXT.zh["evals.intro"]).toContain("不会被包装成因果证明");
-    expect(WEB_TEXT.zh["evals.groundTruthCopy"]).toContain("只有你明确审核后");
+    expect(WEB_TEXT.zh["evals.intro"]).toContain("评测通过和实际有帮助，需要分别看证据");
+    expect(WEB_TEXT.zh["evals.groundTruthCopy"]).toContain("确认后才会加入评测例子");
     expect(WEB_TEXT.zh["evals.externalChangesDeferredCopy"]).toContain("未保存文字保持不变");
     expect(WEB_TEXT.zh["evals.controlledTitle"]).toContain("基线版本");
     expect(WEB_TEXT.zh["evals.controlledBoundary"]).toContain("分开计算");
@@ -49,7 +49,7 @@ describe("web client text", () => {
     expect(WEB_INDEX_HTML).toContain('data-main-view="learning"');
     expect(WEB_INDEX_HTML).not.toContain('data-main-view="insights"');
     expect(WEB_TEXT.zh["nav.learning"]).toBe("学习");
-    expect(WEB_TEXT.zh["empty.noLearningInsights"]).toContain("陷阱不会自动复制到这里");
+    expect(WEB_TEXT.zh["empty.noLearningInsights"]).toContain("实践和保存经验都由你选择");
     expect(WEB_TEXT.zh["action.markLearned"]).toBe("标记已学习");
     expect(WEB_TEXT.zh["value.allProjects"]).toBe("全部项目");
     expect(WEB_TEXT.zh["action.previousChapter"]).toBe("上一篇");
@@ -61,7 +61,7 @@ describe("web client text", () => {
     expect(WEB_TEXT.zh["error.sessionExpired"]).toContain("重新连接");
     expect(WEB_TEXT.zh["auth.invalidTitle"]).toBe("重新连接工作台");
     expect(WEB_TEXT.zh["impact.viewOfflineEvals"]).toBe("查看离线评测");
-    expect(WEB_TEXT.zh["evals.queueEmptyTitle"]).toBe("没有观测候选");
+    expect(WEB_TEXT.zh["evals.queueEmptyTitle"]).toBe("暂时没有待检查的问题");
     expect(WEB_TEXT.zh["value.proposed"]).toBe("待审核");
     expect(WEB_TEXT.zh["value.pitfall_trap"]).toBe("避坑规则");
     expect(WEB_TEXT.zh["action.accept"]).toBe("接受并写入");

@@ -1,6 +1,8 @@
 import type { ProjectEvalSuite } from "../lib/project-eval-suite";
 import type { EvalSuiteOperations } from "../lib/eval-suite-operations";
+import { createFormDrafts } from "./browser/form-drafts";
 interface SuiteAdapter {
+  currentProject?(): string | null;
   api<T>(path: string, options?: RequestInit): Promise<T>;
   text(key: string): string;
   changed(project: string): void;
@@ -14,7 +16,9 @@ export function createEvalSuiteUI(ui: SuiteAdapter) {
   const e = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
   const get = <T>(project: string, path = "", params: Record<string, string> = {}) => ui.api<T>("/api/eval-suite" + path + "?" + new URLSearchParams({ project, ...params }));
   const post = <T>(project: string, path: string, value: Record<string, unknown>) => ui.api<T>("/api/eval-suite/" + path, { method: "POST", body: JSON.stringify({ projectRoot: project, executor: "user", ...value }) });
-  let dialogOpen = false;
+  const backups = createFormDrafts(ui.text);
+  let dialogOpen = false, pending = 0;
+  window.addEventListener("beforeunload", event => { if (pending || !backups.safeToLeave()) { event.preventDefault(); event.returnValue = ""; } });
   async function mount(panel: HTMLElement, project: string) {
     panel.innerHTML = `<p role="status">${e(t("loading"))}</p>`;
     try {
@@ -53,15 +57,15 @@ export function createEvalSuiteUI(ui: SuiteAdapter) {
     let busy = false;
     const show = (text: string, failed = false) => { message.textContent = text; message.setAttribute("role", failed ? "alert" : "status"); };
     const locked = async (action: () => Promise<void>) => {
-      if (busy) return;
-      busy = true;
+      if (busy || ui.currentProject && ui.currentProject() !== project) return;
+      busy = true; pending++; backups.refresh();
       const fieldset = content.querySelector<HTMLFieldSetElement>("fieldset");
       const buttons = [...content.querySelectorAll<HTMLButtonElement>("button")];
       const states = buttons.map(b => b.disabled);
       if (fieldset) fieldset.disabled = true;
       buttons.forEach(b => b.disabled = true); show(t("loading"));
       try { await action(); } catch (error) { show(error instanceof Error ? error.message : String(error), true); }
-      finally { busy = false; if (fieldset) fieldset.disabled = false; buttons.forEach((b, i) => b.disabled = states[i]!); message.focus({ preventScroll: true }); }
+      finally { busy = false; pending--; backups.refresh(); if (fieldset) fieldset.disabled = false; buttons.forEach((b, i) => b.disabled = states[i]!); message.focus({ preventScroll: true }); }
     };
     dialog.showModal();
     if (mode !== "case") {
@@ -90,11 +94,27 @@ export function createEvalSuiteUI(ui: SuiteAdapter) {
       mode: "fts", corpus_sha256: status.corpus_sha256, goldTrapIds: [...content.querySelectorAll<HTMLInputElement>('[name="gold"]:checked')].map(n => Number(n.value)) });
     const accept = content.querySelector<HTMLButtonElement>("[data-case-accept]")!;
     content.querySelector("form")!.addEventListener("submit", event => event.preventDefault());
-    content.querySelector("fieldset")!.addEventListener("input", () => {
+    const recovery = document.createElement("div"); content.prepend(recovery);
+    const context = JSON.stringify({ corpus: status.corpus_sha256, suite: status.sha256, traps: status.traps });
+    let dirty = false;
+    const remember = () => {
+      const value = read(); dirty = !!value.query || value.judgment !== "useful_hit" || !!value.goldTrapIds.length;
+      backups.remember("eval-case", [project], context, dirty ? { query: value.query, judgment: value.judgment, goldTrapIds: JSON.stringify(value.goldTrapIds) } : null);
+    };
+    backups.mount(recovery, () => ({ form: "eval-case", owner: [project], context, active: dirty, editable: !ui.currentProject || ui.currentProject() === project, busy, discard: () => { content.querySelector<HTMLFormElement>("form")!.reset(); changed(); }, restore: fields => {
+      content.querySelector<HTMLTextAreaElement>('[name="query"]')!.value = fields.query || "";
+      content.querySelector<HTMLSelectElement>('[name="judgment"]')!.value = fields.judgment || "useful_hit";
+      const ids: unknown = JSON.parse(fields.goldTrapIds || "[]");
+      content.querySelectorAll<HTMLInputElement>('[name="gold"]').forEach(box => box.checked = Array.isArray(ids) && ids.includes(Number(box.value)));
+      changed();
+    } }));
+    function changed() {
       preview = null; accept.disabled = true; content.querySelector("[data-case-preview]")!.textContent = "";
       const none = read().judgment === "no_relevant_trap";
       content.querySelectorAll<HTMLInputElement>('[name="gold"]').forEach(box => { if (none) box.checked = false; box.disabled = none; });
-    });
+      remember();
+    }
+    content.querySelector("fieldset")!.addEventListener("input", changed);
     content.querySelector("[data-case-preview-button]")!.addEventListener("click", () => void locked(async () => {
       preview = await post<CasePreview>(project, "case-preview", { input: read() });
       requestId = crypto.randomUUID();
@@ -103,7 +123,9 @@ export function createEvalSuiteUI(ui: SuiteAdapter) {
     }).then(() => { if (preview) accept.disabled = false; }));
     accept.addEventListener("click", () => void locked(async () => {
       if (!preview) return;
+      const submittedVersion = backups.version("eval-case", [project]);
       const result = await post<{ commit_id: string }>(project, "case-accept", { input: read(), digest: preview.digest, requestId });
+      backups.clear("eval-case", [project], submittedVersion);
       content.innerHTML = `<p>${e(t("caseAdded"))}</p><code>${e(result.commit_id)}</code><p class="subtle">${e(t("receiptHelp"))}</p>`;
       show(t("done")); ui.changed(project);
     }));

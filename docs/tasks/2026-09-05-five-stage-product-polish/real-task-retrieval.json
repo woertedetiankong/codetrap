@@ -1,0 +1,39 @@
+{
+  "context": {
+    "run_id": "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e",
+    "device_id": "codex-local",
+    "actor_ref": "codex",
+    "source_ref": "docs/tasks/2026-09-05-five-stage-product-polish/real-task-evidence.md"
+  },
+  "startedAt": "2026-09-05T09:40:05.554Z",
+  "start": {
+    "success": true,
+    "event_ids": [
+      "02b854f4-aa93-4a01-996c-74472ddab140"
+    ],
+    "inserted": 1,
+    "duplicates": 0
+  },
+  "scoped": {
+    "cards": [],
+    "diagnostics": []
+  },
+  "broad": {
+    "cards": [
+      {
+        "trap_id": 5,
+        "scope": "project",
+        "title": "Set SQLite busy_timeout before lock-prone startup pragmas",
+        "why_relevant": "When changing SQLite connection startup, WAL mode, schema initialization, migrations, or concurrent CLI/agent database access in codetrap.",
+        "avoid": "Setting PRAGMA busy_timeout after PRAGMA journal_mode=WAL, initSchema, migrations, or other startup database work means an existing startup lock can fail immediately with database is locked before the timeout is active.",
+        "do_instead": "Set PRAGMA busy_timeout immediately after creating the Database connection, before journal_mode, foreign_keys, initSchema, migrations, or any other lock-prone operation. Keep a regression test where another process ho...",
+        "severity": "error",
+        "score": 0.0000025907625542467447,
+        "sources": [
+          "fts"
+        ]
+      }
+    ],
+    "diagnostics": []
+  }
+}

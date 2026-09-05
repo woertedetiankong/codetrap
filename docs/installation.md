@@ -415,7 +415,7 @@ and open it in your default browser. The launch token is removed from the
 visible URL after it is copied into session storage. Connection failures, missing
 credentials and rejected credentials have distinct recovery messages. Retry a
 temporary connection failure in place, or paste the current service's full launch
-link to reauthorize without reloading. Review/Evals drafts remain in tab memory;
+link to reauthorize without reloading. Review/Evals also have explicit browser-local backup recovery;
 closing or reloading can still lose them. Learning has separate browser backups
 and an explicit recovery flow. The console notices
 session and candidate updates made by agents or other terminals while
@@ -448,7 +448,14 @@ and malformed/unsupported records are skipped with a notice. A storage failure
 keeps editing available with a visible warning and the last successful backup;
 keep the tab open and save explicitly if the latest text could not be backed up.
 Drafts for removed or inaccessible items are not restored into a different item;
-they expire normally. Review/Evals durable recovery remains separate future work.
+they expire normally. Review and Evals have the same bounded browser-local recovery. Review restoration
+checks candidate content/revision/status; evaluation drafts check their source
+and frozen evaluation context. Changed sources remain inspectable, with direct
+restore disabled. Recovery fills editable text only; it never accepts a candidate,
+reuses a preview or starts an evaluation. An earlier dialog's successful request
+cannot remove a newer dialog's draft. Storage failures keep the editor usable.
+Learning-only use is complete: practice and saving Library experience are optional.
+See the [five-stage delivery](tasks/2026-09-05-five-stage-product-polish/handoff.md).
 
 New source-derived collections use a fingerprinted source-unit inventory. Core
 knowledge and examples route to ordered Insights; substantive background and

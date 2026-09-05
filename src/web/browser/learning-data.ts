@@ -6,6 +6,8 @@ export interface LearningInsight {
   summary: string; body: string; tags: string[]; source_refs: string[]; learning_impact: LearningImpactState;
   [key: string]: unknown;
 }
+export interface LearningCollection extends Record<string, unknown> { id: string; library_key: string; origin_project_root: string; title: string; updated_at: string; source_type?: string }
+export interface LearningMembership extends Record<string, unknown> { collection_id: string; insight_id: string; collection_key: string; insight_key: string; origin_project_root: string; position: number }
 export const targetOf = (insight: LearningInsight): LearningTarget => ({ project: insight.origin_project_root, id: insight.id, title: insight.title, libraryKey: insight.library_key });
 export const learningKey = (target: LearningTarget) => JSON.stringify([target.project, target.id]);
 const obj = (v: unknown): Record<string, unknown> => { if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("Invalid Learning response"); return v as Record<string, unknown>; };
@@ -60,7 +62,16 @@ export function parseLearningLibrary(raw: unknown, project: string, scope: strin
     return i as unknown as LearningInsight;
   });
   if (new Set(insights.map(i => i.library_key)).size !== insights.length) throw new Error("Duplicate Learning identity");
-  // Collection presentation remains in the legacy renderer; this boundary owns
-  // source identity and the fields consumed by the Learning workflow.
-  return { insights, collections: v.collections.map(obj), collection_items: v.collection_items.map(obj) };
+  const collections = v.collections.map(raw => {
+    const c = obj(raw); for (const k of ["id", "library_key", "origin_project_root", "title", "updated_at"]) text(c[k]);
+    if (c.library_key !== c.origin_project_root + "::" + c.id || scope === "project" && c.origin_project_root !== project) throw new Error("Learning collection source mismatch");
+    return c as LearningCollection;
+  });
+  const collectionKeys = new Set(collections.map(c => c.library_key)), insightKeys = new Set(insights.map(i => i.library_key));
+  const collection_items = v.collection_items.map(raw => {
+    const m = obj(raw); for (const k of ["collection_id", "insight_id", "collection_key", "insight_key", "origin_project_root"]) text(m[k]);
+    if (m.collection_key !== m.origin_project_root + "::" + m.collection_id || m.insight_key !== m.origin_project_root + "::" + m.insight_id || !collectionKeys.has(String(m.collection_key)) || !insightKeys.has(String(m.insight_key)) || !Number.isSafeInteger(m.position)) throw new Error("Learning membership source mismatch");
+    return m as LearningMembership;
+  });
+  return { insights, collections, collection_items };
 }

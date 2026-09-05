@@ -200,13 +200,13 @@ describe("web browser smoke", () => {
       await page.getByRole("button", { name: "Impact", exact: true }).click();
       await page.getByRole("tab", { name: "Evals" }).click();
       await page.waitForSelector(".evals-hero");
-      await expectText(page.locator(".evals-hero"), "Measure the signal. Inspect the evidence.");
+      await expectText(page.locator(".evals-hero"), "Is your experience helping?");
       await expectText(page.locator(".eval-rate-grid"), "50%");
       expect(new URL(page.url()).hash).toBe("#/impact/evals?project=" + webProjectRouteRef(project));
       expect(await page.title()).toBe("codetrap · Evals");
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.waitForSelector(".evals-hero");
-      await expectText(page.locator(".evals-hero"), "Measure the signal. Inspect the evidence.");
+      await expectText(page.locator(".evals-hero"), "Is your experience helping?");
       await page.getByRole("tab", { name: "Runs" }).click();
       await page.locator("[data-observation-run='run-browser-smoke']").click();
       await page.waitForSelector(".impact-timeline");

@@ -1377,7 +1377,7 @@ service's full launch URL into the recovery form to reconnect in the same tab;
 the address and port must match. Your current route and local edits remain, and
 failed writes are never automatically replayed. If the service stopped, recovery
 shows a restart command using the current port. Avoid closing or reloading a tab
-with unsaved Review/Evals drafts or a Learning storage warning. Learning browser
+with a pending action or any browser-backup storage warning. Browser
 backups have a separate explicit recovery flow. The console polls for
 candidate/session changes made by agents or other terminals, but pauses
 application of external updates while a candidate form has unsaved edits. Open
@@ -1468,9 +1468,19 @@ background updates defer while editing, and action completion stays bound to its
 original candidate. Learning practice/proposal drafts and action state now use
 strict modules too, with source-identity validation, captured payloads and guarded
 list retries. Learning browser backups add explicit recovery after reload/reopen;
-Review/Evals drafts remain in-tab only. Save still writes the actual project data.
-Review presentation, Learning collection/filter presentation and
-Run-choice loading, and broader Impact state retain explicit migration boundaries.
+Review and Evals now also back up raw editable fields in the current browser.
+Restore is explicit and checks the candidate revision or evaluation-set context;
+changed/processed sources permit inspection, with direct restore disabled. Save
+still writes actual project data. Learning catalog/collection/Run requests and
+Impact state/read channels now have typed owners and stale-response guards.
+Review/Learning presentation and shell wiring retain explicit migration boundaries.
+
+Learning alone is a complete path. Practice notes, task links and saving reusable
+experience to the Library are optional. Observation repeat reads use a bounded,
+change-aware projection cache; [performance evidence](docs/tasks/2026-09-05-five-stage-product-polish/performance.md)
+separates first reads from cached repeats. [Actual-task evidence](docs/tasks/2026-09-05-five-stage-product-polish/real-task-evidence.md)
+records retrieval, explicit adoption and validation separately; one task does not
+establish a causal improvement or a long-term growth rate.
 
 ## Test
 

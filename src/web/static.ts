@@ -1249,6 +1249,10 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .learning-agent-form textarea.tall { min-height: 150px; }
     #learning-draft-recovery[hidden] { display: none; }
     #learning-draft-recovery select { width: 100%; min-width: 0; }
+    .form-draft-recovery { min-width: 0; margin-block: 12px; }
+    .form-draft-recovery select { max-width: 100%; width: 100%; }
+    .form-draft-recovery p { overflow-wrap: anywhere; }
+    .learning-complete { padding: 12px 16px; border-left: 3px solid var(--accent); background: var(--bg); }
     .learning-recovery-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 13px; }
     #learning-draft-storage { margin: 10px 14px; font-size: 13px; }
     .learning-agent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
@@ -2925,6 +2929,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
       .experience-heading h3, .learning-practice h3 { font-size: 18px; }
     }
     .reader-back { display: none; }
+    .learning-catalog .learning-prompt-card { display: none; }
     .library-filters { min-width: 0; }
     .learning-filters { grid-column: 1 / -1; }
     .learning-filter-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(132px, 0.62fr); gap: 7px; }
@@ -2932,6 +2937,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .route-unavailable { line-height: 1.8; }
     @media (min-width: 1061px) { .library-filters > summary { display: none; } }
     @media (max-width: 1060px) {
+      .learning-catalog .learning-prompt-card { display: grid; }
       .shell.reader-mode { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
       .reader-mode .app-topbar { width: 100%; flex-shrink: 0; }
       .reader-mode .rail, .reader-mode .detail { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }

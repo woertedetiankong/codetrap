@@ -1,3 +1,4 @@
+import { cachedObservationRead, observationFileStamp } from "./observation-read-cache";
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -106,14 +107,18 @@ export function openObservationLedgerReadOnly(projectRoot: string): ObservationL
   if (!identity) {
     throw new Error(`Observation Ledger ${path} exists without a project identity.`);
   }
-  return new ObservationLedger(openReadOnlyLedgerDatabase(path), identity.id, path);
+  const before = observationFileStamp(path);
+  const db = openReadOnlyLedgerDatabase(path);
+  const stable = before === observationFileStamp(path) ? before : null;
+  return new ObservationLedger(db, identity.id, path, stable);
 }
 
 export class ObservationLedger {
   constructor(
     private readonly db: Database,
     readonly projectId: string,
-    readonly path: string
+    readonly path: string,
+    private readonly openedStamp: string | null = null
   ) {}
 
   close(): void {
@@ -220,16 +225,24 @@ export class ObservationLedger {
   }
 
   listRuns(limit = 50): RunObservationProjection[] {
-    const runRows = queryAll<{ run_id: string; last_recorded_at: string }>(this.db, `
-      SELECT run_id, MAX(recorded_at) AS last_recorded_at
-      FROM observation_events
-      WHERE project_id = ? AND run_id IS NOT NULL
-      GROUP BY run_id
-      ORDER BY last_recorded_at DESC, run_id
-      LIMIT ?
+    return this.cached("runs:" + normalizeLimit(limit), () => this.readRuns(limit));
+  }
+  private readRuns(limit: number): RunObservationProjection[] {
+    const recent = queryAll<{ run_id: string }>(this.db, `
+      SELECT run_id, MAX(recorded_at) AS last_recorded_at FROM observation_events
+      WHERE project_id = ? AND run_id IS NOT NULL GROUP BY run_id
+      ORDER BY last_recorded_at DESC, run_id LIMIT ?
     `, this.projectId, normalizeLimit(limit));
-
-    return runRows.map((row) => projectRun(this.eventsForRun(row.run_id)));
+    if (!recent.length) return [];
+    // One JSON parameter avoids SQLite's bind-variable limit for large lists.
+    const rows = queryAll<ObservationRow>(this.db, `
+      SELECT ${EVENT_COLUMNS} FROM observation_events
+      WHERE project_id = ? AND run_id IN (SELECT value FROM json_each(?))
+      ORDER BY run_id, seq, occurred_at, id
+    `, this.projectId, JSON.stringify(recent.map(row => row.run_id)));
+    const grouped = new Map<string, ObservationEvent[]>();
+    for (const row of rows) { const events = grouped.get(row.run_id!) || []; events.push(eventFromRow(row)); grouped.set(row.run_id!, events); }
+    return recent.map(row => projectRun(grouped.get(row.run_id)!));
   }
 
   getRun(runId: string): RunObservationProjection | null {
@@ -262,7 +275,8 @@ export class ObservationLedger {
     return projectTrapExperience(events, revision, (runId) => this.getRun(runId), offset, limit);
   }
 
-  overview(): ObservationOverviewProjection {
+  overview(): ObservationOverviewProjection { return this.cached("overview", () => this.readOverview()); }
+  private readOverview(): ObservationOverviewProjection {
     const events = this.allEvents();
     const eventsByRun = new Map<string, ObservationEvent[]>();
     for (const event of events) {
@@ -314,7 +328,8 @@ export class ObservationLedger {
     };
   }
 
-  evals(): ObservationEvalsProjection {
+  evals(): ObservationEvalsProjection { return this.cached("evals", () => this.readEvals()); }
+  private readEvals(): ObservationEvalsProjection {
     const eventsByRun = new Map<string, ObservationEvent[]>();
     const runEvents = this.allEvents().filter((event) => event.run_id !== null);
     const feedback = foldObservationFeedback(runEvents);
@@ -437,6 +452,10 @@ export class ObservationLedger {
       candidates,
       candidate_groups: candidateGroups,
     };
+  }
+
+  private cached<T>(part: string, compute: () => T): T {
+    return this.openedStamp ? cachedObservationRead(this.path, this.projectId, part, compute, this.openedStamp) : compute();
   }
 
   private allEvents(): ObservationEvent[] {

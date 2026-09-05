@@ -1,0 +1,325 @@
+{
+  "date": "2026-09-05",
+  "timezone": "America/Los_Angeles",
+  "baseline": "f763195",
+  "passed": 662,
+  "failed": 0,
+  "test_files": 95,
+  "processes": 20,
+  "reported_process_duration_ms": 133817,
+  "batches": [
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/agent-observation.test.ts",
+        "src/tests/agent-onboarding.test.ts",
+        "src/tests/candidate-dedup.test.ts",
+        "src/tests/candidate-envelope.test.ts",
+        "src/tests/ci-workflow.test.ts",
+        "src/tests/cli-json.test.ts",
+        "src/tests/client-health.test.ts",
+        "src/tests/config.test.ts",
+        "src/tests/controlled-eval.test.ts",
+        "src/tests/db-locking.test.ts"
+      ],
+      "passed": 96,
+      "failed": 0,
+      "duration_ms": 14450,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-1.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/dogfood-eval.test.ts",
+        "src/tests/embed-output.test.ts",
+        "src/tests/embedder.test.ts",
+        "src/tests/embedding-profile-storage.test.ts",
+        "src/tests/embedding-runtime.test.ts",
+        "src/tests/experience-hardening.test.ts",
+        "src/tests/experience-revisions-web.test.ts",
+        "src/tests/experience-revisions.test.ts",
+        "src/tests/fs-json.test.ts",
+        "src/tests/governed-eval-candidates.test.ts"
+      ],
+      "passed": 56,
+      "failed": 0,
+      "duration_ms": 1255,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-2.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/helpers.test.ts",
+        "src/tests/huggingface-embedder.test.ts",
+        "src/tests/huggingface-file-cache.test.ts",
+        "src/tests/huggingface-model-download.test.ts",
+        "src/tests/import-export-cli.test.ts",
+        "src/tests/improver.test.ts",
+        "src/tests/learning-authorization.test.ts",
+        "src/tests/learning-concurrency.test.ts",
+        "src/tests/learning-impact.test.ts",
+        "src/tests/learning-review-cli.test.ts"
+      ],
+      "passed": 82,
+      "failed": 0,
+      "duration_ms": 14600,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-3.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/learning-sources.test.ts",
+        "src/tests/loopback-proxy.test.ts",
+        "src/tests/low-findings.test.ts",
+        "src/tests/mcp-tools.test.ts",
+        "src/tests/observation-cli.test.ts",
+        "src/tests/observation-ledger.test.ts",
+        "src/tests/observation-read-cache.test.ts",
+        "src/tests/observation-recorder.test.ts",
+        "src/tests/observation-web.test.ts",
+        "src/tests/ollama-embedder.test.ts"
+      ],
+      "passed": 106,
+      "failed": 0,
+      "duration_ms": 1493,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-4.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/phase2.test.ts",
+        "src/tests/phase3-hardening.test.ts",
+        "src/tests/phase3-improve.test.ts",
+        "src/tests/phase3.test.ts",
+        "src/tests/postinstall.test.ts",
+        "src/tests/project-eval-suite-web.test.ts",
+        "src/tests/project-eval-suite.test.ts",
+        "src/tests/project-identity.test.ts",
+        "src/tests/public-retrieval-benchmark.test.ts",
+        "src/tests/runtime-proof.test.ts"
+      ],
+      "passed": 77,
+      "failed": 0,
+      "duration_ms": 11250,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-5.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/scope-maintenance.test.ts",
+        "src/tests/scope-migration-cli.test.ts",
+        "src/tests/scope.test.ts",
+        "src/tests/search-chinese.test.ts",
+        "src/tests/search-eval.test.ts",
+        "src/tests/search-normalizer.test.ts",
+        "src/tests/search-path-paging.test.ts",
+        "src/tests/search-policy-sweep.test.ts",
+        "src/tests/search-policy.test.ts",
+        "src/tests/search-result-card.test.ts"
+      ],
+      "passed": 36,
+      "failed": 0,
+      "duration_ms": 875,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-6.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/search-safety.test.ts",
+        "src/tests/search-semantic.test.ts",
+        "src/tests/session-candidate-document.test.ts",
+        "src/tests/session-capture.test.ts",
+        "src/tests/session-cli.test.ts",
+        "src/tests/session-codec.test.ts",
+        "src/tests/session-maintenance.test.ts",
+        "src/tests/session-review.test.ts",
+        "src/tests/source-coverage.test.ts",
+        "src/tests/trap-applicability.test.ts"
+      ],
+      "passed": 62,
+      "failed": 0,
+      "duration_ms": 6390,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-7.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/trap-experience.test.ts",
+        "src/tests/trap-json-fields.test.ts",
+        "src/tests/trap-lifecycle-evidence.test.ts",
+        "src/tests/web-client-review.test.ts",
+        "src/tests/web-client-route.test.ts",
+        "src/tests/web-client-script.test.ts",
+        "src/tests/web-client-text.test.ts",
+        "src/tests/web-console.test.ts",
+        "src/tests/web-learning-draft-store.test.ts",
+        "src/tests/web-learning-model.test.ts"
+      ],
+      "passed": 67,
+      "failed": 0,
+      "duration_ms": 2850,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-8.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/web-library-model.test.ts",
+        "src/tests/web-review-model.test.ts",
+        "src/tests/web-server-port.test.ts",
+        "src/tests/web-workspace-requests.test.ts"
+      ],
+      "passed": 28,
+      "failed": 0,
+      "duration_ms": 76,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-9.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/experience-revisions-browser.test.ts"
+      ],
+      "passed": 1,
+      "failed": 0,
+      "duration_ms": 2800,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-10.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/project-eval-suite-browser.test.ts"
+      ],
+      "passed": 1,
+      "failed": 0,
+      "duration_ms": 3110,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-11.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/web-access-browser.test.ts"
+      ],
+      "passed": 5,
+      "failed": 0,
+      "duration_ms": 6000,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-12.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/web-browser-entry.test.ts"
+      ],
+      "passed": 4,
+      "failed": 0,
+      "duration_ms": 4050,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-13.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/web-browser-platform.test.ts"
+      ],
+      "passed": 8,
+      "failed": 0,
+      "duration_ms": 18,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-14.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/web-browser-smoke.test.ts"
+      ],
+      "passed": 5,
+      "failed": 0,
+      "duration_ms": 15550,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-15.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/web-form-recovery-browser.test.ts"
+      ],
+      "passed": 5,
+      "failed": 0,
+      "duration_ms": 13790,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-16.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/web-learning-browser.test.ts"
+      ],
+      "passed": 6,
+      "failed": 0,
+      "duration_ms": 10100,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-17.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/web-learning-recovery-browser.test.ts"
+      ],
+      "passed": 10,
+      "failed": 0,
+      "duration_ms": 13740,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-18.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/web-library-browser.test.ts"
+      ],
+      "passed": 3,
+      "failed": 0,
+      "duration_ms": 3950,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-19.log"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/tests/web-review-browser.test.ts"
+      ],
+      "passed": 4,
+      "failed": 0,
+      "duration_ms": 7470,
+      "log": "/Users/superstorm/.codex/visualizations/2026/09/05/01a06f12-717a-7352-9e52-ea6e306e4141/verification/five-stage-final-20.log"
+    }
+  ],
+  "checks": [
+    "bun run check:web",
+    "bun run typecheck",
+    "standalone compiled browser verification with isolated project/home",
+    "npm pack --dry-run --json",
+    "git diff --check"
+  ],
+  "final_guidance_followup": {
+    "reason": "Final visual QA found the learning-empty copy button inaccessible in the mobile list-only layout; placed the same prompt in the compact catalog and verified clipboard failure selects the text.",
+    "checks": [
+      "bun run check:web",
+      "bun run typecheck",
+      "bun test src/tests/web-browser-smoke.test.ts (5 passed, 115 assertions)",
+      "rebuilt standalone and repeated all isolated browser delivery scenarios",
+      "source browser: mobile copy fallback, visible 662-test Run event, zero POST requests/page errors, no horizontal overflow"
+    ],
+    "full_regression_note": "The full 662-test pass preceded this final guidance-only adjustment; focused browser smoke and compiled/source delivery were repeated after it."
+  }
+}

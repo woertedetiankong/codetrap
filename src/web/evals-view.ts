@@ -29,6 +29,7 @@ export interface RetrievalEvalWebSummary {
   availability: RetrievalEvalAvailability;
   source: EvalSuitePath;
   mode: "deterministic";
+  sha256?: string | null;
   total_cases: number;
   recall_at_3: number | null;
   recall_at_5: number | null;
@@ -79,6 +80,7 @@ export interface ObservationEvalsWebPayload {
   candidate_groups: ObservationEvalWebCandidateGroup[];
   fixture_traps: GovernedEvalFixtureTrap[];
   legacy_fixture_traps: GovernedEvalFixtureTrap[];
+  legacy_fixture_sha256?: string | null;
   controlled: {
     can_run: boolean;
     availability: ControlledEvalAvailability;
@@ -96,6 +98,8 @@ export async function observationEvalsWebPayload(
   const retrieval = await retrievalEvalWebSummary(projectRoot);
   const fixtureTraps = governed?.fixtureTraps() ?? [];
   const legacyTraps = governed?.fixtureTraps(LEGACY_EVAL_SUITE) ?? [];
+  let legacyDigest: string | null = null;
+  try { if (legacyTraps.length) legacyDigest = readProjectSuite(projectRoot, LEGACY_EVAL_SUITE).sha256; } catch { /* Invalid legacy context cannot authorize draft restoration. */ }
   const controlled = controlledEvalWebPayload(projectRoot, retrieval.availability, retrieval.total_cases > 0);
   const ledger = openObservationLedgerReadOnly(projectRoot);
   if (!ledger) {
@@ -107,7 +111,7 @@ export async function observationEvalsWebPayload(
       candidates: [],
       candidate_groups: [],
       fixture_traps: fixtureTraps,
-      legacy_fixture_traps: legacyTraps,
+      legacy_fixture_traps: legacyTraps, legacy_fixture_sha256: legacyDigest,
       controlled,
     };
   }
@@ -122,7 +126,7 @@ export async function observationEvalsWebPayload(
       candidates: webCandidates,
       candidate_groups: groups.map((group) => observationEvalWebCandidateGroup(group, webCandidates)),
       fixture_traps: fixtureTraps,
-      legacy_fixture_traps: legacyTraps,
+      legacy_fixture_traps: legacyTraps, legacy_fixture_sha256: legacyDigest,
       controlled,
     };
   } finally {
@@ -163,10 +167,11 @@ async function retrievalEvalWebSummary(projectRoot: string): Promise<RetrievalEv
   const fixture = join(projectRoot, source);
   if (!existsSync(fixture)) return emptyRetrievalSummary("not_configured", null, source);
   try {
-    readProjectSuite(projectRoot, source);
+    const suite = readProjectSuite(projectRoot, source);
     const report = await reportDogfood(fixture, false);
     return {
       availability: "ready",
+      sha256: suite.sha256,
       source,
       mode: "deterministic",
       total_cases: report.total_cases,

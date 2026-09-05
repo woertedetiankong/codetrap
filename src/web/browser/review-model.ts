@@ -5,7 +5,7 @@ import { parseCandidates, parseConflicts, parseMutation, parseSessions, record, 
 export type ReviewFields = Record<string, string>;
 export type ReviewLoad = "idle" | "loading" | "ready" | "error";
 export type ReviewAction = "save" | "approve" | "accept" | "apply-insight" | "reject" | "rollback";
-interface Draft { fields: ReviewFields; baseline: ReviewFields; version: number }
+interface Draft { fields: ReviewFields; baseline: ReviewFields; context: string; version: number }
 interface ReviewState {
   project: string | null; sessions: ReviewSession[]; summary: ReviewSummaryLike | null;
   sessionId: string | null; candidateId: string | null; view: ReviewCandidateView;
@@ -21,11 +21,13 @@ export function candidateFields(candidate: ReviewedSessionCandidate): ReviewFiel
   } : { title: t.title, category: t.category, scope: t.scope, severity: t.severity || "warning", tags: list(t.tags), path_globs: list(t.path_globs), module: t.module || "", owner: t.owner || "", context: t.context, mistake: t.mistake, fix: t.fix };
 }
 const equalFields = (a: ReviewFields, b: ReviewFields) => JSON.stringify(a) === JSON.stringify(b);
+export const candidateContext = (candidate: ReviewedSessionCandidate) => JSON.stringify({ status: candidate.status, revision: candidate.revision, kind: candidate.candidate_kind, review: candidate.review, fields: candidateFields(candidate) });
 export function createReviewModel(deps: {
   api(path: string, options?: RequestInit): Promise<unknown>;
   changed(part: "sessions" | "candidates" | "draft" | "busy"): void;
   notify(key: string, error?: boolean, params?: Record<string, unknown>): void;
   receipt(receipt: ReviewReceipt, target: ReviewTarget, suppression?: string): void;
+  draftChanged?(target: ReviewTarget, fields: ReviewFields | null, context: string): void;
 }) {
   const state: ReviewState = { project: null, sessions: [], summary: null, sessionId: null, candidateId: null, view: "inbox", candidates: [], sessionsLoad: "idle", candidatesLoad: "idle", busy: false, deferred: false };
   const drafts = new Map<string, Draft>(), conflicts = new Map<string, ReviewConflict[]>();
@@ -52,12 +54,13 @@ export function createReviewModel(deps: {
   function edit(t: ReviewTarget, fields: ReviewFields, baseline: ReviewFields) {
     const key = reviewKey(t), previous = drafts.get(key);
     if (equalFields(fields, baseline)) drafts.delete(key);
-    else drafts.set(key, { fields: { ...fields }, baseline: previous?.baseline || baseline, version: (previous?.version || 0) + 1 });
+    else drafts.set(key, { fields: { ...fields }, baseline: previous?.baseline || baseline, context: previous?.context || (current() ? candidateContext(current()!) : JSON.stringify(baseline)), version: (previous?.version || 0) + 1 });
+    deps.draftChanged?.(t, drafts.get(key)?.fields || null, drafts.get(key)?.context || "cleared");
     conflicts.delete(key); deps.changed("draft");
   }
   function discard() {
     const t = target(), needsRefresh = state.deferred;
-    if (t) { drafts.delete(reviewKey(t)); conflicts.delete(reviewKey(t)); }
+    if (t) { drafts.delete(reviewKey(t)); conflicts.delete(reviewKey(t)); deps.draftChanged?.(t, null, "cleared"); }
     state.deferred = false;
     // Discarding after an external-change notice must reveal the server version.
     if (needsRefresh) void loadCandidates();
@@ -130,7 +133,7 @@ export function createReviewModel(deps: {
     state.busy = true; generation++; sessionRequest++; candidateRequest++; deps.changed("busy");
     try {
       const result = parseMutation(await deps.api("/api/candidate/" + action, { method: "POST", body: JSON.stringify(body) }), t);
-      if (drafts.get(key) === submitted) drafts.delete(key);
+      if (drafts.get(key) === submitted) { drafts.delete(key); deps.draftChanged?.(t, null, "cleared"); }
       conflicts.delete(key);
       const stillSelected = () => target() && reviewKey(target()!) === key;
       const sameContext = () => state.project === t.projectRoot && state.sessionId === t.sessionId;
@@ -161,6 +164,7 @@ export function createReviewModel(deps: {
         const [project, session, candidate] = JSON.parse(key) as string[];
         if (project === projectRoot && session === sessionId && (action === "delete" || action === "cleanup" && Array.isArray(result.removed_candidate_ids) && result.removed_candidate_ids.includes(candidate))) {
           drafts.delete(key); conflicts.delete(key);
+          deps.draftChanged?.({ projectRoot: project!, sessionId: session!, candidateId: candidate! }, null, "cleared");
         }
       }
       if (state.project !== projectRoot) return;

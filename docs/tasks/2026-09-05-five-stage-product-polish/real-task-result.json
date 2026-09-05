@@ -1,0 +1,206 @@
+{
+  "validation": {
+    "success": true,
+    "event_ids": [
+      "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e-full-regression"
+    ],
+    "inserted": 1,
+    "duplicates": 0
+  },
+  "complete": {
+    "success": true,
+    "event_ids": [
+      "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e-completed"
+    ],
+    "inserted": 1,
+    "duplicates": 0
+  },
+  "run": {
+    "id": "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e",
+    "project_id": "b429e86e-6950-4116-88bc-bc7b740da943",
+    "source_client": "codex",
+    "source_session_ref": "five-stage-product-polish",
+    "repository_revision": "f763195",
+    "branch": "main",
+    "model_provider": null,
+    "model_name": null,
+    "started_at": "2026-09-05T09:40:05.554Z",
+    "completed_at": "2026-09-05T10:11:44.566Z",
+    "status": "completed",
+    "completeness": "partial",
+    "duration_ms": 1899012,
+    "input_tokens": null,
+    "output_tokens": null,
+    "event_count": 6,
+    "search_count": 2,
+    "exposure_count": 1,
+    "validation_count": 1,
+    "feedback_count": 0,
+    "latest_validation_status": "passed",
+    "contains_sensitive_body": false,
+    "evidence": {
+      "observed_fact": 6,
+      "human_label": 0,
+      "derived_inference": 0,
+      "controlled_eval": 0
+    }
+  },
+  "events": [
+    {
+      "version": 1,
+      "id": "02b854f4-aa93-4a01-996c-74472ddab140",
+      "project_id": "b429e86e-6950-4116-88bc-bc7b740da943",
+      "run_id": "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e",
+      "actor_ref": "codex",
+      "device_id": "codex-local",
+      "seq": 0,
+      "occurred_at": "2026-09-05T09:40:05.554Z",
+      "recorded_at": "2026-09-05T09:40:05.554Z",
+      "type": "run/started",
+      "evidence_class": "observed_fact",
+      "sensitivity": "metadata",
+      "attributes": {
+        "branch": "main",
+        "completeness": "partial",
+        "model_name": null,
+        "model_provider": null,
+        "repository_revision": "f763195",
+        "source_client": "codex",
+        "source_session_ref": "five-stage-product-polish"
+      },
+      "body_ref": null,
+      "source_ref": "docs/tasks/2026-09-05-five-stage-product-polish/real-task-evidence.md"
+    },
+    {
+      "version": 1,
+      "id": "d54a1350-54a5-474c-bb2b-30d13f1f07d5",
+      "project_id": "b429e86e-6950-4116-88bc-bc7b740da943",
+      "run_id": "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e",
+      "actor_ref": "codex",
+      "device_id": "codex-local",
+      "seq": 1,
+      "occurred_at": "2026-09-05T09:40:05.571Z",
+      "recorded_at": "2026-09-05T09:40:05.571Z",
+      "type": "trap/search-completed",
+      "evidence_class": "observed_fact",
+      "sensitivity": "metadata",
+      "attributes": {
+        "diagnostics": [],
+        "duration_ms": 3.326625,
+        "mode": "fts",
+        "module_hint": null,
+        "path_hint": "sha256:7cd31007e72a9465647c1fbf920b581d9b8ece2ba8131893429e62ce2422ec29",
+        "query_fingerprint": "sha256:a9bf03a9b83dbbe3627b8b0e64d5ab04e0c7389f5252bf16f58e12b7d2ff63e2",
+        "results": []
+      },
+      "body_ref": null,
+      "source_ref": "docs/tasks/2026-09-05-five-stage-product-polish/real-task-evidence.md"
+    },
+    {
+      "version": 1,
+      "id": "5a3c5452-87da-4b50-9620-efc95eea7611",
+      "project_id": "b429e86e-6950-4116-88bc-bc7b740da943",
+      "run_id": "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e",
+      "actor_ref": "codex",
+      "device_id": "codex-local",
+      "seq": 2,
+      "occurred_at": "2026-09-05T09:40:05.577Z",
+      "recorded_at": "2026-09-05T09:40:05.577Z",
+      "type": "trap/search-completed",
+      "evidence_class": "observed_fact",
+      "sensitivity": "metadata",
+      "attributes": {
+        "diagnostics": [],
+        "duration_ms": 1.3150419999999983,
+        "mode": "fts",
+        "module_hint": null,
+        "path_hint": null,
+        "query_fingerprint": "sha256:c6cb1b45f0d6af9a55258733e4d122296e648fdfcef67a66ce9dc5f4154b9bbd",
+        "results": [
+          {
+            "rank": 1,
+            "revision": "project:2026-06-06 14:06:09",
+            "trap_id": 5
+          }
+        ]
+      },
+      "body_ref": null,
+      "source_ref": "docs/tasks/2026-09-05-five-stage-product-polish/real-task-evidence.md"
+    },
+    {
+      "version": 1,
+      "id": "event-a50f48a5b6bf44bda77e016b7c1413d8",
+      "project_id": "b429e86e-6950-4116-88bc-bc7b740da943",
+      "run_id": "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e",
+      "actor_ref": "codex",
+      "device_id": "codex-local",
+      "seq": 3,
+      "occurred_at": "2026-09-05T09:40:05.577Z",
+      "recorded_at": "2026-09-05T09:40:05.577Z",
+      "type": "trap/exposed",
+      "evidence_class": "observed_fact",
+      "sensitivity": "metadata",
+      "attributes": {
+        "query_fingerprint": "sha256:c6cb1b45f0d6af9a55258733e4d122296e648fdfcef67a66ce9dc5f4154b9bbd",
+        "rank": 1,
+        "revision": "project:2026-06-06 14:06:09",
+        "trap_id": 5
+      },
+      "body_ref": null,
+      "source_ref": "docs/tasks/2026-09-05-five-stage-product-polish/real-task-evidence.md"
+    },
+    {
+      "version": 1,
+      "id": "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e-full-regression",
+      "project_id": "b429e86e-6950-4116-88bc-bc7b740da943",
+      "run_id": "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e",
+      "actor_ref": "codex",
+      "device_id": "codex-local",
+      "seq": 4,
+      "occurred_at": "2026-09-05T10:11:44.555Z",
+      "recorded_at": "2026-09-05T10:11:44.555Z",
+      "type": "validation/completed",
+      "evidence_class": "observed_fact",
+      "sensitivity": "metadata",
+      "attributes": {
+        "command_fingerprint": "sha256:2b715977e56bb11a608eba2bae442d8422dceb4c4c863a9c5010a6749b8bbcb3",
+        "duration_ms": 133817,
+        "failed": 0,
+        "kind": "test",
+        "passed": 662,
+        "status": "passed"
+      },
+      "body_ref": null,
+      "source_ref": "docs/tasks/2026-09-05-five-stage-product-polish/real-task-evidence.md"
+    },
+    {
+      "version": 1,
+      "id": "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e-completed",
+      "project_id": "b429e86e-6950-4116-88bc-bc7b740da943",
+      "run_id": "run-five-stage-75b8680d-efb0-4054-9541-47660e66991e",
+      "actor_ref": "codex",
+      "device_id": "codex-local",
+      "seq": 5,
+      "occurred_at": "2026-09-05T10:11:44.566Z",
+      "recorded_at": "2026-09-05T10:11:44.566Z",
+      "type": "run/completed",
+      "evidence_class": "observed_fact",
+      "sensitivity": "metadata",
+      "attributes": {
+        "completeness": "partial",
+        "duration_ms": 1899012,
+        "input_tokens": null,
+        "output_tokens": null,
+        "status": "completed"
+      },
+      "body_ref": null,
+      "source_ref": "docs/tasks/2026-09-05-five-stage-product-polish/real-task-evidence.md"
+    }
+  ],
+  "interpretation": {
+    "adoption": "Developer reviewed project lesson #5 and preserved busy_timeout before lock-prone SQL during observation-ledger changes; the baseline already had the correct order.",
+    "coverage": "One manually instrumented partial task; elapsed Run time covers the recorded sample, not total implementation time.",
+    "human_feedback": "Not provided",
+    "causal_benefit": "Not established"
+  }
+}

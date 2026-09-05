@@ -1,5 +1,6 @@
 import type { ReviewedSessionCandidate } from "../../domain/session-review";
-import { candidateFields, createReviewModel, type ReviewFields } from "./review-model";
+import { candidateContext, candidateFields, createReviewModel, type ReviewFields } from "./review-model";
+import { createFormDrafts } from "./form-drafts";
 import { reviewKey, type ReviewTarget, type ReviewReceipt } from "./review-data";
 import type { Translate } from "./platform";
 
@@ -16,7 +17,9 @@ interface Dependencies {
   busyChanged?(): void;
 }
 export function createReviewUI(deps: Dependencies) {
+  const backups = createFormDrafts(deps.t);
   const model = createReviewModel({ api: deps.api,
+    draftChanged: (target, fields, context) => backups.remember("review", [target.projectRoot, target.sessionId, target.candidateId], context, fields),
     changed(part) {
       if (part === "sessions") { deps.renderSessions(); if (deps.context().active) deps.renderReview(); }
       else if (part === "candidates" && deps.context().active) deps.renderReview();
@@ -50,6 +53,17 @@ export function createReviewUI(deps: Dependencies) {
   }
   function attachForm(candidate: ReviewedSessionCandidate) {
     const form = el<HTMLFormElement>("candidate-form"), target = model.target();
+    if (target) {
+      const host = document.createElement("div");
+      (form || el("detail"))?.prepend(host);
+      backups.mount(host, () => {
+        const current = model.current(), selected = model.target();
+        if (!current || !selected || reviewKey(target) !== reviewKey(selected)) return null;
+        return { form: "review", owner: [selected.projectRoot, selected.sessionId, selected.candidateId], context: candidateContext(current),
+          active: model.dirty(), editable: current.status === "proposed", busy: model.state.busy || deps.externalBusy(),
+          restore: fields => { model.edit(selected, fields, candidateFields(current)); deps.renderReview(); } };
+      });
+    }
     if (form && target && candidate.status === "proposed") {
       const baseline = candidateFields(candidate), fields = model.fields() || baseline;
       for (const [name, value] of Object.entries(fields)) {
@@ -100,7 +114,7 @@ export function createReviewUI(deps: Dependencies) {
     if (!model.target() || reviewKey(model.target()!) !== reviewKey(target)) { deps.showStatus(deps.t("review.targetChanged"), true); return; }
     void model.mutate("reject", { reason }, target);
   });
-  window.addEventListener("beforeunload", event => { if (model.hasDrafts() || model.state.busy) { event.preventDefault(); event.returnValue = ""; } });
+  window.addEventListener("beforeunload", event => { if (!backups.safeToLeave() || model.state.busy) { event.preventDefault(); event.returnValue = ""; } });
   function loadView(part: "sessions" | "candidates", container: HTMLElement): boolean {
     const status = part === "sessions" ? model.state.sessionsLoad : model.state.candidatesLoad;
     if (status === "ready" || status === "idle") return false;
@@ -119,6 +133,11 @@ export function createReviewUI(deps: Dependencies) {
     selectCandidate(id: string | null) { model.selectCandidate(id); deps.navigate(); deps.renderReview(); },
     selectView(view: "inbox" | "reviewed") { model.selectView(view); deps.navigate(); deps.renderReview(); },
     attachForm, bindActions, loadView, syncBusy: setBusy,
+    attachMissingRecovery() {
+      const target = model.target(), detail = el("detail"); if (!target || !detail) return;
+      const host = document.createElement("div"); detail.append(host);
+      backups.mount(host, () => model.target() && reviewKey(model.target()!) === reviewKey(target) ? { form: "review", owner: [target.projectRoot, target.sessionId, target.candidateId], context: "missing", active: false, editable: false, busy: model.state.busy, restore() {} } : null);
+    },
     sessionAction: model.manageSession,
   };
 }

@@ -1,3 +1,5 @@
+import { createImpactRequests } from "../client-impact-requests";
+import { createImpactState } from "../client-impact-state";
 import { WEB_TEXT } from '../client-text';
 import { parseWorkspaceRoute, workspaceRouteHash } from '../client-route';
 import { reviewQueueModel, visibleReviewSummary } from '../client-review';
@@ -8,7 +10,7 @@ import { impactOverviewContent } from '../client-impact-overview';
 import { createLibraryUI } from './library';
 import { createReviewUI } from './review';
 import { createLearningWorkflow } from './learning';
-import { parseLearningLibrary } from './learning-data';
+import { createLearningCatalog, createLearningCatalogState } from '../client-learning-catalog';
 import { createRevisionUI } from '../client-revisions';
 import { createEvalSuiteUI } from '../client-eval-suite';
 import { parseBootstrapPayload } from './platform';
@@ -34,55 +36,19 @@ export function mountWorkspace(boot) {
       routeInsightTarget: null,
       routeError: "",
       compactDetail: initialRoute.pane === "detail",
-      learningFiltersOpen: false,
+
       routeScroll: new Map(),
       restoreRouteScroll: null,
-      learningListRequest: 0,
-      learningLoad: "idle",
-      learningInsights: [],
-      learningCollections: [],
-      learningCollectionItems: [],
-      collapsedLearningCollections: new Set(),
-      learningScope: "all",
-      learningFilters: { query: "", status: "", sourceType: "", tag: "" },
-      insightId: null,
-      learningRuns: [],
-      learningRunsProjectRoot: null,
+      ...createLearningCatalogState(),
       embeddingStatus: null,
       embeddingSettings: null,
       embeddingProviderDraft: "huggingface",
       embeddingLocalModelDraft: "default",
       embeddingOllama: { ...EMBEDDING_DEFAULTS },
       embeddingReindexing: null,
-      observationAvailability: "not_configured",
-      observationOverview: null,
-      observationHookHealth: null,
-      observationConnection: null,
-      observationRuns: [],
+      ...createImpactState(),
       observationRunId: initialRoute.runId,
-      observationRunDetail: null,
-      observationDemoRun: null,
-      observationGuideOpen: false,
-      observationEvals: null,
-      observationEvalsProjectRoot: null,
-      observationLoading: false,
-      observationError: "",
-      impactEventFilter: "all",
       impactView: initialRoute.impactView,
-      evalCandidateFilter: "all",
-      evalReviewCandidateId: null,
-      evalReviewDraft: null,
-      evalReviewPreview: null,
-      evalReviewBusy: false,
-      evalReviewError: "",
-      evalExternalChangesDeferred: false,
-      controlledEvalProfile: "memory_contribution_v1",
-      controlledEvalTrials: 2,
-      controlledEvalSeed: "codetrap-controlled-v1",
-      controlledEvalExperimentId: null,
-      controlledEvalCaseFilter: "attention",
-      controlledEvalBusy: false,
-      controlledEvalError: "",
       projectRoot: null,
       detailActionInFlight: false,
       externalRefreshInFlight: false,
@@ -110,7 +76,10 @@ export function mountWorkspace(boot) {
 
 
 
-    const evalSuiteUI = createEvalSuiteUI({ api, text: t, changed: (project) => {
+    const impactRequests = createImpactRequests({ state, api, route: () => syncWorkspaceRoute(true), changed: background => {
+      if (state.mainView === "impact") renderImpactAfterRefresh(background ? captureImpactScrollPosition() : null, background);
+    } });
+    const evalSuiteUI = createEvalSuiteUI({ api, text: t, currentProject: () => state.projectRoot, changed: (project) => {
       if (state.projectRoot === project && state.mainView === "impact" && state.impactView === "evals") void loadImpactEvals();
     } });
     const revisionUI = createRevisionUI({
@@ -141,6 +110,14 @@ export function mountWorkspace(boot) {
       navigate: () => { syncWorkspaceRoute(); if (state.mainView === "review") revealCompactDetail(); },
       showStatus, showReceipt, externalBusy: () => state.detailActionInFlight || learning.busy,
       busyChanged: () => learning.syncBusy()
+    });
+    const catalog = createLearningCatalog({ state, api, current: currentLearningInsight, revision: () => learning.revision,
+      render: () => { if (state.mainView === "learning") { renderLearningShelf(); renderLearningDetail(); } },
+      runsChanged: () => {
+        const select = state.mainView === "learning" ? el("learning-run-link") : null;
+        if (select && !state.detailActionInFlight && !learning.busy) select.innerHTML = learningRunOptions(currentLearningInsight());
+        const retry = el("learning-runs-retry"); if (retry) retry.hidden = state.learningRunsLoad !== "error";
+      }
     });
     const learning = createLearningWorkflow({
       current: currentLearningInsight, active: () => state.mainView === "learning" && !state.routeError,
@@ -215,7 +192,8 @@ export function mountWorkspace(boot) {
       if (state.routeError) state.projectRoot = null;
       state.mainView = route.mainView;
       state.compactDetail = route.pane === "detail" || Boolean(state.routeError);
-      state.learningListRequest += 1;
+      catalog.reset();
+      impactRequests.reset();
       library.installRoute(state.projectRoot, route.trapScope && route.trapId ? { scope: route.trapScope, id: route.trapId } : undefined);
       const source = route.insightProjectRef ? state.projects.find((item) => item.route_ref === route.insightProjectRef) : null;
       if (route.insightProjectRef && !source) state.routeError = "route.projectMissing";
@@ -552,20 +530,6 @@ export function mountWorkspace(boot) {
       syncWorkspaceRoute(true);
     }
 
-    function impactContentSignature() {
-      return JSON.stringify({
-        availability: state.observationAvailability,
-        connection: state.observationConnection,
-        overview: state.observationOverview,
-        hookHealth: state.observationHookHealth,
-        runs: state.observationRuns,
-        runId: state.observationRunId,
-        runDetail: state.observationRunDetail,
-        evals: state.observationEvals,
-        error: state.observationError
-      });
-    }
-
     function captureImpactScrollPosition() {
       return {
         detail: document.querySelector(".impact-shell")?.scrollTop || 0,
@@ -585,13 +549,11 @@ export function mountWorkspace(boot) {
     }
 
     function renderImpactAfterRefresh(scrollPosition = null, preserveActiveReview = false) {
-      snapshotEvalReviewDraftFromDom();
       renderImpactQueue();
       const activeReview = preserveActiveReview
         && state.impactView === "evals"
-        && document.querySelector("[data-eval-review-form]");
+        && (state.evalReviewDraft || document.activeElement?.closest("[data-controlled-eval-form]"));
       if (activeReview) {
-        state.evalExternalChangesDeferred = true;
         syncEvalDeferredNotice();
       } else {
         renderImpactDetail();
@@ -618,10 +580,7 @@ export function mountWorkspace(boot) {
     async function loadCandidates() { return review.loadCandidates(); }
 
     function resetLearningImpactState() {
-      state.learningRuns = [];
-      state.learningRunsProjectRoot = null;
-      state.learningListRequest++;
-      state.learningLoad = state.projectRoot ? "loading" : "idle";
+      catalog.reset();
       if (state.mainView === "learning") { renderLearningShelf(); renderLearningDetail(); }
     }
 
@@ -654,57 +613,9 @@ export function mountWorkspace(boot) {
       requestAnimationFrame(restore);
     }
 
-    function replaceLearningImpact(insightKey, impact) {
-      state.learningInsights = state.learningInsights.map((item) => item.library_key === insightKey
-        ? {
-            ...item,
-            learning_impact: impact,
-            consulted_count: impact.progress.status === "learned" ? 1 : 0,
-            last_consulted_at: impact.progress.status === "learned" ? impact.progress.updated_at : null
-          }
-        : item);
-
-    }
-
-    async function loadLearningRunsForCurrentInsight() {
-      const insight = currentLearningInsight();
-      if (!insight || state.learningRunsProjectRoot === insight.origin_project_root) return;
-      try {
-        const data = await api("/api/observations/runs?project=" + encodeURIComponent(insight.origin_project_root) + "&limit=30");
-        if (currentLearningInsight()?.origin_project_root !== insight.origin_project_root) return;
-        state.learningRunsProjectRoot = insight.origin_project_root;
-        state.learningRuns = data.runs || [];
-        // Hydrating task choices must not replace the reader, its focus, or a
-        // draft being typed while the request was in flight.
-        const select = state.mainView === "learning" ? el("learning-run-link") : null;
-        if (select && !state.detailActionInFlight && !learning.busy) select.innerHTML = learningRunOptions(currentLearningInsight());
-      } catch {
-        if (currentLearningInsight()?.origin_project_root !== insight.origin_project_root) return;
-        state.learningRunsProjectRoot = insight.origin_project_root;
-        state.learningRuns = [];
-      }
-    }
-
-    async function loadLearningInsights() {
-      const project = state.projectRoot, scope = state.learningScope, request = ++state.learningListRequest, revision = learning.revision;
-      state.learningLoad = project ? "loading" : "idle";
-      if (state.mainView === "learning") { renderLearningShelf(); renderLearningDetail(); }
-      if (!project) return;
-      try {
-        const raw = await api("/api/insights?" + new URLSearchParams({ project, scope }), { cache: "no-store" });
-        const data = parseLearningLibrary(raw, project, scope);
-        if (state.projectRoot !== project || state.learningScope !== scope || state.learningListRequest !== request) return;
-        if (learning.revision !== revision) return loadLearningInsights();
-        state.learningInsights = data.insights; state.learningCollections = data.collections; state.learningCollectionItems = data.collection_items;
-        state.learningLoad = "ready";
-        if (!state.routeInsightKey && !state.learningInsights.some(i => i.library_key === state.insightId)) state.insightId = state.learningInsights[0]?.library_key || null;
-      } catch {
-        if (state.projectRoot !== project || state.learningScope !== scope || state.learningListRequest !== request) return;
-        if (learning.revision !== revision) return loadLearningInsights();
-        state.learningLoad = "error";
-      }
-      if (state.mainView === "learning") { renderLearningShelf(); renderLearningDetail(); if (state.learningLoad === "ready") void loadLearningRunsForCurrentInsight(); }
-    }
+    function replaceLearningImpact(key, impact) { catalog.replace(key, impact); }
+    function loadLearningRunsForCurrentInsight() { return catalog.runs(); }
+    function loadLearningInsights() { return catalog.load(); }
 
     function renderLearningLoad(container) {
       if (state.learningLoad !== "loading" && state.learningLoad !== "error") return false;
@@ -734,135 +645,25 @@ export function mountWorkspace(boot) {
     }
 
     function resetObservationState() {
-      state.observationAvailability = "not_configured";
-      state.observationOverview = null;
-      state.observationHookHealth = null;
-      state.observationConnection = null;
-      state.observationRuns = [];
-      state.observationRunId = null;
-      state.observationRunDetail = null;
-      state.observationDemoRun = null;
-      state.observationGuideOpen = false;
-      state.observationEvals = null;
-      state.observationEvalsProjectRoot = null;
-      state.observationLoading = false;
-      state.observationError = "";
-      state.impactEventFilter = "all";
-      state.impactView = "overview";
-      state.evalCandidateFilter = "all";
-      state.evalReviewCandidateId = null;
-      state.evalReviewDraft = null;
-      state.evalReviewPreview = null;
-      state.evalReviewBusy = false;
-      state.evalReviewError = "";
-      state.evalExternalChangesDeferred = false;
-      state.controlledEvalExperimentId = null;
-      state.controlledEvalCaseFilter = "attention";
-      state.controlledEvalBusy = false;
-      state.controlledEvalError = "";
+      impactRequests.reset();
+      Object.assign(state, createImpactState(), { evalReviewBusy: state.evalReviewBusy, controlledEvalBusy: state.controlledEvalBusy });
     }
 
     async function loadImpact(backgroundRefresh = false) {
-      if (!state.projectRoot) {
-        resetObservationState();
-        if (state.mainView === "impact") {
-          renderImpactQueue();
-          renderImpactDetail();
-        }
-        return;
-      }
-      const requestedProjectRoot = state.projectRoot;
-      const previousSignature = impactContentSignature();
-      const scrollPosition = backgroundRefresh ? captureImpactScrollPosition() : null;
-      if (!backgroundRefresh) {
-        state.observationLoading = true;
-        state.observationError = "";
-      }
-      if (state.observationEvalsProjectRoot !== state.projectRoot) {
-        state.observationEvals = null;
-        state.observationEvalsProjectRoot = null;
-      }
-      if (!backgroundRefresh && state.mainView === "impact") renderImpactDetail();
-      try {
-        const project = encodeURIComponent(requestedProjectRoot);
-        const overview = await api("/api/observations/overview?project=" + project + "&limit=100");
-        if (state.projectRoot !== requestedProjectRoot) return;
-        state.observationAvailability = overview.availability;
-        state.observationOverview = overview.overview;
-        state.observationHookHealth = overview.hook_health || null;
-        state.observationConnection = overview.connection || null;
-        state.observationRuns = overview.recent_runs || [];
-        if (state.observationRuns.length) state.observationDemoRun = null;
-        // Restoring "#/impact/runs" carries no Run id. Adopt the newest Run the
-        // way the Runs tab already does, so a reloaded or shared link lands on a
-        // timeline instead of an empty pane beside a full Run list.
-        if (!backgroundRefresh && state.impactView === "runs" && !state.observationRunId && state.observationRuns.length) {
-          state.observationRunId = state.observationRuns[0].id;
-          syncWorkspaceRoute(true);
-        }
-        if (state.impactView === "runs" && state.observationRunId) {
-          const requestedRunId = state.observationRunId;
-          const detail = await api("/api/observations/run?project="
-            + project + "&id=" + encodeURIComponent(requestedRunId));
-          if (state.projectRoot !== requestedProjectRoot || state.observationRunId !== requestedRunId) return;
-          state.observationRunDetail = detail;
-        }
-        state.observationError = "";
-      } catch (error) {
-        if (state.projectRoot !== requestedProjectRoot) return;
-        state.observationError = error.message;
-      } finally {
-        if (state.projectRoot !== requestedProjectRoot) return;
-        if (!backgroundRefresh) state.observationLoading = false;
-        const contentChanged = previousSignature !== impactContentSignature();
-        if (state.mainView === "impact" && (!backgroundRefresh || contentChanged)) {
-          renderImpactAfterRefresh(scrollPosition, backgroundRefresh);
-        }
-      }
-      if (state.mainView === "impact" && state.impactView === "evals") await loadImpactEvals(backgroundRefresh);
+      if (!state.projectRoot) { resetObservationState(); renderImpactQueue(); renderImpactDetail(); return; }
+      const project = state.projectRoot;
+      await impactRequests.read("overview", backgroundRefresh);
+      if (state.projectRoot !== project || state.mainView !== "impact") return;
+      if (state.impactView === "runs") await impactRequests.read("run", backgroundRefresh);
+      if (state.impactView === "evals") await loadImpactEvals(backgroundRefresh);
     }
-
     async function loadImpactEvals(backgroundRefresh = false) {
-      if (!state.projectRoot) return;
-      const requestedProjectRoot = state.projectRoot;
-      const previousSignature = impactContentSignature();
-      const scrollPosition = backgroundRefresh ? captureImpactScrollPosition() : null;
-      if (!backgroundRefresh) {
-        state.observationLoading = true;
-        state.observationError = "";
-      }
-      if (!backgroundRefresh && state.mainView === "impact") {
-        snapshotEvalReviewDraftFromDom();
-        renderImpactQueue();
-        renderImpactDetail();
-      }
-      try {
-        const evals = await api("/api/observations/evals?project=" + encodeURIComponent(requestedProjectRoot));
-        if (state.projectRoot !== requestedProjectRoot) return;
-        state.observationEvals = evals;
-        state.observationEvalsProjectRoot = requestedProjectRoot;
-        if (!backgroundRefresh) state.evalExternalChangesDeferred = false;
-        const controlledExperiments = state.observationEvals?.controlled?.experiments || [];
-        if (!controlledExperiments.some((item) => item.id === state.controlledEvalExperimentId)) {
-          state.controlledEvalExperimentId = controlledExperiments[0]?.id || null;
-        }
-        state.observationError = "";
-      } catch (error) {
-        if (state.projectRoot !== requestedProjectRoot) return;
-        state.observationError = error.message;
-      } finally {
-        if (state.projectRoot !== requestedProjectRoot) return;
-        if (!backgroundRefresh) state.observationLoading = false;
-        const contentChanged = previousSignature !== impactContentSignature();
-        if (state.mainView === "impact" && state.impactView === "evals" && (!backgroundRefresh || contentChanged)) {
-          renderImpactAfterRefresh(scrollPosition, backgroundRefresh);
-        }
-      }
+      if (!backgroundRefresh) snapshotEvalReviewDraftFromDom();
+      await impactRequests.read("evals", backgroundRefresh);
     }
 
     async function loadImpactRun(runId) {
       if (!state.projectRoot || !runId) return;
-      const requestedProjectRoot = state.projectRoot;
       if (state.impactView === "evals") snapshotEvalReviewDraftFromDom();
       state.observationDemoRun = null;
       state.observationRunId = runId;
@@ -870,26 +671,8 @@ export function mountWorkspace(boot) {
       state.impactView = "runs";
       syncWorkspaceRoute();
       el("queue-title").textContent = t("impact.runs");
-      state.observationLoading = true;
-      state.observationError = "";
       renderImpactQueue();
-      renderImpactDetail();
-      try {
-        const detail = await api("/api/observations/run?project="
-          + encodeURIComponent(requestedProjectRoot) + "&id=" + encodeURIComponent(runId));
-        if (state.projectRoot !== requestedProjectRoot || state.observationRunId !== runId) return;
-        state.observationRunDetail = detail;
-      } catch (error) {
-        if (state.projectRoot !== requestedProjectRoot || state.observationRunId !== runId) return;
-        state.observationError = error.message;
-      } finally {
-        if (state.projectRoot !== requestedProjectRoot || state.observationRunId !== runId) return;
-        state.observationLoading = false;
-        if (state.mainView === "impact") {
-          renderImpactQueue();
-          renderImpactDetail();
-        }
-      }
+      await impactRequests.read("run", false, runId);
     }
 
     function renderMainViewButtons() {
@@ -1344,8 +1127,9 @@ export function mountWorkspace(boot) {
       </section>` : "";
       const empty = insights.length
         ? '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningMatchesTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningMatches")) + '</span></div>'
-        : '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span></div>';
+        : '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span>' + learningPromptCard('copy-learning-prompt-mobile') + '</div>';
       el("candidates").innerHTML = controls + '<div class="learning-catalog">' + (visible.length ? collectionsHtml + standaloneHtml : empty) + '</div>';
+      bindLearningPrompt(el("candidates"));
 
       el("learning-filters")?.querySelector("summary").addEventListener("click", () => {
         if (isCompactShell()) state.learningFiltersOpen = !el("learning-filters").open;
@@ -1447,6 +1231,7 @@ export function mountWorkspace(boot) {
           <span class="pill scope">${escapeHtml(t("learningImpact.private"))}</span>
         </div>
         <p class="subtle learning-impact-copy">${escapeHtml(t("hint.personalProgressSeparate"))}</p>
+        ${progress.status === "learned" ? `<p class="learning-complete" role="status">${escapeHtml(t("learningGuide.complete"))}</p>` : ""}
         <div class="learning-impact-group">
           <span class="field-label">${escapeHtml(t("label.learningStatus"))}</span>
           <div class="segmented learning-status-control" role="group" aria-label="${escapeAttr(t("label.learningStatus"))}">
@@ -1460,6 +1245,7 @@ export function mountWorkspace(boot) {
           </div>
         </div>
         <label class="learning-run-link"><span>${escapeHtml(t("label.linkedRun"))}</span><select id="learning-run-link">${learningRunOptions(insight)}</select></label>
+        <button type="button" class="ghost" id="learning-runs-retry" ${state.learningRunsLoad === "error" ? "" : "hidden"}>${escapeHtml(t("learningGuide.runsRetry"))}</button>
         ${progress.linked_run_id ? '<button type="button" class="ghost" id="open-learning-linked-run">' + escapeHtml(t("experience.openLinkedRun")) + ' ↗</button>' : ''}
       </section>`;
     }
@@ -1480,9 +1266,9 @@ export function mountWorkspace(boot) {
       }
       if (!draft) {
         return `<section class="section learning-agent-card">
-          <div class="learning-agent-heading"><div><div class="eyebrow">${escapeHtml(t("learningImpact.agentKicker"))}</div><div class="title">${escapeHtml(t("title.agentExperienceCandidate"))}</div></div><span class="pill scope">0 model calls</span></div>
+          <div class="learning-agent-heading"><div><div class="eyebrow">${escapeHtml(t("learningImpact.agentKicker"))}</div><div class="title">${escapeHtml(t("title.agentExperienceCandidate"))}</div></div><span class="pill scope">${escapeHtml(t("learningGuide.optional"))}</span></div>
           <p>${escapeHtml(t("hint.agentCandidateBoundary"))}</p>
-          <button type="button" id="begin-learning-candidate" class="primary">${escapeHtml(t("action.createAgentCandidate"))}</button>
+          <button type="button" id="begin-learning-candidate" class="ghost">${escapeHtml(t("action.createAgentCandidate"))}</button>
         </section>`;
       }
       return `<section class="section learning-agent-card draft-open">
@@ -1508,6 +1294,26 @@ export function mountWorkspace(boot) {
       </section>`;
     }
 
+    function learningPromptCard(id) {
+      return '<div class="learning-prompt-card"><span>' + escapeHtml(t("label.learningGenerationPrompt")) + '</span><code>' + escapeHtml(t("prompt.learningGeneration")) + '</code><button type="button" class="ghost" data-copy-learning-prompt id="' + id + '">' + escapeHtml(t("learningGuide.copy")) + '</button></div>';
+    }
+
+    function bindLearningPrompt(container) {
+      container.querySelector("[data-copy-learning-prompt]")?.addEventListener("click", async (event) => {
+        const code = event.currentTarget.closest(".learning-prompt-card").querySelector("code");
+        try {
+          await navigator.clipboard.writeText(t("prompt.learningGeneration"));
+          showStatus(t("learningGuide.copied"));
+        } catch {
+          const range = document.createRange();
+          range.selectNodeContents(code);
+          const selection = getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      });
+    }
+
     function renderLearningDetail() {
       if (state.mainView !== "learning") return;
       const context = currentLearningContext();
@@ -1524,7 +1330,8 @@ export function mountWorkspace(boot) {
         return;
       }
       if (!insight) {
-        el("detail").innerHTML = '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span><div class="learning-prompt-card"><span>' + escapeHtml(t("label.learningGenerationPrompt")) + '</span><code>' + escapeHtml(t("prompt.learningGeneration")) + '</code></div></div>';
+        el("detail").innerHTML = '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span>' + learningPromptCard('copy-learning-prompt') + '</div>';
+        bindLearningPrompt(el("detail"));
         return;
       }
       const progress = learningProgress(insight);
@@ -1559,8 +1366,8 @@ export function mountWorkspace(boot) {
             <div class="source-list">${renderSourceReferences(insight.source_refs)}</div>
           </div>
           ${coveragePanel}
-          ${renderLearningPractice(insight)}
           ${renderLearningImpactControls(insight)}
+          ${renderLearningPractice(insight)}
           ${renderLearningCandidatePanel(insight)}
           <div class="section">
             <div class="detail-kv">
@@ -1584,6 +1391,7 @@ export function mountWorkspace(boot) {
       `;
       restoreWorkspacePosition();
       learning.bind();
+      el("learning-runs-retry")?.addEventListener("click", () => { void catalog.runs(); });
       el("open-learning-confirmed-trap")?.addEventListener("click", openLearningConfirmedTrap);
       el("open-learning-linked-run")?.addEventListener("click", openLearningLinkedRun);
       el("open-learning-candidate-review")?.addEventListener("click", openLearningCandidateReview);
@@ -1637,11 +1445,7 @@ export function mountWorkspace(boot) {
       const title = prompt(t("prompt.renameCollection"), collection.title)?.trim();
       if (!title || title === collection.title) return;
       try {
-        await api("/api/learning/collection/update", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: collection.origin_project_root, id: collection.id, title })
-        });
-        await loadLearningInsights();
+        if (!await catalog.collection("update", collection, { title })) return;
         showStatus(t("status.collectionUpdated"));
       } catch (error) {
         showStatus(error.message, true);
@@ -1656,11 +1460,7 @@ export function mountWorkspace(boot) {
       [reordered[context.index], reordered[targetIndex]] = [reordered[targetIndex], reordered[context.index]];
       const ids = reordered.map((key) => state.learningInsights.find((insight) => insight.library_key === key)?.id).filter(Boolean);
       try {
-        await api("/api/learning/collection/reorder", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: context.collection.origin_project_root, id: context.collection.id, insightIds: ids })
-        });
-        await loadLearningInsights();
+        if (!await catalog.collection("reorder", context.collection, { insightIds: ids })) return;
         showStatus(t("status.collectionReordered"));
       } catch (error) {
         showStatus(error.message, true);
@@ -2047,6 +1847,7 @@ export function mountWorkspace(boot) {
       el("detail-meta").textContent = candidate ? candidate.id + " / " + valueLabel(candidate.status) : t("meta.selectCandidate");
       if (!candidate) {
         el("detail").innerHTML = '<div class="empty">' + escapeHtml(t(review.state.candidateId ? "route.itemMissing" : "empty.noCandidateSelected")) + '</div>';
+        review.attachMissingRecovery();
         return;
       }
       if (isInsightCandidate(candidate)) {
