@@ -7,6 +7,8 @@ import { createExperienceActions } from '../client-experience-actions';
 import { impactOverviewContent } from '../client-impact-overview';
 import { createLibraryUI } from './library';
 import { createReviewUI } from './review';
+import { createLearningWorkflow } from './learning';
+import { parseLearningLibrary } from './learning-data';
 import { createRevisionUI } from '../client-revisions';
 import { createEvalSuiteUI } from '../client-eval-suite';
 import { parseBootstrapPayload } from './platform';
@@ -36,8 +38,7 @@ export function mountWorkspace(boot) {
       routeScroll: new Map(),
       restoreRouteScroll: null,
       learningListRequest: 0,
-      practiceDrafts: new Map(),
-      practiceSaving: false,
+      learningLoad: "idle",
       learningInsights: [],
       learningCollections: [],
       learningCollectionItems: [],
@@ -45,13 +46,8 @@ export function mountWorkspace(boot) {
       learningScope: "all",
       learningFilters: { query: "", status: "", sourceType: "", tag: "" },
       insightId: null,
-      insightConsulting: false,
       learningRuns: [],
       learningRunsProjectRoot: null,
-      learningDraft: null,
-      learningDraftInsightKey: null,
-      learningDraftBusy: false,
-      learningDraftError: "",
       embeddingStatus: null,
       embeddingSettings: null,
       embeddingProviderDraft: "huggingface",
@@ -130,7 +126,7 @@ export function mountWorkspace(boot) {
     });
     const { setSidebarCollapsed, setQueueCollapsed, renderSidebarToggle, initShellResizers } = createShell({ state, el, t });
     const { renderImpactQueue, syncImpactOverviewLayout, renderImpactDetail, syncEvalDeferredNotice, snapshotEvalReviewDraftFromDom } = createImpactUI({ state, evalSuiteUI, revisionUI, impactOverviewContent, el, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, api, syncWorkspaceRoute, showStatus, captureImpactScrollPosition, restoreImpactScrollPosition, loadImpactRun, loadImpactEvals, loadImpact, jumpToTrap });
-    const { renderLearningPractice, bindLearningPractice, selectExperienceProject, openLearningConfirmedTrap, openLearningLinkedRun, openExperienceRun, openExperienceInsight } = createExperienceActions({ state, el, t, escapeHtml, api, resetLibrary: () => library.reset(state.projectRoot), resetReview: () => review.reset(state.projectRoot), currentLearningInsight, learningProgress, snapshotLearningDraftFromDom, captureLearningScrollPosition, replaceLearningImpact, renderLearningDetail, restoreLearningScrollPosition, showStatus, resetObservationState, renderProjects, renderSessions, renderActiveView, revealCompactDetail, jumpToTrap, loadImpactRun, loadLearningInsights, selectLearningInsight });
+    const { selectExperienceProject, openLearningConfirmedTrap, openLearningLinkedRun, openExperienceRun, openExperienceInsight } = createExperienceActions({ state, t, resetLibrary: () => library.reset(state.projectRoot), resetReview: () => review.reset(state.projectRoot), currentLearningInsight, snapshotLearningDraftFromDom, showStatus, resetObservationState, renderProjects, renderSessions, renderActiveView, revealCompactDetail, jumpToTrap, loadImpactRun, loadLearningInsights, selectLearningInsight });
     const library = createLibraryUI({
       context: () => ({ project: state.projectRoot, active: state.mainView === "library" && !state.routeError, options: state.options }),
       api, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, optionPairs, kv, textBlock, renderEvidence,
@@ -143,8 +139,18 @@ export function mountWorkspace(boot) {
       context: () => ({ project: state.projectRoot, active: state.mainView === "review" && !state.routeError }),
       api, t, renderSessions, renderReview: () => { renderCandidates(); renderDetail(); },
       navigate: () => { syncWorkspaceRoute(); if (state.mainView === "review") revealCompactDetail(); },
-      showStatus, showReceipt, externalBusy: () => state.detailActionInFlight
+      showStatus, showReceipt, externalBusy: () => state.detailActionInFlight || learning.busy,
+      busyChanged: () => learning.syncBusy()
     });
+    const learning = createLearningWorkflow({
+      current: currentLearningInsight, active: () => state.mainView === "learning" && !state.routeError,
+      externalBusy: () => state.detailActionInFlight || review.state.busy, api, t, escapeHtml,
+      busyChanged: () => review.syncBusy(),
+      render: () => { renderLearningShelf(); renderLearningDetail(); },
+      applyImpact: (target, impact) => { replaceLearningImpact(target.libraryKey, impact); },
+      created: async () => { if (state.mainView === "learning") await loadLearningInsights(); }, showStatus,
+    });
+    function renderLearningPractice(insight) { return learning.practice(insight); }
     function loadTraps() { return library.load(); }
     function renderLibrary() { library.renderList(); }
     function renderTrapDetail() { library.renderDetail(); }
@@ -247,7 +253,7 @@ export function mountWorkspace(boot) {
         // Library owns request errors and generations. Release history navigation
         // immediately so Back/Forward can invalidate a slow Library request.
         if (state.mainView === "library") void loadTraps();
-        else if (state.mainView === "learning") await loadLearningInsights();
+        else if (state.mainView === "learning") void loadLearningInsights();
         else if (state.mainView === "embeddings") await loadEmbeddings();
         else if (state.mainView === "impact") await loadImpact();
         else void loadSessions();
@@ -614,10 +620,9 @@ export function mountWorkspace(boot) {
     function resetLearningImpactState() {
       state.learningRuns = [];
       state.learningRunsProjectRoot = null;
-      state.learningDraft = null;
-      state.learningDraftInsightKey = null;
-      state.learningDraftBusy = false;
-      state.learningDraftError = "";
+      state.learningListRequest++;
+      state.learningLoad = state.projectRoot ? "loading" : "idle";
+      if (state.mainView === "learning") { renderLearningShelf(); renderLearningDetail(); }
     }
 
     function learningProgress(insight) {
@@ -634,23 +639,7 @@ export function mountWorkspace(boot) {
       return learningProgress(insight).status;
     }
 
-    function snapshotLearningDraftFromDom() {
-      if (!state.learningDraft || state.learningDraftInsightKey !== state.insightId) return state.learningDraft;
-      const form = el("learning-agent-candidate-form");
-      if (!form) return state.learningDraft;
-      const values = new FormData(form);
-      state.learningDraft = {
-        title: String(values.get("title") || ""),
-        context: String(values.get("context") || ""),
-        mistake: String(values.get("mistake") || ""),
-        fix: String(values.get("fix") || ""),
-        scope: String(values.get("scope") || "project"),
-        tags: String(values.get("tags") || "").split(",").map((value) => value.trim()).filter(Boolean),
-        path_globs: String(values.get("path_globs") || "").split(/[,\n]/).map((value) => value.trim()).filter(Boolean),
-        module: String(values.get("module") || "").trim() || null
-      };
-      return state.learningDraft;
-    }
+    function snapshotLearningDraftFromDom() { learning.capture(); }
 
     function captureLearningScrollPosition() {
       return document.querySelector("#detail > .scroll")?.scrollTop || 0;
@@ -665,7 +654,7 @@ export function mountWorkspace(boot) {
       requestAnimationFrame(restore);
     }
 
-    function replaceLearningImpact(insightKey, impact, scrollTop = 0) {
+    function replaceLearningImpact(insightKey, impact) {
       state.learningInsights = state.learningInsights.map((item) => item.library_key === insightKey
         ? {
             ...item,
@@ -674,11 +663,7 @@ export function mountWorkspace(boot) {
             last_consulted_at: impact.progress.status === "learned" ? impact.progress.updated_at : null
           }
         : item);
-      if (state.mainView === "learning" && state.insightId === insightKey) {
-        renderLearningShelf();
-        renderLearningDetail();
-        restoreLearningScrollPosition(scrollTop);
-      }
+
     }
 
     async function loadLearningRunsForCurrentInsight() {
@@ -692,7 +677,7 @@ export function mountWorkspace(boot) {
         // Hydrating task choices must not replace the reader, its focus, or a
         // draft being typed while the request was in flight.
         const select = state.mainView === "learning" ? el("learning-run-link") : null;
-        if (select && !state.detailActionInFlight) select.innerHTML = learningRunOptions(currentLearningInsight());
+        if (select && !state.detailActionInFlight && !learning.busy) select.innerHTML = learningRunOptions(currentLearningInsight());
       } catch {
         if (currentLearningInsight()?.origin_project_root !== insight.origin_project_root) return;
         state.learningRunsProjectRoot = insight.origin_project_root;
@@ -701,38 +686,31 @@ export function mountWorkspace(boot) {
     }
 
     async function loadLearningInsights() {
-      if (!state.projectRoot) {
-        state.learningInsights = [];
-        state.learningCollections = [];
-        state.learningCollectionItems = [];
-        state.insightId = null;
-        if (state.mainView === "learning") {
-          renderLearningShelf();
-          renderLearningDetail();
-        }
-        return;
+      const project = state.projectRoot, scope = state.learningScope, request = ++state.learningListRequest, revision = learning.revision;
+      state.learningLoad = project ? "loading" : "idle";
+      if (state.mainView === "learning") { renderLearningShelf(); renderLearningDetail(); }
+      if (!project) return;
+      try {
+        const raw = await api("/api/insights?" + new URLSearchParams({ project, scope }), { cache: "no-store" });
+        const data = parseLearningLibrary(raw, project, scope);
+        if (state.projectRoot !== project || state.learningScope !== scope || state.learningListRequest !== request) return;
+        if (learning.revision !== revision) return loadLearningInsights();
+        state.learningInsights = data.insights; state.learningCollections = data.collections; state.learningCollectionItems = data.collection_items;
+        state.learningLoad = "ready";
+        if (!state.routeInsightKey && !state.learningInsights.some(i => i.library_key === state.insightId)) state.insightId = state.learningInsights[0]?.library_key || null;
+      } catch {
+        if (state.projectRoot !== project || state.learningScope !== scope || state.learningListRequest !== request) return;
+        if (learning.revision !== revision) return loadLearningInsights();
+        state.learningLoad = "error";
       }
-      const projectRoot = state.projectRoot;
-      const learningScope = state.learningScope;
-      const requestId = ++state.learningListRequest;
-      const data = await api("/api/insights?project=" + encodeURIComponent(projectRoot) + "&scope=" + encodeURIComponent(learningScope));
-      if (state.projectRoot !== projectRoot || state.learningScope !== learningScope || state.learningListRequest !== requestId) return;
-      state.learningInsights = data.insights;
-      state.learningCollections = data.collections || [];
-      state.learningCollectionItems = data.collection_items || [];
-      if (!state.routeInsightKey && !state.learningInsights.some((insight) => insight.library_key === state.insightId)) {
-        state.insightId = state.learningInsights[0]?.library_key || null;
-      }
-      if (state.learningDraftInsightKey && state.learningDraftInsightKey !== state.insightId) {
-        state.learningDraft = null;
-        state.learningDraftInsightKey = null;
-        state.learningDraftError = "";
-      }
-      if (state.mainView === "learning") {
-        renderLearningShelf();
-        renderLearningDetail();
-        void loadLearningRunsForCurrentInsight();
-      }
+      if (state.mainView === "learning") { renderLearningShelf(); renderLearningDetail(); if (state.learningLoad === "ready") void loadLearningRunsForCurrentInsight(); }
+    }
+
+    function renderLearningLoad(container) {
+      if (state.learningLoad !== "loading" && state.learningLoad !== "error") return false;
+      container.innerHTML = '<div class="empty" role="status"><p>' + escapeHtml(t(state.learningLoad === "loading" ? "learningFlow.loading" : "learningFlow.loadFailed")) + '</p>' + (state.learningLoad === "error" ? '<button type="button" data-learning-retry>' + escapeHtml(t("library.retry")) + '</button>' : '') + '</div>';
+      container.querySelector('[data-learning-retry]')?.addEventListener("click", () => { void loadLearningInsights(); });
+      return true;
     }
 
     async function loadEmbeddings() {
@@ -1272,6 +1250,7 @@ export function mountWorkspace(boot) {
 
     function renderLearningShelf() {
       if (state.mainView !== "learning") return;
+      if (renderLearningLoad(el("candidates"))) return;
       const insights = state.learningInsights;
       const visible = filteredLearningInsights();
       if (!state.routeInsightKey && !visible.some((insight) => insight.library_key === state.insightId)) {
@@ -1487,7 +1466,8 @@ export function mountWorkspace(boot) {
 
     function renderLearningCandidatePanel(insight) {
       const promotion = insight.learning_impact?.promotion || null;
-      if (promotion) {
+      const draft = learning.entry(insight)?.proposal?.value;
+      if (promotion && !draft) {
         const reviewLabel = promotion.status === "accepted" && promotion.accepted_trap_id
           ? t("learningImpact.confirmedTrap", { id: promotion.accepted_trap_id })
           : promotion.status === "missing" ? t("learningImpact.candidateMissing") : valueLabel(promotion.status);
@@ -1498,18 +1478,16 @@ export function mountWorkspace(boot) {
           <button type="button" id="open-learning-candidate-review" class="ghost">${escapeHtml(t("action.openCandidateReview"))}</button>
         </section>`;
       }
-      if (!state.learningDraft || state.learningDraftInsightKey !== insight.library_key) {
+      if (!draft) {
         return `<section class="section learning-agent-card">
           <div class="learning-agent-heading"><div><div class="eyebrow">${escapeHtml(t("learningImpact.agentKicker"))}</div><div class="title">${escapeHtml(t("title.agentExperienceCandidate"))}</div></div><span class="pill scope">0 model calls</span></div>
           <p>${escapeHtml(t("hint.agentCandidateBoundary"))}</p>
           <button type="button" id="begin-learning-candidate" class="primary">${escapeHtml(t("action.createAgentCandidate"))}</button>
         </section>`;
       }
-      const draft = state.learningDraft;
       return `<section class="section learning-agent-card draft-open">
         <div class="learning-agent-heading"><div><div class="eyebrow">${escapeHtml(t("learningImpact.localDraft"))}</div><div class="title">${escapeHtml(t("title.agentExperienceDraft"))}</div></div><span class="pill scope">${escapeHtml(t("learningImpact.inboxOnly"))}</span></div>
         <p>${escapeHtml(t("hint.agentCandidateEdit"))}</p>
-        ${state.learningDraftError ? '<div class="inline-error" role="alert">' + escapeHtml(state.learningDraftError) + '</div>' : ''}
         <form id="learning-agent-candidate-form" class="learning-agent-form">
           <label class="full"><span>${escapeHtml(t("label.title"))}</span><input name="title" value="${escapeAttr(draft.title)}"></label>
           <label class="full"><span>${escapeHtml(t("label.context"))}</span><textarea name="context">${escapeHtml(draft.context)}</textarea></label>
@@ -1517,13 +1495,14 @@ export function mountWorkspace(boot) {
           <label class="full"><span>${escapeHtml(t("label.fix"))}</span><textarea name="fix" class="tall">${escapeHtml(draft.fix)}</textarea></label>
           <label><span>${escapeHtml(t("label.scope"))}</span><select name="scope"><option value="project" ${draft.scope === "project" ? "selected" : ""}>${escapeHtml(valueLabel("project"))}</option><option value="global" ${draft.scope === "global" ? "selected" : ""}>${escapeHtml(valueLabel("global"))}</option></select></label>
           <label><span>${escapeHtml(t("label.module"))}</span><input name="module" value="${escapeAttr(draft.module || "")}"></label>
-          <label class="full"><span>${escapeHtml(t("label.tags"))}</span><input name="tags" value="${escapeAttr((draft.tags || []).join(", "))}"></label>
-          <label class="full"><span>${escapeHtml(t("label.pathGlobs"))}</span><input name="path_globs" value="${escapeAttr((draft.path_globs || []).join(", "))}"></label>
+          <label class="full"><span>${escapeHtml(t("label.tags"))}</span><input name="tags" value="${escapeAttr(draft.tags)}"></label>
+          <label class="full"><span>${escapeHtml(t("label.pathGlobs"))}</span><input name="path_globs" value="${escapeAttr(draft.path_globs)}"></label>
         </form>
+        <p id="learning-proposal-state" class="subtle" role="status"></p>
         <div class="learning-agent-actions">
-          <button type="button" id="cancel-learning-candidate" class="ghost" ${state.learningDraftBusy ? "disabled" : ""}>${escapeHtml(t("action.cancel"))}</button>
-          <button type="button" id="preview-learning-candidate" class="ghost" ${state.learningDraftBusy ? "disabled" : ""}>${escapeHtml(t("action.previewAgentCandidate"))}</button>
-          <button type="button" id="create-learning-candidate" class="primary" ${state.learningDraftBusy ? "disabled" : ""}>${escapeHtml(t("action.sendToCandidateInbox"))}</button>
+          <button type="button" id="cancel-learning-candidate" class="ghost" ${learning.busy ? "disabled" : ""}>${escapeHtml(t("review.discard"))}</button>
+          <button type="button" id="preview-learning-candidate" class="ghost" ${learning.busy ? "disabled" : ""}>${escapeHtml(t("action.previewAgentCandidate"))}</button>
+          <button type="button" id="create-learning-candidate" class="primary" ${learning.busy ? "disabled" : ""}>${escapeHtml(t("action.sendToCandidateInbox"))}</button>
         </div>
       </section>`;
     }
@@ -1538,6 +1517,7 @@ export function mountWorkspace(boot) {
         el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("meta.selectProject")) + '</div>';
         return;
       }
+      if (renderLearningLoad(el("detail"))) return;
       if (!insight && state.routeInsightKey) {
         el("detail").innerHTML = '<div class="empty route-unavailable" role="status">' + escapeHtml(t("route.itemMissing")) + '</div>';
         return;
@@ -1557,6 +1537,7 @@ export function mountWorkspace(boot) {
         : "";
       el("detail").innerHTML = `
         <div class="scroll">
+          <p id="learning-flow-error" class="inline-error" role="alert" hidden></p>
           <div class="section learning-intro">
             ${breadcrumb}
             <div class="title learning-title">${escapeHtml(insight.title)}</div>
@@ -1599,14 +1580,7 @@ export function mountWorkspace(boot) {
         </div>
       `;
       restoreWorkspacePosition();
-      bindLearningPractice();
-      document.querySelectorAll("[data-learning-status]").forEach((button) => button.addEventListener("click", () => updateLearningStatus(button.dataset.learningStatus)));
-      document.querySelectorAll("[data-learning-feedback]").forEach((button) => button.addEventListener("click", () => updateLearningFeedback(button.dataset.learningFeedback)));
-      el("learning-run-link")?.addEventListener("change", (event) => updateLearningRunLink(event.target.value));
-      el("begin-learning-candidate")?.addEventListener("click", openLearningCandidateDraft);
-      el("preview-learning-candidate")?.addEventListener("click", previewLearningCandidateDraft);
-      el("create-learning-candidate")?.addEventListener("click", createLearningCandidate);
-      el("cancel-learning-candidate")?.addEventListener("click", cancelLearningCandidateDraft);
+      learning.bind();
       el("open-learning-confirmed-trap")?.addEventListener("click", openLearningConfirmedTrap);
       el("open-learning-linked-run")?.addEventListener("click", openLearningLinkedRun);
       el("open-learning-candidate-review")?.addEventListener("click", openLearningCandidateReview);
@@ -1622,9 +1596,6 @@ export function mountWorkspace(boot) {
       if (!insightKey) return;
       snapshotLearningDraftFromDom();
       if (state.insightId !== insightKey) {
-        state.learningDraft = null;
-        state.learningDraftInsightKey = null;
-        state.learningDraftError = "";
         state.learningRuns = [];
         state.learningRunsProjectRoot = null;
       }
@@ -1642,162 +1613,6 @@ export function mountWorkspace(boot) {
       void loadLearningRunsForCurrentInsight();
     }
 
-    async function updateLearningStatus(status) {
-      const insight = currentLearningInsight();
-      if (!insight || state.insightConsulting || learningStatus(insight) === status) return;
-      snapshotLearningDraftFromDom();
-      const scrollTop = captureLearningScrollPosition();
-      state.insightConsulting = true;
-      state.detailActionInFlight = true;
-      try {
-        const impact = await api("/api/learning/progress/status", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id, status })
-        });
-        replaceLearningImpact(insight.library_key, impact, scrollTop);
-        showStatus(t("status.learningProgressUpdated"));
-      } catch (error) {
-        showStatus(error.message, true);
-      } finally {
-        state.insightConsulting = false;
-        state.detailActionInFlight = false;
-      }
-    }
-
-    async function updateLearningFeedback(feedback) {
-      const insight = currentLearningInsight();
-      if (!insight || state.insightConsulting || learningProgress(insight).feedback === feedback) return;
-      snapshotLearningDraftFromDom();
-      const scrollTop = captureLearningScrollPosition();
-      state.insightConsulting = true;
-      state.detailActionInFlight = true;
-      try {
-        const impact = await api("/api/learning/feedback", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id, feedback })
-        });
-        replaceLearningImpact(insight.library_key, impact, scrollTop);
-        showStatus(t("status.learningFeedbackUpdated"));
-      } catch (error) {
-        showStatus(error.message, true);
-      } finally {
-        state.insightConsulting = false;
-        state.detailActionInFlight = false;
-      }
-    }
-
-    async function updateLearningRunLink(linkedRunId) {
-      const insight = currentLearningInsight();
-      if (!insight || state.insightConsulting || learningProgress(insight).linked_run_id === (linkedRunId || null)) return;
-      snapshotLearningDraftFromDom();
-      const scrollTop = captureLearningScrollPosition();
-      state.insightConsulting = true;
-      state.detailActionInFlight = true;
-      try {
-        const impact = await api("/api/learning/run-link", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id, linkedRunId: linkedRunId || null })
-        });
-        replaceLearningImpact(insight.library_key, impact, scrollTop);
-        showStatus(t("status.learningRunUpdated"));
-      } catch (error) {
-        showStatus(error.message, true);
-        renderLearningDetail();
-        restoreLearningScrollPosition(scrollTop);
-      } finally {
-        state.insightConsulting = false;
-        state.detailActionInFlight = false;
-      }
-    }
-
-    async function openLearningCandidateDraft() {
-      const insight = currentLearningInsight();
-      if (!insight || state.learningDraftBusy) return;
-      state.learningDraftBusy = true;
-      state.detailActionInFlight = true;
-      try {
-        const preview = await api("/api/learning/candidate/preview", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id })
-        });
-        state.learningDraft = preview.draft;
-        state.learningDraftInsightKey = insight.library_key;
-        state.learningDraftError = "";
-        renderLearningDetail();
-      } catch (error) {
-        showStatus(error.message, true);
-      } finally {
-        state.learningDraftBusy = false;
-        state.detailActionInFlight = false;
-        if (state.mainView === "learning" && currentLearningInsight()?.library_key === insight.library_key) {
-          renderLearningDetail();
-        }
-      }
-    }
-
-    async function previewLearningCandidateDraft() {
-      const insight = currentLearningInsight();
-      const draft = snapshotLearningDraftFromDom();
-      if (!insight || !draft || state.learningDraftBusy) return;
-      const scrollTop = captureLearningScrollPosition();
-      state.learningDraftBusy = true;
-      state.learningDraftError = "";
-      state.detailActionInFlight = true;
-      renderLearningDetail();
-      restoreLearningScrollPosition(scrollTop);
-      try {
-        const preview = await api("/api/learning/candidate/preview", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id, draft })
-        });
-        state.learningDraft = preview.draft;
-        showStatus(t("status.agentCandidatePreviewed"));
-      } catch (error) {
-        state.learningDraftError = error.message;
-      } finally {
-        state.learningDraftBusy = false;
-        state.detailActionInFlight = false;
-        renderLearningDetail();
-        restoreLearningScrollPosition(scrollTop);
-      }
-    }
-
-    async function createLearningCandidate() {
-      const insight = currentLearningInsight();
-      const draft = snapshotLearningDraftFromDom();
-      if (!insight || !draft || state.learningDraftBusy) return;
-      const scrollTop = captureLearningScrollPosition();
-      state.learningDraftBusy = true;
-      state.learningDraftError = "";
-      state.detailActionInFlight = true;
-      renderLearningDetail();
-      restoreLearningScrollPosition(scrollTop);
-      try {
-        await api("/api/learning/candidate/create", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id, draft })
-        });
-        state.learningDraft = null;
-        state.learningDraftInsightKey = null;
-        await loadLearningInsights();
-        showStatus(t("status.agentCandidateCreated"));
-      } catch (error) {
-        state.learningDraftError = error.message;
-      } finally {
-        state.learningDraftBusy = false;
-        state.detailActionInFlight = false;
-        renderLearningDetail();
-        restoreLearningScrollPosition(scrollTop);
-      }
-    }
-
-    function cancelLearningCandidateDraft() {
-      state.learningDraft = null;
-      state.learningDraftInsightKey = null;
-      state.learningDraftError = "";
-      renderLearningDetail();
-    }
-
     async function openLearningCandidateReview() {
       const insight = currentLearningInsight();
       const promotion = insight?.learning_impact?.promotion;
@@ -1806,8 +1621,6 @@ export function mountWorkspace(boot) {
       state.mainView = "review";
       review.reset(state.projectRoot, promotion.session_id, promotion.candidate_id);
       library.reset(state.projectRoot);
-      state.learningDraft = null;
-      state.learningDraftInsightKey = null;
       renderProjects();
       syncWorkspaceRoute();
       renderActiveView();
@@ -1848,27 +1661,6 @@ export function mountWorkspace(boot) {
         showStatus(t("status.collectionReordered"));
       } catch (error) {
         showStatus(error.message, true);
-      }
-    }
-
-    async function consultLearningInsight() {
-      const insight = currentLearningInsight();
-      if (!insight || state.insightConsulting || Number(insight.consulted_count || 0) > 0) return;
-      state.insightConsulting = true;
-      renderLearningDetail();
-      try {
-        const data = await api("/api/insight/consult", {
-          method: "POST",
-          body: JSON.stringify({ projectRoot: insight.origin_project_root, id: insight.id })
-        });
-        state.learningInsights = state.learningInsights.map((item) => item.library_key === data.insight.library_key ? { ...item, ...data.insight } : item);
-        renderLearningShelf();
-        showStatus(t("status.insightConsulted"));
-      } catch (error) {
-        showStatus(error.message, true);
-      } finally {
-        state.insightConsulting = false;
-        renderLearningDetail();
       }
     }
 
@@ -2446,7 +2238,7 @@ export function mountWorkspace(boot) {
     }
 
     async function refreshAll() {
-      if (review.dirty()) {
+      if (review.dirty() || learning.busy) {
         showStatus(t("status.refreshDeferred"));
         return;
       }

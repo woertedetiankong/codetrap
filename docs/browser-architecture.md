@@ -19,6 +19,9 @@ browser/entry.ts
         +-- review.ts      typed Review form/action coordination
         |     +-- review-model.ts    requests, selection, drafts and mutations
         |     +-- review-data.ts     identity/form/receipt validation
+        +-- learning.ts    typed practice/proposal/action coordination
+        |     +-- learning-model.ts  source-scoped drafts and captured operations
+        |     +-- learning-data.ts   workflow transport validation
         +-- client-review  pure review selection and payload helpers
         +-- client-impact  injected factory, five public operations
         +-- experience actions, revision and evaluation-set controllers
@@ -72,7 +75,7 @@ functions into an unrelated test page.
 ## Type coverage and behavior
 
 `tsconfig.browser.json` gives the entry, platform, route and translation modules
-and access recovery/Library/Review controllers strict DOM types with no Bun/Node ambient globals.
+and access recovery/Library/Review/Learning workflow controllers strict DOM types with no Bun/Node ambient globals.
 The existing project strict check continues to cover typed feature controllers.
 Platform contracts cover:
 
@@ -153,10 +156,12 @@ scroll restoration, Learning/Run links and revision-history controllers remain.
 `workspace.js` and `shell.js` are explicit legacy JavaScript boundaries.
 `workspace.d.ts` defines the typed startup handoff into that workspace; it does
 not imply that thousands of existing business-state accesses are checked.
-Impact and Learning practice/action adapters still contain their pre-existing
-dynamic state types. Library state/DTOs and Review state/draft/action coordination
-are typed; Review presentation and Learning/Impact state remain migration boundaries
-under audit F8.
+Impact and cross-feature navigation retain their pre-existing dynamic state types.
+Library state/DTOs, Review state/draft/action coordination and Learning practice/
+proposal/status actions are typed. Review and Learning presentation, Learning list/
+filter/collection state and broader Impact state remain migration boundaries under
+audit F8. Learning list reads now validate workflow identity/fields and have guarded
+loading/error/retry transitions in the legacy adapter.
 The root TypeScript checks were not relaxed to conceal those boundaries.
 
 Factories receive actual state, DOM, API and navigation dependencies and expose
@@ -206,6 +211,42 @@ are unchanged. This slice adds browser coordination, not a cross-process optimis
 edit protocol. Backend material-content authorization remains essential; browser
 request guards do not replace it.
 
+## Learning workflow drafts and actions
+
+`learning-model.ts` stores raw practice notes and proposal form fields under a
+source-project/Insight identity. The workspace's selected project or all-projects
+filter is not the ownership key. Navigation, locale/layout changes and authorization
+reconnection retain each draft. Discard removes only the chosen note or proposal;
+closing/reloading is still outside the in-tab guarantee. The unload guard includes
+Learning drafts and pending operations; this is not durable autosave.
+
+All workflow actions capture the source and visible fields before awaiting. Practice
+saves retain newer typing, including a change back to the original saved value while
+a different value is still being saved. Proposal preview validates the submitted
+version without normalizing the visible tags/path fields or overwriting newer input.
+Newer input remains unvalidated; the current field focus/selection is restored on
+rerender. Proposal fields are locked during explicit submission to the Candidate
+Inbox. This never accepts the candidate or writes confirmed memory.
+
+Practice/status/feedback/Run HTTP mutation responses add `project_root` to their
+existing shape. `learning-data.ts` validates source and Insight identities before
+installing results; preview/create already have both identity fields. Shared types
+live in `src/domain/learning-impact.ts`, with compatible backend exports. List
+decoding validates workflow-consumed fields, not all collection presentation metadata.
+
+Read generations prevent abandoned successes/errors from installing into a different
+project/scope. GETs use `cache: "no-store"`; Learning history releases the navigation
+lock so Back can recover before an old request completes. If a mutation changes data
+while the current list read is pending, a fresh read replaces it rather than leaving
+a permanent loading state. Project reset immediately removes the old form. Missing
+explicit item routes remain missing, and malformed responses have localized retry.
+
+Learning and Review notify each other when their action locks change, so returning
+to another view does not leave its controls disabled after the original operation
+finishes. Failures remain scoped to the original draft and writes are not replayed.
+Legacy collection rename/reorder, Run-choice hydration, filters and presentation are
+separate boundaries; backend cross-process write/version semantics are unchanged.
+
 ## Verification
 
 Behavior tests cover launch-token refresh, denied storage, real header/body
@@ -219,4 +260,5 @@ The repository has observed this long-process interruption both before and after
 the entry migration; it is not counted as a passing test. A complete run must
 record results for every file. See the [implementation handoff](tasks/2026-09-04-browser-module-entry/handoff.md)
 for the earlier module-delivery evidence; the [Library handoff](tasks/2026-09-04-library-state/handoff.md) records that slice,
-and the [Review handoff](tasks/2026-09-04-review-state/handoff.md) records the current state.
+the [Review handoff](tasks/2026-09-04-review-state/handoff.md) records its state, and
+the [Learning workflow handoff](tasks/2026-09-05-learning-workflow/handoff.md) records the current slice.

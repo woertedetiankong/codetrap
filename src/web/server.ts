@@ -418,36 +418,36 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
   if (request.method === "POST" && url.pathname === "/api/learning/progress/status") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).updateStatus(
+    return jsonResponse({ project_root: projectRoot, ...runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).updateStatus(
       stringBodyField(body, "id"),
       stringBodyField(body, "status")
-    )));
+    )) });
   }
 
   if (request.method === "POST" && url.pathname === "/api/learning/practice-note") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).updatePracticeNote(
+    return jsonResponse({ project_root: projectRoot, ...runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).updatePracticeNote(
       stringBodyField(body, "id"), body.practiceNote
-    )));
+    )) });
   }
 
   if (request.method === "POST" && url.pathname === "/api/learning/feedback") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).updateFeedback(
+    return jsonResponse({ project_root: projectRoot, ...runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).updateFeedback(
       stringBodyField(body, "id"),
       stringBodyField(body, "feedback")
-    )));
+    )) });
   }
 
   if (request.method === "POST" && url.pathname === "/api/learning/run-link") {
     const body = await readJsonBody(request);
     const projectRoot = projectRootFromBody(body, context);
-    return jsonResponse(runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).linkRun(
+    return jsonResponse({ project_root: projectRoot, ...runLearningImpactAction(() => learningImpactOperations(projectRoot, context.home).linkRun(
       stringBodyField(body, "id"),
       body.linkedRunId
-    )));
+    )) });
   }
 
   if (request.method === "POST" && url.pathname === "/api/learning/candidate/preview") {

@@ -787,6 +787,14 @@ grouped on read and are persisted as a collection only after an explicit rename
 or reorder. Search, source type, tag, and learned-state filters keep a growing
 shelf navigable.
 
+Practice notes and Agent experience proposals keep separate drafts for each source
+project and Insight while you switch articles, projects, language or views. Preview
+checks the submitted version without rewriting your text; newer edits remain
+unvalidated until you preview again. Save a practice note explicitly, then submit
+an experience proposal to the Candidate Inbox for review. These drafts survive
+in-place reauthorization, but closing or reloading the tab can still lose unsaved
+work.
+
 New source-derived collections also carry an auditable source-unit inventory.
 The agent first inventories the article or captured conversation sample, then
 routes core knowledge and examples through Insight `source_unit_refs`.
@@ -1448,9 +1456,11 @@ browser modules. Loading failures offer a retry, and older requests cannot repla
 the current project or lesson after navigation. Review preserves separate in-tab
 drafts for each project/session/candidate across navigation and locale changes;
 background updates defer while editing, and action completion stays bound to its
-original candidate. Use Save for durable storage: in-tab drafts are not autosaved
-across a forced reload. Review presentation and Learning/Impact state retain their
-explicit migration boundaries.
+original candidate. Learning practice/proposal drafts and action state now use
+strict modules too, with source-identity validation, captured payloads and guarded
+list retries. Use Save for durable storage: in-tab drafts are not autosaved across
+a forced reload. Review presentation, Learning collection/filter presentation and
+Run-choice loading, and broader Impact state retain explicit migration boundaries.
 
 ## Test
 

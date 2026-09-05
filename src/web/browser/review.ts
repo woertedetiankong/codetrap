@@ -13,6 +13,7 @@ interface Dependencies {
   showStatus(message: string, error?: boolean): void;
   showReceipt(receipt: ReviewReceipt, options: { projectRoot: string; target: ReviewTarget; undoSuppression?: string }): void;
   externalBusy(): boolean;
+  busyChanged?(): void;
 }
 export function createReviewUI(deps: Dependencies) {
   const model = createReviewModel({ api: deps.api,
@@ -20,7 +21,7 @@ export function createReviewUI(deps: Dependencies) {
       if (part === "sessions") { deps.renderSessions(); if (deps.context().active) deps.renderReview(); }
       else if (part === "candidates" && deps.context().active) deps.renderReview();
       else if (part === "draft") renderDraftState();
-      if (part === "busy") setBusy();
+      if (part === "busy") { setBusy(); deps.busyChanged?.(); }
     },
     notify: (key, error, params) => deps.showStatus(deps.t(key, params), error),
     receipt: (receipt, target, suppression) => deps.showReceipt(receipt, { projectRoot: target.projectRoot, target, undoSuppression: suppression }),
@@ -117,7 +118,7 @@ export function createReviewUI(deps: Dependencies) {
     async selectSession(id: string | null) { model.selectSession(id); deps.navigate(); deps.renderSessions(); await model.loadCandidates(); },
     selectCandidate(id: string | null) { model.selectCandidate(id); deps.navigate(); deps.renderReview(); },
     selectView(view: "inbox" | "reviewed") { model.selectView(view); deps.navigate(); deps.renderReview(); },
-    attachForm, bindActions, loadView,
+    attachForm, bindActions, loadView, syncBusy: setBusy,
     sessionAction: model.manageSession,
   };
 }

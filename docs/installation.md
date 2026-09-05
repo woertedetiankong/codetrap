@@ -428,6 +428,14 @@ previous/next navigation, and filters by search, source, tag, or learned state.
 Project files remain the durable source of truth; the all-project view is an
 aggregation rather than a second writable store.
 
+Practice notes and experience proposals retain separate drafts per source project
+and Insight across article/project navigation, language changes and in-place
+reauthorization. Preview validates the submitted version without replacing newer
+input. Save practice notes explicitly; sending a proposal creates a pending
+Candidate Inbox item for review, not confirmed memory. Discard affects only the
+selected note or proposal. Unsaved drafts remain in tab memory and can be lost on
+close or reload.
+
 New source-derived collections use a fingerprinted source-unit inventory. Core
 knowledge and examples route to ordered Insights; substantive background and
 dated facts can live in collection `context_sections`, where they stay visible
