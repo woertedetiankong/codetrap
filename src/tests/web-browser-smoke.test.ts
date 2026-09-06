@@ -1,5 +1,6 @@
 import { chromeExecutablePath, dataSelector, launchBrowser } from "./browser-helper";
 import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -228,6 +229,12 @@ describe("web browser smoke", () => {
     const project = tempProjectDir("codetrap-experience-browser-", { realpath: true });
     const source = tempProjectDir("codetrap-experience-source-", { realpath: true });
     for (const root of [project, source]) { addWebProject(root, home); seedBrowserSmokeData(root, home); }
+    // Both projects share the global store. Make the unrelated second lesson
+    // newer on every platform so navigation cannot rely on a same-second tie.
+    const globalDb = new Database(join(home, ".codetrap", "traps.db"));
+    try {
+      globalDb.run("UPDATE traps SET updated_at = CASE id WHEN 1 THEN '2026-08-01 00:00:00' ELSE '2026-08-02 00:00:00' END");
+    } finally { globalDb.close(); }
     const learning = new LearningImpactOperations(source, new SessionOperations(new SessionStore(source), new TrapOperations(new TrapStore(source, undefined, home))));
     const promoted = learning.createCandidate("ins-browser-smoke", learning.preview("ins-browser-smoke").draft);
     new SessionStore(source).acceptCandidate(promoted.candidate.id, { sessionId: promoted.session_id, trapId: 1, scope: "global", evidenceId: null });
@@ -337,6 +344,8 @@ describe("web browser smoke", () => {
         && new URL(response.url()).searchParams.get("project") === source);
       await page.locator("#trap-filter-scope").selectOption("global");
       await filteredEvidence;
+      expect(await page.locator('[data-trap-key].active').getAttribute('data-trap-key')).toBe('global:2');
+      await page.locator('[data-trap-key="global:1"]').click();
       try { await page.locator(".experience-facts").filter({ hasText: "0 helpful · 0 irrelevant · 1 harmful" }).waitFor(); }
       catch (error) { console.log(JSON.stringify({ url: page.url(), body: (await page.locator("#detail").textContent())?.slice(0, 1800), errors })); throw error; }
 
@@ -346,6 +355,7 @@ describe("web browser smoke", () => {
       expect(new URL(page.url()).hash).toBe("#/impact/runs/run-browser-smoke?project=" + webProjectRouteRef(source));
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await page.locator(".experience-path").waitFor();
+      await page.locator('[data-trap-key="global:1"]').click();
       await page.locator('[data-experience-insight="ins-browser-smoke"]').click();
       await page.locator("#learning-practice-note").waitFor();
       expect(await page.locator("#learning-practice-note").inputValue()).toBe("PRIVATE newer draft");
