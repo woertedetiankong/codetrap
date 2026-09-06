@@ -1485,12 +1485,19 @@ establish a causal improvement or a long-term growth rate.
 ## Test
 
 ```bash
-bun test src/tests/                    # All tests
+bun run test                         # All tests, one process per test file (same as CI)
 bun test src/tests/search-eval.test.ts # Recall@5 evaluation
 bun run benchmark:retrieval -- --verify # Public synthetic benchmark + drift gate
 bun run eval:dogfood -- report         # Maintainer dogfood eval report
 bun run eval:dogfood -- report --live  # Dogfood eval with configured embedding provider
 ```
+
+Browser tests require Node.js 22+ and Chrome/Chromium (or
+`CODETRAP_TEST_BROWSER` pointing to its executable). They run the Playwright
+driver under Node while application fixtures stay under Bun, avoiding Bun's
+Windows browser-pipe compatibility issue. CI fails if the browser is missing;
+local runs without a browser skip the browser suites. Playwright is pinned
+because the shared test helper uses its exported out-of-process driver adapter.
 
 ## Tech Stack
 

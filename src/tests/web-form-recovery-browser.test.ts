@@ -1,18 +1,19 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { reviewFixture } from "./web-review-fixture";
 import { webSuiteFixture } from "./project-eval-suite-fixture";
 import { webProjectRouteRef } from "../web/project-registry";
 import { readProjectSuite, PROJECT_EVAL_SUITE } from "../lib/project-eval-suite";
-const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium"].find(p => p && existsSync(p));
+const chrome = chromeExecutablePath();
 const browserTest = chrome ? test : test.skip;
 async function editLesson(page: import("playwright-core").Page) {
   await page.locator("#title").waitFor({ state: "attached" });
   if (!(await page.locator("#title").isVisible())) await page.locator("#review-edit-toggle").click();
 }
 const restore = "[data-draft-restore]";
-async function launch() { const { chromium } = await import("playwright-core"); return chromium.launch({ executablePath: chrome!, headless: true }); }
+async function launch() { return launchBrowser(); }
 
 browserTest("Review reload recovery is explicit, raw, source-bound, and cannot restore an outdated candidate", async () => {
   const f = reviewFixture(); let writes = 0;

@@ -47,6 +47,7 @@
     "codetrap": "bin/codetrap"
   },
   "scripts": {
+    "test": "node scripts/test.mjs",
     "postinstall": "node scripts/postinstall.mjs",
     "dev": "bun run build:web && bun run src/index.ts",
     "install:cli": "ln -sf \"$PWD/bin/codetrap\" \"$(bun pm bin -g)/codetrap\"",
@@ -74,7 +75,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "playwright-core": "^1.56.1",
+    "playwright-core": "1.60.0",
     "typescript": "7.0.2"
   }
 }

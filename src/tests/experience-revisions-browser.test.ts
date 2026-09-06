@@ -1,5 +1,6 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { revisionFixture, revisionInput } from "./experience-revision-fixture";
@@ -7,9 +8,8 @@ import { createWebHandler } from "../web/server";
 import { webProjectRouteRef } from "../web/project-registry";
 import { openObservationLedgerReadOnly } from "../lib/observation-ledger";
 
-const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].find(p => p && existsSync(p));
+const chrome = chromeExecutablePath();
 (chrome ? test : test.skip)("bundled revision UI completes feedback, tests, approval, reopening and rollback on desktop and mobile", async () => {
-  const { chromium } = await import("playwright-core");
   const f = revisionFixture();
   const bundle = await Bun.build({ entrypoints: [fileURLToPath(new URL("../web/static.ts", import.meta.url))], target: "bun", format: "esm" });
   expect(bundle.success).toBe(true);
@@ -27,7 +27,7 @@ const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.
     }
     return response;
   } });
-  const browser = await chromium.launch({ executablePath: chrome!, headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     page.setDefaultTimeout(5000);

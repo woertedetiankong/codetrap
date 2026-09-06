@@ -1,9 +1,9 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
 import { webSuiteFixture } from "./project-eval-suite-fixture";
 import { webProjectRouteRef } from "../web/project-registry";
 
-const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].find(path => path && existsSync(path));
+const chrome = chromeExecutablePath();
 const browserTest = chrome ? test : test.skip;
 
 for (const failure of ["unauthorized-html", "invalid-bootstrap", "server-error"] as const) {
@@ -16,8 +16,7 @@ for (const failure of ["unauthorized-html", "invalid-bootstrap", "server-error"]
         : failure === "server-error" ? new Response("Unavailable", { status: 500 }) : Response.json({ projects: [{}], options: {} });
       return f.handler(req);
     } });
-    const { chromium } = await import("playwright-core");
-    const browser = await chromium.launch({ executablePath: chrome!, headless: true });
+    const browser = await launchBrowser();
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
@@ -44,8 +43,7 @@ for (const failure of ["unauthorized-html", "invalid-bootstrap", "server-error"]
 browserTest("browser entry uses a one-tab launch when storage is blocked", async () => {
   const f = webSuiteFixture();
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: f.handler });
-  const { chromium } = await import("playwright-core");
-  const browser = await chromium.launch({ executablePath: chrome!, headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     page.setDefaultTimeout(5000);

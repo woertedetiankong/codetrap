@@ -1,15 +1,14 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { reviewFixture } from "./web-review-fixture";
 import { createWebHandler } from "../web/server";
-const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome", join(process.env.ProgramFiles ?? "C:\\Program Files", "Google/Chrome/Application/chrome.exe")].find(p => p && existsSync(p));
+const chrome = chromeExecutablePath();
 const browserTest = chrome ? test : test.skip;
 async function editLesson(page: import("playwright-core").Page) {
   await page.locator("#title").waitFor({ state: "attached" });
   if (!(await page.locator("#title").isVisible())) await page.locator("#review-edit-toggle").click();
 }
-async function launch() { const { chromium } = await import("playwright-core"); return chromium.launch({ executablePath: chrome!, headless: true }); }
+async function launch() { return launchBrowser(); }
 const settle = async (page: import("playwright-core").Page) => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
 browserTest("bare links in a fresh tab have an effective authorization entry and keep their original route", async () => {

@@ -1,14 +1,9 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { webSuiteFixture } from "./project-eval-suite-fixture";
 import { webProjectRouteRef } from "../web/project-registry";
 
-const chrome = [process.env.CODETRAP_TEST_BROWSER,
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome",
-  join(process.env.ProgramFiles ?? "C:\\Program Files", "Google/Chrome/Application/chrome.exe"),
-  join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Microsoft/Edge/Application/msedge.exe"),
-].find(path => path && existsSync(path));
+const chrome = chromeExecutablePath();
 const browserTest = chrome ? test : test.skip;
 
 browserTest("Library phone reader recovers separately from malformed list, missing detail and unavailable experience", async () => {
@@ -21,8 +16,7 @@ browserTest("Library phone reader recovers separately from malformed list, missi
     if (path === "/api/trap/experience" && failExperience) return new Response("Offline", { status: 503 });
     return f.handler(request);
   } });
-  const { chromium } = await import("playwright-core");
-  const browser = await chromium.launch({ executablePath: chrome!, headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); page.setDefaultTimeout(5000);
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
@@ -65,8 +59,7 @@ browserTest("Library filter response races leave current results and history int
     }
     return f.handler(request);
   } });
-  const { chromium } = await import("playwright-core");
-  const browser = await chromium.launch({ executablePath: chrome!, headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } }); page.setDefaultTimeout(5000);
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
@@ -103,8 +96,7 @@ browserTest("Library Back navigation does not wait for a superseded route's slow
     }
     return f.handler(request);
   } });
-  const { chromium } = await import("playwright-core");
-  const browser = await chromium.launch({ executablePath: chrome!, headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage(); page.setDefaultTimeout(4000);
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));

@@ -1,11 +1,10 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { reviewFixture } from "./web-review-fixture";
 import { Phase2Operations } from "../lib/phase2-operations";
 import { TrapOperations } from "../lib/trap-operations";
 import { webProjectRouteRef } from "../web/project-registry";
-const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome", join(process.env.ProgramFiles ?? "C:\\Program Files", "Google/Chrome/Application/chrome.exe"), join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Microsoft/Edge/Application/msedge.exe")].find(p => p && existsSync(p));
+const chrome = chromeExecutablePath();
 const browserTest = chrome ? test : test.skip;
 async function editLesson(page: import("playwright-core").Page) {
   await page.locator("#title").waitFor({ state: "attached" });
@@ -14,9 +13,9 @@ async function editLesson(page: import("playwright-core").Page) {
 const settle = async (page: import("playwright-core").Page) => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
 browserTest("Review restores each candidate's draft across locale, view, project and phone history navigation", async () => {
-  const f = reviewFixture(), { chromium } = await import("playwright-core");
+  const f = reviewFixture();
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: f.handler });
-  const browser = await chromium.launch({ executablePath: chrome!, headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } }); page.setDefaultTimeout(5000);
     const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
@@ -69,7 +68,7 @@ browserTest("Review save stays bound during selection changes and accept/reject/
     if (new URL(request.url).pathname === "/api/candidate/save") { started(); await pending; }
     return result;
   } });
-  const { chromium } = await import("playwright-core"), browser = await chromium.launch({ executablePath: chrome!, headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } }); page.setDefaultTimeout(6000);
     const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
@@ -110,7 +109,7 @@ browserTest("Review insight drafts retain source fields through apply and rollba
   const proposal = new Phase2Operations(f.a.root, new TrapOperations(f.a.traps)).propose({ kind: "insight", title: "Prefix study", rationale: "Use exact prefixes", payload: { title: "Prefix study", summary: "Exact prefixes are reusable.", body: "Keep a stable prefix.", tags: ["study"], source_refs: ["https://example.com/study"] } });
   if (proposal.suppressed) throw new Error("Unexpected suppression");
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: f.handler });
-  const { chromium } = await import("playwright-core"), browser = await chromium.launch({ executablePath: chrome!, headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage(); page.setDefaultTimeout(6000); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.port}/?token=review-token#/review/${proposal.session.id}/${proposal.candidate.id}?project=${webProjectRouteRef(f.a.root)}`);
@@ -135,7 +134,7 @@ browserTest("Review malformed responses retry and Back escapes an abandoned slow
     if (path === "/api/candidates" && blockNext) { blockNext = false; started(); await pending; return new Response("Stale failure", { status: 503 }); }
     return f.handler(request);
   } });
-  const { chromium } = await import("playwright-core"), browser = await chromium.launch({ executablePath: chrome!, headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage(); page.setDefaultTimeout(5000); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     await page.addInitScript(() => localStorage.setItem("codetrap-queue-collapsed", "false"));

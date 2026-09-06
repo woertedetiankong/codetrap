@@ -11,7 +11,7 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "playwright-core": "^1.56.1",
+        "playwright-core": "1.60.0",
         "typescript": "7.0.2",
       },
     },

@@ -1,11 +1,11 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
 import { learningFixture } from "./web-learning-fixture";
 import { ObservationRunRecorder } from "../lib/observation-recorder";
 
-const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].find(path => path && existsSync(path));
+const chrome = chromeExecutablePath();
 const browserTest = chrome ? test : test.skip;
-async function launch() { const { chromium } = await import("playwright-core"); return chromium.launch({ executablePath: chrome!, headless: true }); }
+async function launch() { return launchBrowser(); }
 
 browserTest("search settings recover from a failed load and preserve unsaved provider fields after a failed save", async () => {
   const fixture = learningFixture();

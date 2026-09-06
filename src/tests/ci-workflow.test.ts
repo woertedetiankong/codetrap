@@ -10,7 +10,10 @@ describe("CI quality gates", () => {
     expect(workflow).toContain("windows-latest");
     expect(workflow).toContain("bun-version: 1.3.14");
     expect(workflow).toContain("bun run typecheck");
-    expect(workflow).toContain("bun test src/tests");
+    expect(workflow).toContain("bun run test");
+    expect(workflow).toContain("node-version: 22");
+    const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+    expect(manifest.scripts.test).toBe("node scripts/test.mjs");
   });
 
   test("release paths use the same pinned project typecheck", () => {

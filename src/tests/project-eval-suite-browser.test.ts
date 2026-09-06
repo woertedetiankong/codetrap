@@ -1,3 +1,4 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import { webSuiteFixture } from "./project-eval-suite-fixture";
 import { readProjectSuite, PROJECT_EVAL_SUITE } from "../lib/project-eval-suite";
 import { webProjectRouteRef } from "../web/project-registry";
 
-const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].find(p => p && existsSync(p));
+const chrome = chromeExecutablePath();
 (chrome ? test : test.skip)("bundled ordinary-project workflow previews a corpus, reviews examples, runs comparisons and downloads a portable suite", async () => {
   const f = webSuiteFixture();
   const bundle = await Bun.build({ entrypoints: [fileURLToPath(new URL("../web/static.ts", import.meta.url))], target: "bun", format: "esm" });
@@ -24,8 +25,7 @@ const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.
     }
     return result;
   } });
-  const { chromium } = await import("playwright-core");
-  const browser = await chromium.launch({ executablePath: chrome!, headless: true });
+    const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
     page.setDefaultTimeout(5000);

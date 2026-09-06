@@ -1,12 +1,11 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import type { Page } from "playwright-core";
 import { learningFixture } from "./web-learning-fixture";
 import { LEARNING_DRAFT_PREFIX, LEARNING_DRAFT_TTL } from "../web/browser/learning-draft-store";
-const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome", join(process.env.ProgramFiles ?? "C:\\Program Files", "Google/Chrome/Application/chrome.exe")].find(p => p && existsSync(p));
+const chrome = chromeExecutablePath();
 const browserTest = chrome ? test : test.skip;
-async function launch() { const { chromium } = await import("playwright-core"); return chromium.launch({ executablePath: chrome!, headless: true }); }
+async function launch() { return launchBrowser(); }
 const note = "#learning-practice-note", title = '#learning-agent-candidate-form [name="title"]', tags = '#learning-agent-candidate-form [name="tags"]';
 const restore = "#learning-recovery-restore", choice = "#learning-recovery-choice";
 async function snapshots(page: Page) {

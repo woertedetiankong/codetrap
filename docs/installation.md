@@ -93,7 +93,7 @@ The release tag must match `package.json` exactly. For example, package version 
 The workflow runs:
 
 ```bash
-bun test src/tests
+bun run test
 bun run build:release
 ```
 
@@ -202,7 +202,7 @@ Then configure trusted publishing for future releases.
 The workflow runs:
 
 ```bash
-bun test src/tests
+bun run test
 npm pack --dry-run
 # Maintainer-only: this is run by the release workflow after explicit release approval.
 npm publish --access public

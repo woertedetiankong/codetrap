@@ -1,3 +1,4 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,13 +43,12 @@ const browserTest = chromePath ? test : test.skip;
 
 describe("web browser smoke", () => {
   browserTest("keeps missing project and item links explicit on mobile and recovers through project selection", async () => {
-    const { chromium } = await import("playwright-core");
     const home = tempHome("codetrap-route-home-", { realpath: true, initCodetrap: true });
     const project = tempProjectDir("codetrap-route-missing-", { realpath: true });
     addWebProject(project, home);
     seedBrowserSmokeData(project, home);
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project }) });
-    const browser = await chromium.launch({ executablePath: chromePath!, headless: true, args: ["--no-sandbox"] });
+    const browser = await launchBrowser();
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       page.setDefaultTimeout(5_000);
@@ -99,7 +99,6 @@ describe("web browser smoke", () => {
   }, 20_000);
 
   browserTest("loads the review console and renders live project data", async () => {
-    const { chromium } = await import("playwright-core");
     const home = tempHome("codetrap-web-browser-home-", { realpath: true, initCodetrap: true });
     const project = tempProjectDir("codetrap-web-browser-", { realpath: true });
     addWebProject(project, home);
@@ -115,11 +114,7 @@ describe("web browser smoke", () => {
         currentProjectRoot: project,
       }),
     });
-    const browser = await chromium.launch({
-      executablePath: chromePath!,
-      headless: true,
-      args: ["--no-sandbox"],
-    });
+    const browser = await launchBrowser();
     const errors: string[] = [];
 
     try {
@@ -229,7 +224,6 @@ describe("web browser smoke", () => {
   }, 20_000);
 
   browserTest("keeps practice drafts and follows accepted experience across project boundaries", async () => {
-    const { chromium } = await import("playwright-core");
     const home = tempHome("codetrap-experience-browser-home-", { realpath: true, initCodetrap: true });
     const project = tempProjectDir("codetrap-experience-browser-", { realpath: true });
     const source = tempProjectDir("codetrap-experience-source-", { realpath: true });
@@ -257,7 +251,7 @@ describe("web browser smoke", () => {
       if (new URL(request.url).pathname === "/") return new Response(bundled.WEB_INDEX_HTML, { headers: { "content-type": "text/html" } });
       return handler(request);
     } });
-    const browser = await chromium.launch({ executablePath: chromePath!, headless: true, args: ["--no-sandbox"] });
+    const browser = await launchBrowser();
     try {
       const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       page.setDefaultTimeout(5000);
@@ -388,13 +382,12 @@ describe("web browser smoke", () => {
   }, 30_000);
 
   browserTest("empty Impact explains setup, keeps its demo disposable, and fits a phone", async () => {
-    const { chromium } = await import("playwright-core");
     const home = tempHome("codetrap-overview-home-", { realpath: true, initCodetrap: true });
     const project = tempProjectDir("codetrap-overview-empty-", { realpath: true });
     addWebProject(project, home);
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0,
       fetch: createWebHandler({ token: TOKEN, cwd: project, home, currentProjectRoot: project }) });
-    const browser = await chromium.launch({ executablePath: chromePath!, headless: true, args: ["--no-sandbox"] });
+    const browser = await launchBrowser();
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       page.setDefaultTimeout(5_000);
@@ -631,25 +624,4 @@ function seedBrowserSmokeData(project: string, home: string): void {
     input_tokens: 100,
     output_tokens: 40,
   });
-}
-
-function chromeExecutablePath(): string | null {
-  const programFiles = process.env["ProgramFiles"] ?? "C:\\Program Files";
-  const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
-  const localAppData = process.env["LOCALAPPDATA"];
-  const candidates = [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/usr/bin/google-chrome",
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-    // Without these the smoke test silently skips on Windows, so browser-visible
-    // regressions stay invisible on the platform this project is developed on.
-    join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
-    join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
-    join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
-    ...(localAppData ? [join(localAppData, "Google", "Chrome", "Application", "chrome.exe")] : []),
-  ];
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }

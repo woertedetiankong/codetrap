@@ -1,11 +1,10 @@
+import { chromeExecutablePath, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { learningFixture } from "./web-learning-fixture";
 import { createWebHandler } from "../web/server";
-const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome", join(process.env.ProgramFiles ?? "C:\\Program Files", "Google/Chrome/Application/chrome.exe")].find(p => p && existsSync(p));
+const chrome = chromeExecutablePath();
 const browserTest = chrome ? test : test.skip;
-async function launch() { const { chromium } = await import("playwright-core"); return chromium.launch({ executablePath: chrome!, headless: true }); }
+async function launch() { return launchBrowser(); }
 const title = "#learning-agent-candidate-form [name=title]", fix = "#learning-agent-candidate-form [name=fix]", tags = "#learning-agent-candidate-form [name=tags]";
 const settle = (page: import("playwright-core").Page) => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 

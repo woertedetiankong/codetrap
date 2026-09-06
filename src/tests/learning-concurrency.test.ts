@@ -27,9 +27,14 @@ type Spawned = ReturnType<typeof spawnCli>;
 
 async function runAll(procs: Spawned[]): Promise<{ code: number; out: string }[]> {
   return Promise.all(procs.map(async (proc) => {
-    const out = await new Response(proc.stdout as ReadableStream).text();
-    const err = await new Response(proc.stderr as ReadableStream).text();
-    return { code: await proc.exited, out: out + err };
+    // Observe exit immediately and drain both pipes while the process is live.
+    // Attaching the exit watcher after EOF can race a reaped descriptor on Linux.
+    const [code, out, err] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout as ReadableStream).text(),
+      new Response(proc.stderr as ReadableStream).text(),
+    ]);
+    return { code, out: out + err };
   }));
 }
 
