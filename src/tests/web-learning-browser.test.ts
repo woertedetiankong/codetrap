@@ -81,7 +81,7 @@ browserTest("reauthorization keeps Learning drafts and the explicit read-practic
     await page.locator('[data-learning-status="learned"]').click(); await page.locator('[data-learning-status="learned"].active').waitFor();
     await page.locator('[data-learning-feedback="helpful"]').click(); await page.locator('[data-learning-feedback="helpful"].active').waitFor();
     await page.locator("#create-learning-candidate").click(); await page.locator("#open-learning-candidate-review").waitFor();
-    await page.locator("#open-learning-candidate-review").click(); await page.locator("#candidate-form").waitFor();
+    await page.locator("#open-learning-candidate-review").click(); await page.locator("#candidate-form").waitFor({ state: "attached" });
     expect(await page.locator("#title").inputValue()).toBe("Concrete experience from reading");
     expect(await page.locator("#fix").inputValue()).toBe("Apply the rule and verify the actual result.");
     expect(f.a.sessions.listSessions({ status: "all" })).toHaveLength(1);
@@ -135,7 +135,7 @@ browserTest("creation finishing on another article keeps its draft, and Review c
     release(); await page.locator("#create-learning-candidate:not([disabled])").waitFor();
     expect(await page.locator(title).inputValue()).toBe("Keep second article draft");
     expect(new URL(page.url()).hash).toContain("/two?");
-    await page.locator("#previous-learning").click(); await page.locator("#open-learning-candidate-review").click(); await page.locator("#title").waitFor();
+    await page.locator("#previous-learning").click(); await page.locator("#open-learning-candidate-review").click(); await page.locator("#title").waitFor({ state: "attached" });
     const saved = hold("/api/candidate/save"); await page.locator("#save").click(); await saved;
     await page.locator('[data-main-view="learning"]').click(); await page.locator("#learning-practice-note").waitFor();
     expect(await page.locator("#save-learning-practice").isDisabled()).toBe(true);

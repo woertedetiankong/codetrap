@@ -47,6 +47,7 @@ describe("web workspace routes", () => {
 
   test("round-trips unicode review identities without treating encoded slashes as hierarchy", () => {
     const route = { mainView: "review" as const, sessionId: "session/经验 ?", candidateId: "cand/#1" };
-    expect(parseWorkspaceRoute(workspaceRouteHash(route))).toMatchObject(route);
+    expect(parseWorkspaceRoute(workspaceRouteHash(route))).toMatchObject({ ...route, pane: "detail" });
+    expect(parseWorkspaceRoute(workspaceRouteHash({ ...route, pane: "list" }))).toMatchObject({ ...route, pane: "list" });
   });
 });

@@ -2,6 +2,7 @@ import { createLibraryModel, emptyLibraryFilters, trapKey, trapNeedsValidation, 
 import type { LibraryEvidence, LibraryScope, LibraryTrap } from "../client-library-contract";
 import { experiencePathContent } from "../client-experience";
 import type { Translate } from "./platform";
+import { readerIcon } from "./reader-icons";
 
 interface LibraryContext { project: string | null; active: boolean; options: { scopes: string[]; categories: string[]; stale_after_days: number } }
 interface Dependencies {
@@ -71,8 +72,8 @@ export function createLibraryUI(deps: Dependencies) {
       el("candidate-tabs").classList.add("hidden");
       el("candidates").innerHTML = `
         <div class="library-tools">
-          <input id="trap-search" placeholder="${escapeAttr(t("placeholder.searchTraps"))}" value="${escapeAttr(state.search)}">
-          <details class="library-filters" id="library-filters" ${!isCompactShell() || state.filtersOpen ? "open" : ""}><summary>${escapeHtml(t("route.filters"))}</summary><div class="filter-grid">
+          <input id="trap-search" aria-label="${escapeAttr(t("placeholder.searchTraps"))}" placeholder="${escapeAttr(t("placeholder.searchTraps"))}" value="${escapeAttr(state.search)}">
+          <details class="library-filters" id="library-filters" ${state.filtersOpen ? "open" : ""}><summary>${escapeHtml(t("route.filters"))}</summary><div class="filter-grid">
             ${filterSelect("trap-filter-scope", t("label.scope"), state.filters.scope, [["", t("option.projectGlobal")], ...optionPairs(context().options.scopes)])}
             ${filterSelect("trap-filter-status", t("label.status"), state.filters.status, [["", valueLabel("active")], ["all", valueLabel("all")], ["archived", valueLabel("archived")], ["superseded", valueLabel("superseded")]])}
             ${filterSelect("trap-filter-category", t("label.category"), state.filters.category, [["", t("option.allCategories")], ...optionPairs(context().options.categories)])}
@@ -95,7 +96,7 @@ export function createLibraryUI(deps: Dependencies) {
 
     function bindLibraryControls() {
       el("library-filters")?.querySelector("summary")?.addEventListener("click", () => {
-        if (isCompactShell()) state.filtersOpen = !el<HTMLDetailsElement>("library-filters").open;
+        state.filtersOpen = !el<HTMLDetailsElement>("library-filters").open;
       });
       const search = el<HTMLInputElement>("trap-search");
       if (search) {
@@ -171,7 +172,7 @@ export function createLibraryUI(deps: Dependencies) {
       }
       insights.innerHTML = renderLibraryHealth(model.traps());
       rows.innerHTML = visible.length ? visible.map((trap) => `
-        <button class="row ${trapKey(trap) === state.selectedKey ? "active" : ""}" data-trap-key="${escapeAttr(trapKey(trap))}">
+        <button class="row ${trapKey(trap) === state.selectedKey ? "active" : ""}" aria-pressed="${trapKey(trap) === state.selectedKey}" data-trap-key="${escapeAttr(trapKey(trap))}">
           <span class="row-title">${escapeHtml(trap.title)}</span>
           <span class="meta">
             <span class="pill ${escapeAttr(trap.severity)}">${escapeHtml(valueLabel(trap.severity))}</span>
@@ -214,7 +215,7 @@ export function createLibraryUI(deps: Dependencies) {
     }
 
     function healthMetric(filter: LibraryHealth, label: string, value: number, detail: string) {
-      return `<button type="button" class="metric health-metric ${state.health === filter ? "active" : ""}" data-trap-health="${escapeAttr(filter)}">
+      return `<button type="button" class="metric health-metric ${state.health === filter ? "active" : ""}" aria-pressed="${state.health === filter}" title="${escapeAttr(detail)}" data-trap-health="${escapeAttr(filter)}">
         <span class="metric-label">${escapeHtml(label)}</span>
         <span class="metric-value">${escapeHtml(value)}</span>
         <span class="subtle">${escapeHtml(detail)}</span>
@@ -260,8 +261,9 @@ export function createLibraryUI(deps: Dependencies) {
       const details = detailState.data;
       const detailTrap = details.trap;
       el("detail").innerHTML = `
-        <div class="scroll">
-          <div class="section">
+        <div class="scroll lesson-reader">
+          <div class="section lesson-heading">
+            <h1>${escapeHtml(detailTrap.title)}</h1>
             <div class="meta">
               <span class="pill scope">${escapeHtml(valueLabel(details.scope))}</span>
               <span class="pill ${escapeAttr(detailTrap.severity)}">${escapeHtml(valueLabel(detailTrap.severity))}</span>
@@ -269,15 +271,20 @@ export function createLibraryUI(deps: Dependencies) {
               <span class="pill ${escapeAttr(detailTrap.status)}">${escapeHtml(valueLabel(detailTrap.status))}</span>
               <span class="pill">${escapeHtml(t("pill.hits", { count: Number(detailTrap.hit_count || 0) }))}</span>
             </div>
-            <div class="title" style="font-size:16px">${escapeHtml(detailTrap.title)}</div>
           </div>
-          <div class="section">
-            ${textBlock(t("label.context"), detailTrap.context)}
-            ${textBlock(t("label.mistake"), detailTrap.mistake)}
-            ${textBlock(t("label.fix"), detailTrap.fix)}
+          <div class="section lesson-copy">
+            <div class="text-block"><h2>${readerIcon("context")}${escapeHtml(t("reader.context"))}</h2><div class="content">${escapeHtml(detailTrap.context || "-")}</div></div>
+            <div class="text-block"><h2>${readerIcon("mistake")}${escapeHtml(t("reader.mistake"))}</h2><div class="content">${escapeHtml(detailTrap.mistake || "-")}</div></div>
+            <div class="text-block lesson-solution"><h2>${readerIcon("fix")}${escapeHtml(t("reader.fix"))}</h2><div class="content">${escapeHtml(detailTrap.fix || "-")}</div></div>
           </div>
-          <section class="section experience-panel" id="trap-experience-panel"></section>
-          <section class="section" id="trap-revisions-panel"></section>
+          <div class="lesson-code-pair">
+            ${renderTrapCode(t("title.before"), detailTrap.before_code)}
+            ${renderTrapCode(t("title.after"), detailTrap.after_code)}
+          </div>
+          <details class="section reader-disclosure" open><summary>${escapeHtml(t("reader.activity"))}</summary>
+            <section class="section experience-panel" id="trap-experience-panel"></section>
+            <section class="section" id="trap-revisions-panel"></section>
+          </details>
           <details class="section library-metadata"><summary>${escapeHtml(t("experience.metadata"))}</summary>
             <div class="detail-kv">
               ${kv(t("label.tags"), (detailTrap.tags || []).join(", ") || "-")}
@@ -292,12 +299,9 @@ export function createLibraryUI(deps: Dependencies) {
               ${kv(t("label.validUntil"), detailTrap.valid_until || "-")}
             </div>
           </details>
-          ${renderTrapCode(t("title.before"), detailTrap.before_code)}
-          ${renderTrapCode(t("title.after"), detailTrap.after_code)}
-          <div class="section">
-            <div class="title">${escapeHtml(t("title.evidence"))}</div>
+          <details class="section reader-disclosure"><summary>${escapeHtml(t("title.evidence"))}</summary>
             ${details.evidence.length ? details.evidence.map(renderEvidence).join("") : '<div class="empty">' + escapeHtml(t("empty.noEvidence")) + '</div>'}
-          </div>
+          </details>
         </div>
       `;
       restoreWorkspacePosition();

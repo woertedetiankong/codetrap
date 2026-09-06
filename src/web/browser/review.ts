@@ -30,12 +30,13 @@ export function createReviewUI(deps: Dependencies) {
     receipt: (receipt, target, suppression) => deps.showReceipt(receipt, { projectRoot: target.projectRoot, target, undoSuppression: suppression }),
   });
   let rejectTarget: ReviewTarget | null = null;
+  const editingTargets = new Set<string>();
   const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T | null;
   function setBusy() {
     const busy = model.state.busy || deps.externalBusy();
     for (const id of ["rename-session", "delete-session"]) { const button = el<HTMLButtonElement>(id); if (button) button.disabled = busy; }
     if (!deps.context().active) return;
-    for (const id of ["save", "approve", "apply-insight", "accept", "reject", "accept-anyway", "supersede", "supersedes", "rollback", "review-discard"]) {
+    for (const id of ["save", "approve", "apply-insight", "accept", "reject", "accept-anyway", "supersede", "supersedes", "rollback", "review-discard", "review-edit-toggle"]) {
       const control = el<HTMLButtonElement | HTMLInputElement>(id); if (control) control.disabled = busy;
     }
     if (model.current()?.status === "proposed") el("candidate-form")?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input,textarea,select").forEach(control => { control.disabled = busy; });
@@ -55,7 +56,7 @@ export function createReviewUI(deps: Dependencies) {
     const form = el<HTMLFormElement>("candidate-form"), target = model.target();
     if (target) {
       const host = document.createElement("div");
-      (form || el("detail"))?.prepend(host);
+      if (form) form.before(host); else el("detail")?.prepend(host);
       backups.mount(host, () => {
         const current = model.current(), selected = model.target();
         if (!current || !selected || reviewKey(target) !== reviewKey(selected)) return null;
@@ -64,16 +65,39 @@ export function createReviewUI(deps: Dependencies) {
           restore: fields => { model.edit(selected, fields, candidateFields(current)); deps.renderReview(); } };
       });
     }
-    if (form && target && candidate.status === "proposed") {
+    if (form && target) {
       const baseline = candidateFields(candidate), fields = model.fields() || baseline;
       for (const [name, value] of Object.entries(fields)) {
         const control = form.elements.namedItem(name);
         if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement) control.value = value;
       }
+      const preview = el("review-preview"), toggle = el<HTMLButtonElement>("review-edit-toggle");
+      const updatePreview = () => {
+        preview?.querySelectorAll<HTMLElement>("[data-review-preview]").forEach(node => {
+          const name = node.dataset.reviewPreview!, control = form.elements.namedItem(name);
+          node.textContent = control instanceof HTMLSelectElement ? control.selectedOptions[0]?.textContent || "—"
+            : control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement ? control.value || "—" : "—";
+        });
+      };
+      if (preview && toggle) {
+        const key = reviewKey(target);
+        const setEditing = (editing: boolean, focus = false) => {
+          if (editing) editingTargets.add(key); else editingTargets.delete(key);
+          form.hidden = !editing; preview.hidden = editing;
+          toggle.setAttribute("aria-expanded", String(editing));
+          toggle.textContent = deps.t(editing ? candidate.status === "proposed" ? "reader.done" : "reader.read" : candidate.status === "proposed" ? "reader.edit" : "reader.fields");
+          updatePreview();
+          if (focus) { if (editing && candidate.status === "proposed") el("title")?.focus(); else toggle.focus(); }
+        };
+        setEditing(editingTargets.has(key));
+        toggle.addEventListener("click", () => setEditing(form.hidden === true, true));
+      }
+      if (candidate.status !== "proposed") { renderDraftState(); setBusy(); return; }
       const update = () => {
         const fields: ReviewFields = {}, data = new FormData(form);
         for (const name of Object.keys(baseline)) fields[name] = String(data.get(name) || "");
         model.edit(target, fields, baseline);
+        updatePreview();
       };
       form.addEventListener("input", update); form.addEventListener("change", update);
       form.addEventListener("submit", event => event.preventDefault());

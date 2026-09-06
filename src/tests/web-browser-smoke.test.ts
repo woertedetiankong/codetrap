@@ -133,6 +133,7 @@ describe("web browser smoke", () => {
         waitUntil: "domcontentloaded",
       });
       await page.waitForSelector("text=Browser smoke candidate");
+      await page.locator('#review-edit-toggle').click();
       await page.locator('#title').fill('Unsaved review after browser migration');
       await page.route('**/api/sessions?*', async route => {
         const response = await route.fetch();
@@ -143,13 +144,12 @@ describe("web browser smoke", () => {
       await page.getByText('External changes detected; your unsaved draft was preserved', { exact: true }).waitFor({ timeout: 8000 });
       expect(await page.locator('#title').inputValue()).toBe('Unsaved review after browser migration');
       await page.unroute('**/api/sessions?*');
-      // Navigation lives in the topbar now, so it stays on one row at every
-      // desktop width instead of wrapping once the rail gets narrow.
-      await expectTopbarNavigationLayout(page);
+      // Desktop navigation stays in its own column without clipping labels.
+      await expectNavigationLayout(page);
       await page.setViewportSize({ width: 1920, height: 800 });
-      await expectTopbarNavigationLayout(page);
+      await expectNavigationLayout(page);
       await page.setViewportSize({ width: 1440, height: 800 });
-      await expectTopbarNavigationLayout(page);
+      await expectNavigationLayout(page);
       await expectText(page.locator("#review-summary"), "1 pending");
 
       await page.getByRole("button", { name: "Library" }).click();
@@ -313,6 +313,7 @@ describe("web browser smoke", () => {
       await page.locator("[data-experience-retry]").click();
       await page.locator(".experience-path").waitFor();
       // A slow project-trap response cannot replace a subsequently selected global trap.
+      await page.locator("#library-filters summary").click();
       await page.locator("#trap-filter-scope").selectOption("");
       await page.locator('[data-trap-key="project:1"]').waitFor();
       await page.locator('[data-trap-key="global:1"]').click();
@@ -365,6 +366,9 @@ describe("web browser smoke", () => {
       await page.locator("#reader-back").click();
       expect(await page.locator(".rail").isVisible()).toBe(true);
       expect(await page.locator(".detail").isVisible()).toBe(false);
+      // A user's expanded filters survive the desktop-to-phone transition.
+      expect(await page.locator("#library-filters").getAttribute("open")).not.toBeNull();
+      await page.locator("#library-filters summary").click();
       expect(await page.locator("#library-filters").getAttribute("open")).toBeNull();
       await page.locator("#library-filters summary").click();
       expect(await page.locator("#trap-filter-category").isVisible()).toBe(true);
@@ -439,11 +443,10 @@ describe("web browser smoke", () => {
 });
 
 /**
- * The topbar must present every view on one row with its label intact. The
- * previous rail-hosted header wrapped to a second row and hard-clipped the
- * longest label, so assert against both failure modes directly.
+ * Wide desktops use a navigation column; narrower layouts keep a topbar.
+ * Both must preserve labels and keep navigation outside the content panes.
  */
-async function expectTopbarNavigationLayout(
+async function expectNavigationLayout(
   page: { evaluate: <T>(fn: () => T) => Promise<T> }
 ): Promise<void> {
   const layout = await page.evaluate(() => {
@@ -451,6 +454,9 @@ async function expectTopbarNavigationLayout(
     const topbar = document.querySelector(".app-topbar")!.getBoundingClientRect();
     const panes = document.querySelector(".rail")!.getBoundingClientRect();
     return {
+      native: innerWidth >= 1280,
+      navigationRight: topbar.right,
+      railLeft: panes.left,
       count: buttons.length,
       rows: new Set(buttons.map((button) => Math.round(button.getBoundingClientRect().y))).size,
       clipped: buttons
@@ -463,10 +469,11 @@ async function expectTopbarNavigationLayout(
   });
 
   expect(layout.count).toBe(5);
-  expect(layout.rows).toBe(1);
+  expect(layout.rows).toBe(layout.native ? 5 : 1);
   expect(layout.clipped).toEqual([]);
   expect(layout.documentOverflow).toBeLessThanOrEqual(0);
-  expect(layout.topbarBottom).toBeLessThanOrEqual(layout.railTop + 1);
+  if (layout.native) expect(layout.navigationRight).toBeLessThanOrEqual(layout.railLeft + 1);
+  else expect(layout.topbarBottom).toBeLessThanOrEqual(layout.railTop + 1);
 }
 
 /**

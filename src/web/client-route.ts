@@ -53,6 +53,7 @@ export function parseWorkspaceRoute(hash: string): WorkspaceRoute {
   } else if (mainView === "review") {
     route.sessionId = safeDecodeRouteSegment(segments[1]);
     route.candidateId = route.sessionId ? safeDecodeRouteSegment(segments[2]) : null;
+    if (route.candidateId) route.pane = "detail";
   }
   if (query.get("pane") === "list") route.pane = "list";
   return route;
@@ -75,6 +76,6 @@ export function workspaceRouteHash(route: Partial<WorkspaceRoute>): string {
   }
   const query = new URLSearchParams();
   if (route.projectRef) query.set("project", route.projectRef);
-  if ((route.mainView === "library" && route.trapId || route.mainView === "learning" && route.insightId) && route.pane === "list") query.set("pane", "list");
+  if ((route.mainView === "library" && route.trapId || route.mainView === "learning" && route.insightId || route.mainView === "review" && route.candidateId) && route.pane === "list") query.set("pane", "list");
   return path + (query.size ? "?" + query.toString() : "");
 }

@@ -30,6 +30,7 @@ interface Dependencies {
 export function createImpactUI(deps: Dependencies) {
   const { state, evalSuiteUI, revisionUI, impactOverviewContent, el, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, api, syncWorkspaceRoute, showStatus, captureImpactScrollPosition, restoreImpactScrollPosition, loadImpactRun, loadImpactEvals, loadImpact, jumpToTrap } = deps;
   const backups = createFormDrafts(t);
+  let pendingTabFocus: string | null = null;
   const candidateDrafts = new Map<string, { fields: FormFields; context: string }>();
   const runDrafts = new Map<string, { fields: FormFields; context: string }>();
   const candidateKey = (project: string, id: string) => JSON.stringify([project, id]);
@@ -101,7 +102,7 @@ function renderImpactQueue() {
     return;
   }
   el("candidates").innerHTML = state.observationRuns.map((run: any) => `
-    <button type="button" class="row impact-run-row ${run.id === state.observationRunId ? "active" : ""}" data-observation-run="${escapeAttr(run.id)}">
+    <button type="button" class="row impact-run-row ${run.id === state.observationRunId ? "active" : ""}" data-observation-run="${escapeAttr(run.id)}" aria-pressed="${run.id === state.observationRunId}">
       <span class="impact-run-id">${escapeHtml(run.id)}</span>
       <span class="subtle">${escapeHtml(run.started_at ? impactRelativeTime(run.started_at) : t("impact.noStart"))}</span>
       <span class="meta">
@@ -156,7 +157,7 @@ function renderImpactDetail() {
   if (state.observationError) {
     el("detail-meta").textContent = state.projectRoot;
     el("detail").innerHTML = `<div class="impact-shell">${tabs}
-      <div class="impact-notice error"><h3>${escapeHtml(t("impact.readErrorTitle"))}</h3><p>${escapeHtml(t("impact.readErrorCopy"))}</p><p>${escapeHtml(state.observationError)}</p></div>
+      <div class="impact-notice error" role="alert"><h3>${escapeHtml(t("impact.readErrorTitle"))}</h3><p>${escapeHtml(t("impact.readErrorCopy"))}</p><p>${escapeHtml(state.observationError)}</p></div>
       <div class="impact-empty-actions"><button type="button" class="primary" data-impact-retry>${escapeHtml(t("impact.retry"))}</button></div>
     </div>`;
     bindImpactTabs();
@@ -417,15 +418,34 @@ function bindImpactOnboarding() {
 
 function impactTabs(active: string) {
   return `<div class="impact-tabs" role="tablist" aria-label="${escapeAttr(t("nav.impact"))}">
-    <button type="button" role="tab" aria-selected="${active === "overview"}" class="${active === "overview" ? "active" : ""}" data-impact-tab="overview">${escapeHtml(t("impact.overview"))}</button>
-    <button type="button" role="tab" aria-selected="${active === "runs"}" class="${active === "runs" ? "active" : ""}" data-impact-tab="runs">${escapeHtml(t("impact.runs"))}</button>
-    <button type="button" role="tab" aria-selected="${active === "evals"}" class="${active === "evals" ? "active" : ""}" data-impact-tab="evals">${escapeHtml(t("evals.title"))}</button>
-  </div>`;
+    <button type="button" role="tab" tabindex="${active === "overview" ? 0 : -1}" aria-selected="${active === "overview"}" class="${active === "overview" ? "active" : ""}" data-impact-tab="overview">${escapeHtml(t("impact.overview"))}</button>
+    <button type="button" role="tab" tabindex="${active === "runs" ? 0 : -1}" aria-selected="${active === "runs"}" class="${active === "runs" ? "active" : ""}" data-impact-tab="runs">${escapeHtml(t("impact.runs"))}</button>
+    <button type="button" role="tab" tabindex="${active === "evals" ? 0 : -1}" aria-selected="${active === "evals"}" class="${active === "evals" ? "active" : ""}" data-impact-tab="evals">${escapeHtml(t("evals.title"))}</button>
+  </div>${active === "runs" && state.observationRuns.length ? `<label class="impact-mobile-run">${escapeHtml(t("impact.runs"))}<select data-impact-run-select>${state.observationRuns.map(run => `<option value="${escapeAttr(run.id)}" ${run.id === state.observationRunId ? "selected" : ""}>${escapeHtml((run.source_client || "other") + " · " + formatDisplayDate(run.started_at) + " · " + run.id)}</option>`).join("")}</select></label>` : ""}`;
 }
 
 function bindImpactTabs() {
+  document.querySelector<HTMLSelectElement>("[data-impact-run-select]")?.addEventListener("change", event => {
+    void loadImpactRun((event.currentTarget as HTMLSelectElement).value);
+  });
+  if (pendingTabFocus) {
+    const selected = document.querySelector<HTMLElement>('.impact-tabs [aria-selected="true"][data-impact-tab="' + pendingTabFocus + '"]');
+    if (selected) { selected.focus({ preventScroll: true }); pendingTabFocus = null; }
+  }
+  document.querySelectorAll<HTMLButtonElement>('.impact-tabs [role="tab"]').forEach((tab, index, tabs) => {
+    tab.addEventListener("keydown", event => {
+      let target = index;
+      if (event.key === "ArrowRight") target = (index + 1) % tabs.length;
+      else if (event.key === "ArrowLeft") target = (index + tabs.length - 1) % tabs.length;
+      else if (event.key === "Home") target = 0;
+      else if (event.key === "End") target = tabs.length - 1;
+      else return;
+      event.preventDefault(); tabs[target]?.focus();
+    });
+  });
   document.querySelectorAll("[data-impact-tab]").forEach((button: any) => {
     button.addEventListener("click", () => {
+      if (button.getAttribute("role") === "tab") pendingTabFocus = button.dataset.impactTab;
       if (button.dataset.impactTab === "overview") {
         state.impactView = "overview";
         syncWorkspaceRoute();
@@ -854,7 +874,7 @@ function renderEvalReviewPanel(candidate: any, payload: any) {
   const header = `<header class="eval-review-head"><div><span class="eval-review-step">HUMAN GATE / ${escapeHtml(candidate.id)}</span><h3>${escapeHtml(t("evals.reviewTitle"))}</h3><p>${escapeHtml(t("evals.reviewBoundary"))}</p></div><button type="button" class="ghost" data-eval-review-close aria-label="${escapeAttr(t("action.cancel"))}">×</button></header>`;
   const deferred = `<div class="impact-notice warn eval-external-update" role="status" data-eval-deferred-update ${state.evalExternalChangesDeferred ? "" : "hidden"}><strong>${escapeHtml(t("evals.externalChangesDeferredTitle"))}</strong><p>${escapeHtml(t("evals.externalChangesDeferredCopy"))}</p></div>`;
   if (candidate.review_status === "conflict") {
-    return `<section class="eval-review-workbench">${header}${deferred}${error}<div class="impact-notice error"><h3>${escapeHtml(t("evals.conflictTitle"))}</h3><p>${escapeHtml(t("evals.conflictCopy"))}</p></div></section>`;
+    return `<section class="eval-review-workbench">${header}${deferred}${error}<div class="impact-notice error" role="alert"><h3>${escapeHtml(t("evals.conflictTitle"))}</h3><p>${escapeHtml(t("evals.conflictCopy"))}</p></div></section>`;
   }
   if (candidate.review_status === "rejected") {
     return `<section class="eval-review-workbench">${header}${deferred}${error}<div class="eval-review-decision rejected"><span>${escapeHtml(t("evals.rejectedLabel"))}</span><strong>${escapeHtml(t("evals.rejectedTitle"))}</strong><p>${escapeHtml(candidate.review_ref?.rejection_reason || t("evals.rejectedCopy"))}</p></div></section>`;

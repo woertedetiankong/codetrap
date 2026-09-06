@@ -1,3 +1,5 @@
+import { WORKBENCH_STYLE } from "./workbench-style";
+import { NAVIGATION_ICONS } from "./navigation-icons";
 import { REVISION_STYLE } from "./revision-style";
 import { webClientScript } from "./client-script";
 
@@ -13,18 +15,18 @@ export const WEB_INDEX_HTML = `<!doctype html>
 
       /* Ground — warm paper. A lab notebook, not a dashboard. */
       --bg: #f6f5f1;
-      --panel: #fbfaf7;
-      --panel-2: #fdfcfa;
+      --panel: #f7f7f5;
+      --panel-2: #ffffff;
       --surface: #ffffff;
       --surface-hover: #f2f0ea;
       --surface-2: #f2f0ea;
-      --line: #e2ded4;
-      --line-soft: #edeae2;
+      --line: #dedfdd;
+      --line-soft: #eaece9;
 
       /* Ink — three weights, warm near-black */
       --text: #1c1b18;
-      --muted: #6d6960;
-      --faint: #79746b;   /* 4.6:1 on --surface, so ordinals and hints stay legible */
+      --muted: #626762;
+      --faint: #6c716c;   /* 4.6:1 on --surface, so ordinals and hints stay legible */
 
       /* Accent — deep petrol. Carries interaction, nothing else. */
       --accent: #0e5a6b;
@@ -63,6 +65,12 @@ export const WEB_INDEX_HTML = `<!doctype html>
       --ok-legacy: #3a6b47;
       --shadow: rgba(28, 26, 20, 0.07);
       --topbar-height: 52px;
+      --navigation-bg: #f3f4f1;
+      --list-bg: #fbfcfa;
+      --selection-bg: #e8f1f2;
+      --list-hover: #edf2f0;
+      --code-bg: #f6f7f5;
+      --action-bg: #fafbf9;
     }
 
     * { box-sizing: border-box; }
@@ -2970,6 +2978,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .observation-connection[data-connection-state="unavailable"] { border-left-color: var(--warn); }
     @media (max-width: 600px) { .observation-connection { grid-template-columns: 1fr; padding: 16px; } }
   ${REVISION_STYLE}
+  ${WORKBENCH_STYLE}
   </style>
 </head>
 <body>
@@ -3005,11 +3014,11 @@ export const WEB_INDEX_HTML = `<!doctype html>
         <div class="subtle" id="app-subtitle">personal experience workspace</div>
       </div>
       <nav class="main-nav" aria-label="Main view">
-        <button type="button" class="active" data-main-view="review">Review</button>
-        <button type="button" data-main-view="library">Library</button>
-        <button type="button" data-main-view="learning">Learning</button>
-        <button type="button" data-main-view="embeddings">Embeddings</button>
-        <button type="button" data-main-view="impact">Impact</button>
+        <button type="button" class="active" data-main-view="review"><span class="nav-icon" aria-hidden="true">${NAVIGATION_ICONS.review}</span><span class="nav-label">Review</span></button>
+        <button type="button" data-main-view="library"><span class="nav-icon" aria-hidden="true">${NAVIGATION_ICONS.library}</span><span class="nav-label">Library</span></button>
+        <button type="button" data-main-view="learning"><span class="nav-icon" aria-hidden="true">${NAVIGATION_ICONS.learning}</span><span class="nav-label">Learning</span></button>
+        <button type="button" data-main-view="impact"><span class="nav-icon" aria-hidden="true">${NAVIGATION_ICONS.impact}</span><span class="nav-label">Impact</span></button>
+        <button type="button" data-main-view="embeddings"><span class="nav-icon" aria-hidden="true">${NAVIGATION_ICONS.embeddings}</span><span class="nav-label">Embeddings</span></button>
       </nav>
       <div class="topbar-tools">
         <div class="segmented locale-switcher" aria-label="Language">
@@ -3079,8 +3088,8 @@ export const WEB_INDEX_HTML = `<!doctype html>
       </div>
     </section>
   </main>
-  <div class="status" id="status"></div>
-  <div class="receipt" id="receipt"></div>
+  <div class="status" id="status" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div class="receipt" id="receipt" role="status" aria-live="polite"></div>
   <dialog class="decision-dialog" id="reject-dialog" aria-labelledby="reject-dialog-title">
     <form id="reject-form">
       <div class="dialog-heading">

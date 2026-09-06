@@ -7,6 +7,10 @@ import { webProjectRouteRef } from "../web/project-registry";
 import { readProjectSuite, PROJECT_EVAL_SUITE } from "../lib/project-eval-suite";
 const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium"].find(p => p && existsSync(p));
 const browserTest = chrome ? test : test.skip;
+async function editLesson(page: import("playwright-core").Page) {
+  await page.locator("#title").waitFor({ state: "attached" });
+  if (!(await page.locator("#title").isVisible())) await page.locator("#review-edit-toggle").click();
+}
 const restore = "[data-draft-restore]";
 async function launch() { const { chromium } = await import("playwright-core"); return chromium.launch({ executablePath: chrome!, headless: true }); }
 
@@ -16,10 +20,10 @@ browserTest("Review reload recovery is explicit, raw, source-bound, and cannot r
   try {
     const page = await browser.newPage(); page.setDefaultTimeout(5000); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     const root = `http://127.0.0.1:${server.port}/?token=review-token`;
-    await page.goto(root + f.a.hash()); await page.locator("#title").fill(" Raw <draft> "); await page.locator("#fix").fill("line one\nline two");
+    await page.goto(root + f.a.hash()); await editLesson(page); await page.locator("#title").fill(" Raw <draft> "); await page.locator("#fix").fill("line one\nline two");
     await page.reload(); await page.locator(restore).waitFor(); expect(await page.locator("#title").inputValue()).toBe("First alpha");
     await page.locator(restore).click(); expect(await page.locator("#title").inputValue()).toBe(" Raw <draft> "); expect(await page.locator("#fix").inputValue()).toBe("line one\nline two"); expect(writes).toBe(0);
-    await page.goto(root + f.b.hash()); await page.locator("#title").waitFor(); expect(await page.locator(restore).count()).toBe(0);
+    await page.goto(root + f.b.hash()); await page.locator("#title").waitFor({ state: "attached" }); expect(await page.locator(restore).count()).toBe(0);
     const candidate = f.a.operations.getCandidate(f.a.candidates[0]!.id, f.a.session.id).candidate;
     f.a.operations.saveCandidate({ candidateId: candidate.id, sessionId: f.a.session.id, edit: { ...candidate.trap, title: "Changed source" } });
     await page.goto(root + f.a.hash()); await page.locator(restore).waitFor();
@@ -35,11 +39,11 @@ browserTest("Review concurrent tabs keep independent backups and storage failure
     const context = await browser.newContext(), a = await context.newPage(), b = await context.newPage();
     for (const page of [a, b]) page.setDefaultTimeout(5000);
     const url = `http://127.0.0.1:${server.port}/?token=review-token` + f.a.hash();
-    await a.goto(url); await a.locator("#title").fill("A draft"); await b.goto(url); await b.locator("#title").fill("B draft"); expect(await b.locator(restore).isDisabled()).toBe(true);
+    await a.goto(url); await editLesson(a); await a.locator("#title").fill("A draft"); await b.goto(url); await editLesson(b); await b.locator("#title").fill("B draft"); expect(await b.locator(restore).isDisabled()).toBe(true);
     await b.reload(); await b.locator(restore).waitFor(); expect(await b.locator("[data-draft-choice] option").count()).toBe(2);
     await b.locator("[data-draft-delete]").click(); expect(await a.locator("#title").inputValue()).toBe("A draft");
     await a.evaluate(() => { const set = Storage.prototype.setItem; Storage.prototype.setItem = function(k, v) { if (k.startsWith("codetrap-form-draft:")) throw new Error("quota"); return set.call(this, k, v); }; });
-    await a.locator("#title").fill("Save despite quota"); expect(await a.locator(".form-draft-recovery").textContent()).toContain("could not be backed up");
+    await editLesson(a); await a.locator("#title").fill("Save despite quota"); expect(await a.locator(".form-draft-recovery").textContent()).toContain("could not be backed up");
     await a.locator("#save").click(); await a.locator("#review-discard").waitFor({ state: "detached" });
     expect(f.a.operations.getCandidate(f.a.candidates[0]!.id, f.a.session.id).candidate.trap.title).toBe("Save despite quota");
   } finally { await browser.close(); server.stop(true); }

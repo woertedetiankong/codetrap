@@ -72,6 +72,7 @@ browserTest("Library filter response races leave current results and history int
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.port}/?token=suite-token#/library?project=${webProjectRouteRef(f.project)}`);
     await page.locator("[data-trap-key='project:1']").click(); await page.locator(".experience-path").waitFor();
+    await page.locator("#library-filters summary").click();
     await page.locator("#trap-filter-owner").fill("slow"); await page.locator("#trap-filter-owner").press("Enter"); await received;
     expect(await page.locator("#detail").textContent()).toContain("Loading your lessons");
     expect(await page.locator("[data-trap-key]").count()).toBe(0);

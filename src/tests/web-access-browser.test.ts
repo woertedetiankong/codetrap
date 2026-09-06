@@ -5,6 +5,10 @@ import { reviewFixture } from "./web-review-fixture";
 import { createWebHandler } from "../web/server";
 const chrome = [process.env.CODETRAP_TEST_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome", join(process.env.ProgramFiles ?? "C:\\Program Files", "Google/Chrome/Application/chrome.exe")].find(p => p && existsSync(p));
 const browserTest = chrome ? test : test.skip;
+async function editLesson(page: import("playwright-core").Page) {
+  await page.locator("#title").waitFor({ state: "attached" });
+  if (!(await page.locator("#title").isVisible())) await page.locator("#review-edit-toggle").click();
+}
 async function launch() { const { chromium } = await import("playwright-core"); return chromium.launch({ executablePath: chrome!, headless: true }); }
 const settle = async (page: import("playwright-core").Page) => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
@@ -15,7 +19,7 @@ browserTest("bare links in a fresh tab have an effective authorization entry and
     const authorized = await context.newPage(), page = await context.newPage();
     page.setDefaultTimeout(5000);
     const root = `http://127.0.0.1:${server.port}`;
-    await authorized.goto(root + "/?token=review-token" + f.a.hash()); await authorized.locator("#title").waitFor();
+    await authorized.goto(root + "/?token=review-token" + f.a.hash()); await authorized.locator("#title").waitFor({ state: "attached" });
     await page.addInitScript(() => localStorage.setItem("codetrap-locale", "zh"));
     await page.goto(root + "/" + f.a.hash());
     await page.locator("#bootstrap-failure").waitFor({ state: "visible" });
@@ -24,14 +28,14 @@ browserTest("bare links in a fresh tab have an effective authorization entry and
     expect(await page.locator("#app-shell").isHidden()).toBe(true);
     let documents = 0; page.on("request", req => { if (req.isNavigationRequest()) documents++; });
     await page.locator("#bootstrap-link").fill(root + "/?token=review-token" + f.b.hash());
-    await page.locator("#bootstrap-connect").click(); await page.locator("#title").waitFor();
+    await page.locator("#bootstrap-connect").click(); await page.locator("#title").waitFor({ state: "attached" });
     expect(await page.locator("#title").inputValue()).toBe("First alpha");
     expect(new URL(page.url()).hash).toBe(f.a.hash());
     expect(new URL(page.url()).search).toBe("");
     expect(await page.locator("#bootstrap-link").inputValue()).toBe("");
     expect(documents).toBe(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.reload(); await page.locator("#title").waitFor();
+    await page.reload(); await page.locator("#title").waitFor({ state: "attached" });
     expect(await page.locator("#bootstrap-failure").isHidden()).toBe(true);
   } finally { await browser.close(); server.stop(true); }
 }, 20000);
@@ -48,7 +52,7 @@ browserTest("reauthorization after a rejected save preserves visible drafts and 
     await page.addInitScript(() => localStorage.setItem("codetrap-locale", "zh"));
     const root = `http://127.0.0.1:${server.port}`;
     await page.goto(root + "/?token=review-token" + f.a.hash());
-    await page.locator("#title").fill("Keep my unsaved title"); await page.locator("#fix").fill("Raw line one\nRaw line two");
+    await editLesson(page); await page.locator("#title").fill("Keep my unsaved title"); await page.locator("#fix").fill("Raw line one\nRaw line two");
     let documents = 0; page.on("request", req => { if (req.isNavigationRequest()) documents++; });
     handler = createWebHandler({ token: "rotated-token", cwd: f.a.root, home: f.home, currentProjectRoot: f.a.root });
     await page.locator("#save").click(); await page.locator("#bootstrap-failure").waitFor({ state: "visible" });
@@ -59,7 +63,7 @@ browserTest("reauthorization after a rejected save preserves visible drafts and 
     await page.waitForFunction(() => document.querySelector("#bootstrap-connect-error")?.textContent?.includes("此凭证未被接受"));
     expect(await page.evaluate(() => sessionStorage.getItem("codetrap-token"))).toBe("review-token");
     await page.locator("#bootstrap-link").fill(root + "/?token=rotated-token"); await page.locator("#bootstrap-connect").click();
-    await page.locator("#title").waitFor(); await settle(page);
+    await page.locator("#title").waitFor({ state: "attached" }); await settle(page);
     expect(writes).toBe(1);
     expect(await page.locator("#title").inputValue()).toBe("Keep my unsaved title");
     expect(await page.locator("#fix").inputValue()).toBe("Raw line one\nRaw line two");
@@ -104,7 +108,7 @@ browserTest("a temporary network failure retries in place with storage disabled"
     expect(await page.locator("#bootstrap-failure-title").textContent()).toBe("Cannot reach the local service");
     expect(await page.locator("#bootstrap-auth-form").isHidden()).toBe(true);
     let documents = 0; page.on("request", req => { if (req.isNavigationRequest()) documents++; });
-    offline = false; await page.locator("#bootstrap-retry").click(); await page.locator("#title").waitFor();
+    offline = false; await page.locator("#bootstrap-retry").click(); await page.locator("#title").waitFor({ state: "attached" });
     expect(documents).toBe(0);
     expect(new URL(page.url()).search).toBe("");
     expect(await page.locator("#title").inputValue()).toBe("First alpha");
@@ -122,11 +126,11 @@ browserTest("a late unauthorized read cannot reopen recovery after a successful 
   } }), browser = await launch();
   try {
     const page = await browser.newPage(); page.setDefaultTimeout(5000);
-    await page.goto(`http://127.0.0.1:${server.port}/?token=review-token` + f.a.hash()); await page.locator("#title").fill("Unsaved during old read");
+    await page.goto(`http://127.0.0.1:${server.port}/?token=review-token` + f.a.hash()); await editLesson(page); await page.locator("#title").fill("Unsaved during old read");
     hold = true;
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange"))); await received;
     expired = true; await page.locator("#save").click(); await page.locator("#bootstrap-failure").waitFor({ state: "visible" });
-    expired = false; await page.locator("#bootstrap-retry").click(); await page.locator("#title").waitFor();
+    expired = false; await page.locator("#bootstrap-retry").click(); await page.locator("#title").waitFor({ state: "attached" });
     const response = page.waitForResponse(r => r.url().includes("/api/sessions") && r.status() === 401); release(); await response; await settle(page);
     expect(await page.locator("#bootstrap-failure").isHidden()).toBe(true);
     expect(await page.locator("#title").inputValue()).toBe("Unsaved during old read");

@@ -15,6 +15,7 @@ import { createRevisionUI } from '../client-revisions';
 import { createEvalSuiteUI } from '../client-eval-suite';
 import { parseBootstrapPayload } from './platform';
 import { createAccessRecovery } from './access';
+import { readerIcon } from './reader-icons';
 
 // Existing business state remains a migration boundary. New browser infrastructure
 // belongs in typed modules; this file contains no source serialization.
@@ -40,6 +41,9 @@ export function mountWorkspace(boot) {
       routeScroll: new Map(),
       restoreRouteScroll: null,
       ...createLearningCatalogState(),
+      embeddingLoad: "idle",
+      embeddingLoadId: 0,
+      embeddingSaving: false,
       embeddingStatus: null,
       embeddingSettings: null,
       embeddingProviderDraft: "huggingface",
@@ -107,7 +111,14 @@ export function mountWorkspace(boot) {
     const review = createReviewUI({
       context: () => ({ project: state.projectRoot, active: state.mainView === "review" && !state.routeError }),
       api, t, renderSessions, renderReview: () => { renderCandidates(); renderDetail(); },
-      navigate: () => { syncWorkspaceRoute(); if (state.mainView === "review") revealCompactDetail(); },
+      navigate: () => {
+        if (state.mainView === "review") {
+          state.compactDetail = Boolean(review.current());
+          syncReaderLayout();
+          setCompactWorkspaceOpen(false);
+        }
+        syncWorkspaceRoute();
+      },
       showStatus, showReceipt, externalBusy: () => state.detailActionInFlight || learning.busy,
       busyChanged: () => learning.syncBusy()
     });
@@ -244,12 +255,12 @@ export function mountWorkspace(boot) {
     }
 
     function syncReaderLayout() {
-      const reader = state.mainView === "library" || state.mainView === "learning";
+      const reader = state.mainView === "library" || state.mainView === "learning" || state.mainView === "review";
       const shell = el("app-shell");
       shell?.classList.toggle("reader-mode", reader);
       shell?.classList.toggle("reader-detail", reader && state.compactDetail);
       const back = el("reader-back");
-      if (back) back.textContent = "← " + t(state.mainView === "learning" ? "route.backLearning" : "route.backLibrary");
+      if (back) back.textContent = "← " + t(state.mainView === "learning" ? "route.backLearning" : state.mainView === "review" ? "reader.backReview" : "route.backLibrary");
     }
 
     function showReaderList() {
@@ -397,7 +408,7 @@ export function mountWorkspace(boot) {
     }
 
     function revealCompactDetail() {
-      if (state.mainView === "library" || state.mainView === "learning") {
+      if (state.mainView === "library" || state.mainView === "learning" || state.mainView === "review") {
         state.compactDetail = true;
         syncReaderLayout();
         setCompactWorkspaceOpen(false);
@@ -420,16 +431,19 @@ export function mountWorkspace(boot) {
       el("refresh").title = t("action.refresh");
       el("project-add").textContent = t("action.add");
       el("project-path").placeholder = t("placeholder.projectPath");
+      el("project-path").setAttribute("aria-label", t("placeholder.projectPath"));
+      el("workspace-pane-title").textContent = t("action.showWorkspace");
       el("sessions-title").textContent = t("section.sessions");
       el("rename-session").textContent = t("action.renameSession");
       el("delete-session").textContent = t("action.deleteSession");
-      document.querySelector("[data-main-view='review']").textContent = t("nav.review");
-      document.querySelector("[data-main-view='library']").textContent = t("nav.library");
-      document.querySelector("[data-main-view='learning']").textContent = t("nav.learning");
-      document.querySelector("[data-main-view='embeddings']").textContent = t("nav.embeddings");
-      document.querySelector("[data-main-view='impact']").textContent = t("nav.impact");
+      document.querySelector("[data-main-view='review'] .nav-label").textContent = t("nav.review");
+      document.querySelector("[data-main-view='library'] .nav-label").textContent = t("nav.library");
+      document.querySelector("[data-main-view='learning'] .nav-label").textContent = t("nav.learning");
+      document.querySelector("[data-main-view='embeddings'] .nav-label").textContent = t("nav.embeddings");
+      document.querySelector("[data-main-view='impact'] .nav-label").textContent = t("nav.impact");
       document.querySelectorAll("[data-locale]").forEach((button) => {
         button.classList.toggle("active", button.dataset.locale === state.locale);
+        button.setAttribute("aria-pressed", String(button.dataset.locale === state.locale));
       });
       renderSidebarToggle();
       renderCompactWorkspaceToggle();
@@ -625,23 +639,30 @@ export function mountWorkspace(boot) {
     }
 
     async function loadEmbeddings() {
-      if (!state.projectRoot) {
-        state.embeddingStatus = null;
-        state.embeddingSettings = null;
-        if (state.mainView === "embeddings") {
-          renderEmbeddingsView();
-          renderEmbeddingsDetail();
-        }
-        return;
+      const project = state.projectRoot, request = ++state.embeddingLoadId;
+      state.embeddingLoad = project ? "loading" : "idle";
+      if (!project) { state.embeddingStatus = null; state.embeddingSettings = null; }
+      renderEmbeddingsView(); renderEmbeddingsDetail();
+      if (!project) return;
+      try {
+        const data = await api("/api/embeddings?project=" + encodeURIComponent(project));
+        if (state.projectRoot !== project || request !== state.embeddingLoadId) return;
+        state.embeddingStatus = data;
+        state.embeddingSettings = data.settings || null;
+        state.embeddingLoad = "ready";
+        syncEmbeddingDraftFromStatus(data);
+      } catch {
+        if (state.projectRoot !== project || request !== state.embeddingLoadId) return;
+        state.embeddingLoad = "error";
       }
-      const data = await api("/api/embeddings?project=" + encodeURIComponent(state.projectRoot));
-      state.embeddingStatus = data;
-      state.embeddingSettings = data.settings || null;
-      syncEmbeddingDraftFromStatus(data);
-      if (state.mainView === "embeddings") {
-        renderEmbeddingsView();
-        renderEmbeddingsDetail();
-      }
+      renderEmbeddingsView(); renderEmbeddingsDetail();
+    }
+
+    function renderEmbeddingLoad(container) {
+      if (!state.projectRoot || !["loading", "error"].includes(state.embeddingLoad)) return false;
+      container.innerHTML = '<div class="empty" role="status"><strong>' + escapeHtml(t(state.embeddingLoad === "loading" ? "embedding.loading" : "embedding.loadFailed")) + '</strong>' + (state.embeddingLoad === "error" ? '<p>' + escapeHtml(t("embedding.retryHint")) + '</p><button type="button" data-embedding-retry>' + escapeHtml(t("library.retry")) + '</button>' : '') + '</div>';
+      container.querySelector('[data-embedding-retry]')?.addEventListener("click", () => { void loadEmbeddings(); });
+      return true;
     }
 
     function resetObservationState() {
@@ -676,10 +697,12 @@ export function mountWorkspace(boot) {
     }
 
     function renderMainViewButtons() {
+      el("app-shell").dataset.view = state.mainView;
       syncImpactOverviewLayout();
       syncReaderLayout();
       document.querySelectorAll("[data-main-view]").forEach((button) => {
         button.classList.toggle("active", button.dataset.mainView === state.mainView);
+        button.setAttribute("aria-current", button.dataset.mainView === state.mainView ? "page" : "false");
       });
     }
 
@@ -1073,11 +1096,11 @@ export function mountWorkspace(boot) {
       const standalone = visible.filter((insight) => !groupedInsightKeys.has(insight.library_key));
       const controls = `<div class="learning-controls">
         <div class="segmented learning-scope" role="group" aria-label="${escapeAttr(t("label.learningScope"))}">
-          <button type="button" data-learning-scope="all" class="${state.learningScope === "all" ? "active" : ""}">${escapeHtml(t("value.allProjects"))}</button>
-          <button type="button" data-learning-scope="project" class="${state.learningScope === "project" ? "active" : ""}">${escapeHtml(t("value.currentProject"))}</button>
+          <button type="button" data-learning-scope="all" aria-pressed="${state.learningScope === "all"}" class="${state.learningScope === "all" ? "active" : ""}">${escapeHtml(t("value.allProjects"))}</button>
+          <button type="button" data-learning-scope="project" aria-pressed="${state.learningScope === "project"}" class="${state.learningScope === "project" ? "active" : ""}">${escapeHtml(t("value.currentProject"))}</button>
         </div>
-        <input id="learning-search" type="search" value="${escapeAttr(state.learningFilters.query)}" placeholder="${escapeAttr(t("placeholder.searchLearning"))}">
-        <details class="library-filters learning-filters" id="learning-filters" ${!isCompactShell() || state.learningFiltersOpen ? "open" : ""}><summary>${escapeHtml(t("route.filters"))}</summary><div class="learning-filter-grid">
+        <input id="learning-search" aria-label="${escapeAttr(t("placeholder.searchLearning"))}" type="search" value="${escapeAttr(state.learningFilters.query)}" placeholder="${escapeAttr(t("placeholder.searchLearning"))}">
+        <details class="library-filters learning-filters" id="learning-filters" ${state.learningFiltersOpen ? "open" : ""}><summary>${escapeHtml(t("route.filters"))}</summary><div class="learning-filter-grid">
         <select id="learning-status-filter" aria-label="${escapeAttr(t("value.anyStatus"))}">${learningFilterOptions(["not_started", "in_progress", "learned"], state.learningFilters.status, "value.anyStatus")}</select>
         <select id="learning-source-filter" aria-label="${escapeAttr(t("value.anySourceType"))}">${learningFilterOptions(sourceTypes, state.learningFilters.sourceType, "value.anySourceType")}</select>
         <select id="learning-tag-filter" aria-label="${escapeAttr(t("value.anyTag"))}">${learningFilterOptions(tags, state.learningFilters.tag, "value.anyTag")}</select>
@@ -1109,7 +1132,7 @@ export function mountWorkspace(boot) {
             const insight = state.learningInsights.find((entry) => entry.library_key === item.insight_key);
             if (!insight) return "";
             const status = learningStatus(insight);
-            return `<button type="button" class="learning-chapter ${insight.library_key === state.insightId ? "active" : ""}" data-learning-insight="${escapeAttr(insight.library_key)}">
+            return `<button type="button" class="learning-chapter ${insight.library_key === state.insightId ? "active" : ""}" data-learning-insight="${escapeAttr(insight.library_key)}" aria-pressed="${insight.library_key === state.insightId}">
               <span class="chapter-number">${String(item.position).padStart(2, "0")}</span>
               <span class="chapter-copy"><span class="row-title">${escapeHtml(insight.title)}</span><span class="subtle">${escapeHtml(insight.summary)}</span></span>
               <span class="chapter-state ${escapeAttr(status)}" aria-label="${escapeAttr(valueLabel(status))}"></span>
@@ -1119,7 +1142,7 @@ export function mountWorkspace(boot) {
       }).join("");
       const standaloneHtml = standalone.length ? `<section class="learning-standalone">
         <div class="learning-section-label">${escapeHtml(t("title.standaloneInsights"))}</div>
-        ${standalone.map((insight) => `<button type="button" class="row learning-standalone-row ${insight.library_key === state.insightId ? "active" : ""}" data-learning-insight="${escapeAttr(insight.library_key)}">
+        ${standalone.map((insight) => `<button type="button" class="row learning-standalone-row ${insight.library_key === state.insightId ? "active" : ""}" data-learning-insight="${escapeAttr(insight.library_key)}" aria-pressed="${insight.library_key === state.insightId}">
           <span class="row-title">${escapeHtml(insight.title)}</span>
           <span class="subtle">${escapeHtml(insight.summary)}</span>
           <span class="meta"><span class="pill">${escapeHtml(valueLabel(insight.source_type || "other"))}</span><span class="pill ${learningStatus(insight) === "learned" ? "accepted" : learningStatus(insight) === "in_progress" ? "warn" : ""}">${escapeHtml(valueLabel(learningStatus(insight)))}</span></span>
@@ -1132,7 +1155,7 @@ export function mountWorkspace(boot) {
       bindLearningPrompt(el("candidates"));
 
       el("learning-filters")?.querySelector("summary").addEventListener("click", () => {
-        if (isCompactShell()) state.learningFiltersOpen = !el("learning-filters").open;
+        state.learningFiltersOpen = !el("learning-filters").open;
       });
       document.querySelectorAll("[data-learning-insight]").forEach((button) => {
         button.addEventListener("click", () => {
@@ -1235,13 +1258,13 @@ export function mountWorkspace(boot) {
         <div class="learning-impact-group">
           <span class="field-label">${escapeHtml(t("label.learningStatus"))}</span>
           <div class="segmented learning-status-control" role="group" aria-label="${escapeAttr(t("label.learningStatus"))}">
-            ${["not_started", "in_progress", "learned"].map((status) => '<button type="button" data-learning-status="' + status + '" class="' + (progress.status === status ? "active" : "") + '">' + escapeHtml(valueLabel(status)) + '</button>').join("")}
+            ${["not_started", "in_progress", "learned"].map((status) => '<button type="button" data-learning-status="' + status + '" aria-pressed="' + (progress.status === status) + '" class="' + (progress.status === status ? "active" : "") + '">' + escapeHtml(valueLabel(status)) + '</button>').join("")}
           </div>
         </div>
         <div class="learning-impact-group">
           <span class="field-label">${escapeHtml(t("label.contentFeedback"))}</span>
           <div class="feedback-choice" role="group" aria-label="${escapeAttr(t("label.contentFeedback"))}">
-            ${["helpful", "unclear", "outdated"].map((feedback) => '<button type="button" data-learning-feedback="' + feedback + '" class="ghost ' + (progress.feedback === feedback ? "active" : "") + '">' + escapeHtml(valueLabel(feedback)) + '</button>').join("")}
+            ${["helpful", "unclear", "outdated"].map((feedback) => '<button type="button" data-learning-feedback="' + feedback + '" aria-pressed="' + (progress.feedback === feedback) + '" class="ghost ' + (progress.feedback === feedback ? "active" : "") + '">' + escapeHtml(valueLabel(feedback)) + '</button>').join("")}
           </div>
         </div>
         <label class="learning-run-link"><span>${escapeHtml(t("label.linkedRun"))}</span><select id="learning-run-link">${learningRunOptions(insight)}</select></label>
@@ -1330,7 +1353,8 @@ export function mountWorkspace(boot) {
         return;
       }
       if (!insight) {
-        el("detail").innerHTML = '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span>' + learningPromptCard('copy-learning-prompt') + '</div>';
+        const hasInsights = state.learningInsights.length > 0;
+        el("detail").innerHTML = '<div class="empty learning-empty"><strong>' + escapeHtml(t(hasInsights ? "empty.noLearningMatchesTitle" : "empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t(hasInsights ? "empty.noLearningMatches" : "empty.noLearningInsights")) + '</span>' + (hasInsights ? '' : learningPromptCard('copy-learning-prompt')) + '</div>';
         bindLearningPrompt(el("detail"));
         return;
       }
@@ -1350,7 +1374,7 @@ export function mountWorkspace(boot) {
           <section id="learning-draft-recovery" class="section learning-agent-card" hidden></section>
           <div class="section learning-intro">
             ${breadcrumb}
-            <div class="title learning-title">${escapeHtml(insight.title)}</div>
+            <h1 class="title learning-title">${escapeHtml(insight.title)}</h1>
             <div class="learning-summary">${escapeHtml(insight.summary)}</div>
             <div class="meta">
               ${(insight.tags || []).map((tag) => '<span class="pill">' + escapeHtml(tag) + '</span>').join("")}
@@ -1500,10 +1524,6 @@ export function mountWorkspace(boot) {
       const runtime = status?.runtime || null;
       const project = status?.project || null;
       const global = status?.global || null;
-      const localModels = status?.local_models || [];
-      const selectedLocalModel = localModels.find((model) => model.id === state.embeddingLocalModelDraft);
-      const downloadingLocalModel = state.embeddingProviderDraft === "huggingface" &&
-        Boolean(state.embeddingReindexing) && !selectedLocalModel?.cached;
       const provider = runtime?.provider || state.embeddingProviderDraft || "";
       const providerLabel = provider ? valueLabel(provider) : t("embedding.notConfigured");
       el("queue-title").textContent = t("title.embeddings");
@@ -1523,23 +1543,34 @@ export function mountWorkspace(boot) {
         return;
       }
 
+      if (renderEmbeddingLoad(el("candidates"))) return;
       el("candidates").innerHTML = `
-        <div class="summary-grid">
+        <div class="summary-grid embedding-summary">
           ${metric(t("metric.activeProvider"), providerLabel, runtimeStateLabel(runtime))}
           ${metric(t("metric.activeProfile"), shortProfileId(runtime?.profile_id), runtime?.profile_id || t("embedding.noProfile"))}
           ${metric(t("metric.projectFresh"), embeddingFreshValue(project), embeddingNeedsReindex(project))}
           ${metric(t("metric.globalFresh"), embeddingFreshValue(global), embeddingNeedsReindex(global))}
         </div>
-        <form class="settings-form" id="embedding-form">
+      `;
+    }
+
+    function embeddingSettingsContent() {
+      const status = state.embeddingStatus, runtime = status?.runtime;
+      const localModels = status?.local_models || [];
+      const selectedLocalModel = localModels.find(model => model.id === state.embeddingLocalModelDraft);
+      const downloadingLocalModel = state.embeddingProviderDraft === "huggingface" && Boolean(state.embeddingReindexing) && !selectedLocalModel?.cached;
+      return `        <form class="settings-form" id="embedding-form">
+          <fieldset class="embedding-settings-fields" ${state.embeddingSaving || state.embeddingReindexing ? "disabled" : ""}>
+          <legend class="title">${escapeHtml(t("label.provider"))}</legend>
           <div class="status-line">
             <span class="status-dot ${runtime?.available ? "available" : "unavailable"}" aria-hidden="true"></span>
             <span class="pill ${runtime?.available ? "accepted" : "warn"}">${escapeHtml(runtimeStateLabel(runtime))}</span>
             ${runtime?.profile_id ? '<span class="pill scope">' + escapeHtml(t("embedding.activeProfile")) + '</span>' : ''}
           </div>
-          <div class="segmented" id="embedding-provider-tabs" aria-label="${escapeAttr(t("label.provider"))}">
-            <button type="button" data-embedding-provider="huggingface" class="${state.embeddingProviderDraft === "huggingface" ? "active" : ""}">${escapeHtml(valueLabel("huggingface"))}</button>
-            <button type="button" data-embedding-provider="ollama" class="${state.embeddingProviderDraft === "ollama" ? "active" : ""}">${escapeHtml(valueLabel("ollama"))}</button>
-            <button type="button" data-embedding-provider="jina" class="${state.embeddingProviderDraft === "jina" ? "active" : ""}">${escapeHtml(valueLabel("jina"))}</button>
+          <div class="segmented" id="embedding-provider-tabs" role="group" aria-label="${escapeAttr(t("label.provider"))}">
+            <button type="button" data-embedding-provider="huggingface" aria-pressed="${state.embeddingProviderDraft === "huggingface"}" class="${state.embeddingProviderDraft === "huggingface" ? "active" : ""}">${escapeHtml(valueLabel("huggingface"))}</button>
+            <button type="button" data-embedding-provider="ollama" aria-pressed="${state.embeddingProviderDraft === "ollama"}" class="${state.embeddingProviderDraft === "ollama" ? "active" : ""}">${escapeHtml(valueLabel("ollama"))}</button>
+            <button type="button" data-embedding-provider="jina" aria-pressed="${state.embeddingProviderDraft === "jina"}" class="${state.embeddingProviderDraft === "jina" ? "active" : ""}">${escapeHtml(valueLabel("jina"))}</button>
           </div>
           <div class="local-model-panel ${state.embeddingProviderDraft === "huggingface" ? "" : "hidden"}">
             <div class="local-model-grid" role="group" aria-label="${escapeAttr(t("label.localModel"))}">
@@ -1554,18 +1585,18 @@ export function mountWorkspace(boot) {
             <div class="field"><label for="embedding-dimensions">${escapeHtml(t("label.dimensions"))}</label><input id="embedding-dimensions" type="number" min="1" step="1" value="${escapeAttr(state.embeddingOllama.dimensions)}"></div>
           </div>
           <div class="warning ${state.embeddingProviderDraft === "jina" ? "" : "hidden"}">${escapeHtml(t("hint.jinaEnv"))}</div>
-          <button type="submit" class="primary">${escapeHtml(t("action.useProvider"))}</button>
+          <button type="submit" class="primary">${escapeHtml(t(state.embeddingSaving ? "embedding.saving" : "action.useProvider"))}</button>
+          </fieldset>
         </form>
         <div class="section">
           <div class="title">${escapeHtml(t("title.reindex"))}</div>
           <div class="subtle">${escapeHtml(t("hint.reindexAfterSwitch"))}</div>
           <div class="actions" style="padding:0;border-top:0;background:transparent">
-            <button type="button" id="embedding-reindex-project" ${state.embeddingReindexing ? "disabled" : ""}>${escapeHtml(state.embeddingReindexing === "project" ? t("action.reindexing") : t("action.reindexProject"))}</button>
-            <button type="button" id="embedding-reindex-global" ${state.embeddingReindexing ? "disabled" : ""}>${escapeHtml(state.embeddingReindexing === "global" ? t("action.reindexing") : t("action.reindexGlobal"))}</button>
+            <button type="button" id="embedding-reindex-project" ${state.embeddingReindexing || state.embeddingSaving ? "disabled" : ""}>${escapeHtml(state.embeddingReindexing === "project" ? t("action.reindexing") : t("action.reindexProject"))}</button>
+            <button type="button" id="embedding-reindex-global" ${state.embeddingReindexing || state.embeddingSaving ? "disabled" : ""}>${escapeHtml(state.embeddingReindexing === "global" ? t("action.reindexing") : t("action.reindexGlobal"))}</button>
           </div>
         </div>
-      `;
-      bindEmbeddingsControls();
+`;
     }
 
     function renderLocalEmbeddingModels(models) {
@@ -1587,7 +1618,7 @@ export function mountWorkspace(boot) {
       el("detail-title").textContent = t("title.embeddingDetail");
       el("detail-meta").textContent = state.projectRoot
         ? t("meta.embeddingDetail", {
-            profile: runtime?.profile_id || t("embedding.noProfile"),
+            profile: runtime?.provider ? valueLabel(runtime.provider) : t("embedding.noProfile"),
             state: runtimeStateLabel(runtime)
           })
         : t("meta.selectProject");
@@ -1596,15 +1627,17 @@ export function mountWorkspace(boot) {
         el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("meta.selectProject")) + '</div>';
         return;
       }
+      if (renderEmbeddingLoad(el("detail"))) return;
       if (!status) {
-        el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("empty.noData")) + '</div>';
+        el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("embedding.loading")) + '</div>';
         return;
       }
 
       el("detail").innerHTML = `
-        <div class="scroll">
-          <div class="section">
-            <div class="title">${escapeHtml(t("title.currentProfile"))}</div>
+        <div class="scroll embedding-reader">
+          <header class="settings-heading"><h1>${escapeHtml(t("embedding.settingsTitle"))}</h1><p>${escapeHtml(t("embedding.settingsIntro"))}</p></header>
+          ${embeddingSettingsContent()}
+          <details class="section reader-disclosure embedding-technical"><summary>${escapeHtml(t("title.currentProfile"))}</summary>
             <div class="detail-kv">
               ${kv(t("label.provider"), runtime?.provider ? valueLabel(runtime.provider) : t("embedding.notConfigured"))}
               ${kv(t("label.model"), runtime?.model || "-")}
@@ -1614,11 +1647,12 @@ export function mountWorkspace(boot) {
               ${kv(t("label.setupAction"), runtime?.setup_action?.command || "-")}
             </div>
             ${runtime?.setup_action ? '<div class="warning">' + escapeHtml(runtime.setup_action.reason) + '</div>' : ''}
-          </div>
+          </details>
           ${renderEmbeddingScopeDetail("project", status.project)}
           ${renderEmbeddingScopeDetail("global", status.global)}
         </div>
       `;
+      bindEmbeddingsControls();
     }
 
     function bindEmbeddingsControls() {
@@ -1628,7 +1662,8 @@ export function mountWorkspace(boot) {
           state.embeddingProviderDraft = ["huggingface", "ollama", "jina"].includes(provider)
             ? provider
             : "huggingface";
-          renderEmbeddingsView();
+          renderEmbeddingsDetail();
+          document.querySelector('[data-embedding-provider="' + state.embeddingProviderDraft + '"]')?.focus();
         });
       });
       document.querySelectorAll("[data-local-embedding-model]").forEach((button) => {
@@ -1636,7 +1671,8 @@ export function mountWorkspace(boot) {
           state.embeddingLocalModelDraft = button.dataset.localEmbeddingModel === "quality"
             ? "quality"
             : "default";
-          renderEmbeddingsView();
+          renderEmbeddingsDetail();
+          document.querySelector('[data-local-embedding-model="' + state.embeddingLocalModelDraft + '"]')?.focus();
         });
       });
       const endpoint = el("embedding-endpoint");
@@ -1659,7 +1695,7 @@ export function mountWorkspace(boot) {
     }
 
     async function useEmbeddingProvider() {
-      if (!state.projectRoot) return;
+      if (!state.projectRoot || state.embeddingSaving || state.embeddingReindexing) return;
       const body = {
         projectRoot: state.projectRoot,
         provider: state.embeddingProviderDraft
@@ -1676,11 +1712,15 @@ export function mountWorkspace(boot) {
       } else if (state.embeddingProviderDraft === "huggingface") {
         body.model = state.embeddingLocalModelDraft;
       }
+      state.embeddingSaving = true;
+      renderEmbeddingsDetail();
+      const project = state.projectRoot;
       try {
         const data = await api("/api/embeddings/use", {
           method: "POST",
           body: JSON.stringify(body)
         });
+        if (state.projectRoot !== project) return;
         state.embeddingSettings = data.settings || data.embeddings || null;
         state.embeddingStatus = {
           project_root: data.project_root,
@@ -1693,18 +1733,23 @@ export function mountWorkspace(boot) {
         showStatus(t("status.embeddingProviderSaved"));
       } catch (error) {
         showStatus(error.message, true);
+      } finally {
+        state.embeddingSaving = false;
+        renderEmbeddingsDetail();
       }
     }
 
     async function reindexEmbeddings(scope) {
-      if (!state.projectRoot || state.embeddingReindexing) return;
+      if (!state.projectRoot || state.embeddingReindexing || state.embeddingSaving) return;
+      const project = state.projectRoot;
       state.embeddingReindexing = scope;
-      renderEmbeddingsView();
+      renderEmbeddingsDetail();
       try {
         const data = await api("/api/embeddings/reindex", {
           method: "POST",
           body: JSON.stringify({ projectRoot: state.projectRoot, scope })
         });
+        if (state.projectRoot !== project) return;
         state.embeddingStatus = {
           project_root: data.project_root,
           settings: state.embeddingSettings,
@@ -1720,7 +1765,7 @@ export function mountWorkspace(boot) {
         showStatus(error.message, true);
       } finally {
         state.embeddingReindexing = null;
-        renderEmbeddingsView();
+        renderEmbeddingsView(); renderEmbeddingsDetail();
       }
     }
 
@@ -1856,11 +1901,25 @@ export function mountWorkspace(boot) {
       }
       const disabled = candidate.status !== "proposed" ? "disabled" : "";
       el("detail").innerHTML = `
-        <div class="scroll">
+        <div class="scroll review-reader">
           ${renderReviewNotice(candidate)}
-          <form class="section" id="candidate-form">
+          <div class="review-reader-toolbar"><button type="button" id="review-edit-toggle" aria-expanded="false" aria-controls="candidate-form">${escapeHtml(t(candidate.status === "proposed" ? "reader.edit" : "reader.fields"))}</button></div>
+          <article id="review-preview" class="lesson-preview" aria-label="${escapeAttr(t("reader.preview"))}">
+            <header class="lesson-heading"><h1 data-review-preview="title"></h1><div class="reader-metadata"><span data-review-preview="scope"></span><span data-review-preview="category"></span><span data-review-preview="severity"></span></div></header>
+            <section class="lesson-copy">
+              <div class="text-block"><h2>${readerIcon("context")}${escapeHtml(t("reader.context"))}</h2><div class="content" data-review-preview="context"></div></div>
+              <div class="text-block"><h2>${readerIcon("mistake")}${escapeHtml(t("reader.mistake"))}</h2><div class="content" data-review-preview="mistake"></div></div>
+              <div class="text-block lesson-solution"><h2>${readerIcon("fix")}${escapeHtml(t("reader.fix"))}</h2><div class="content" data-review-preview="fix"></div></div>
+            </section>
+          </article>
+          <form class="section" id="candidate-form" hidden>
             <div class="form-grid">
               ${field("title", t("label.title"), candidate.trap.title, disabled)}
+              ${textarea("context", t("label.context"), candidate.trap.context, disabled)}
+              ${textarea("mistake", t("label.mistake"), candidate.trap.mistake, disabled)}
+              ${textarea("fix", t("label.fix"), candidate.trap.fix, disabled)}
+            </div>
+            <details class="reader-disclosure review-applicability"><summary>${escapeHtml(t("reader.applicability"))}</summary><div class="form-grid">
               ${selectField("category", t("label.category"), candidate.trap.category, state.options.categories, disabled)}
               ${selectField("scope", t("label.scope"), candidate.trap.scope, state.options.scopes, disabled)}
               ${selectField("severity", t("label.severity"), candidate.trap.severity || "warning", state.options.severities, disabled)}
@@ -1868,10 +1927,7 @@ export function mountWorkspace(boot) {
               ${field("path_globs", t("label.pathGlobs"), (candidate.trap.path_globs || []).join(", "), disabled)}
               ${field("module", t("label.module"), candidate.trap.module || "", disabled)}
               ${field("owner", t("label.owner"), candidate.trap.owner || "", disabled)}
-              ${textarea("context", t("label.context"), candidate.trap.context, disabled)}
-              ${textarea("mistake", t("label.mistake"), candidate.trap.mistake, disabled)}
-              ${textarea("fix", t("label.fix"), candidate.trap.fix, disabled)}
-            </div>
+            </div></details>
           </form>
           <div class="section">
             <div class="meta">
@@ -1881,10 +1937,9 @@ export function mountWorkspace(boot) {
             </div>
             ${candidate.quality.warnings.map((warning) => '<div class="warning">' + escapeHtml(qualityWarningLabel(warning)) + '</div>').join("")}
           </div>
-          <div class="section">
-            <div class="title">${escapeHtml(t("title.evidence"))}</div>
+          <details class="section reader-disclosure"><summary>${escapeHtml(t("title.evidence"))}</summary>
             ${candidate.evidence.length ? candidate.evidence.map(renderEvidence).join("") : '<div class="empty">' + escapeHtml(t("empty.noEvidence")) + '</div>'}
-          </div>
+          </details>
           ${renderConflicts()}
         </div>
         ${renderDetailActions(candidate, disabled)}

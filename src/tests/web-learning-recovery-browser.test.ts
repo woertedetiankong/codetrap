@@ -133,7 +133,7 @@ browserTest("unconfirmed creation keeps a recoverable proposal and exposes its e
     await page.locator("#create-learning-candidate").click(); await page.locator("#create-learning-candidate:not([disabled])").waitFor();
     await page.reload(); await page.locator(restore).waitFor(); expect(await page.locator("#learning-recovery-notice").textContent()).toContain("already has a review record");
     await page.locator(restore).click(); expect(await page.locator(title).inputValue()).toBe("Recover an uncertain send"); expect(creates).toBe(1);
-    await page.locator("#open-learning-candidate-review").click(); await page.locator("#title").waitFor(); expect(await page.locator("#title").inputValue()).toBe("Recover an uncertain send");
+    await page.locator("#open-learning-candidate-review").click(); await page.locator("#title").waitFor({ state: "attached" }); expect(await page.locator("#title").inputValue()).toBe("Recover an uncertain send");
     expect(f.a.traps.list()).toHaveLength(0);
   } finally { await browser.close(); server.stop(true); }
 }, 15000);
