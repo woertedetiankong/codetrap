@@ -1,4 +1,4 @@
-import { chromeExecutablePath, launchBrowser } from "./browser-helper";
+import { chromeExecutablePath, dataSelector, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
 import { reviewFixture } from "./web-review-fixture";
 import { Phase2Operations } from "../lib/phase2-operations";
@@ -21,6 +21,7 @@ browserTest("Review restores each candidate's draft across locale, view, project
     const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     await page.addInitScript(() => localStorage.setItem("codetrap-queue-collapsed", "false"));
     await page.goto(`http://127.0.0.1:${server.port}/?token=review-token` + f.a.hash());
+    await page.locator("#review-preview").waitFor();
     expect(await page.locator("#review-preview").isVisible()).toBe(true);
     expect(await page.locator("#title").isVisible()).toBe(false);
     await editLesson(page); await page.locator("#title").fill("Alpha <raw> unsaved"); await page.locator("#fix").fill("First line\nSecond line");
@@ -39,10 +40,10 @@ browserTest("Review restores each candidate's draft across locale, view, project
     await page.locator('[data-main-view="library"]').click();
     await page.goBack(); await page.locator("#title").waitFor({ state: "attached" });
     expect(await page.locator("#title").inputValue()).toBe("Alpha <raw> unsaved");
-    await page.locator(`[data-project='${f.b.root}']`).click(); await page.locator("#title").waitFor({ state: "attached" });
+    await page.locator(dataSelector("data-project", f.b.root)).click(); await page.locator("#title").waitFor({ state: "attached" });
     expect(await page.locator("#title").inputValue()).toBe("First beta");
     await editLesson(page); await page.locator("#title").fill("Beta unsaved");
-    await page.locator(`[data-project='${f.a.root}']`).click(); await page.locator("#title").waitFor({ state: "attached" });
+    await page.locator(dataSelector("data-project", f.a.root)).click(); await page.locator("#title").waitFor({ state: "attached" });
     expect(await page.locator("#title").inputValue()).toBe("Alpha <raw> unsaved");
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('[data-locale="en"]').click();

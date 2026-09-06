@@ -3,6 +3,14 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Browser } from 'playwright-core';
 
+// CSS string escapes differ from filesystem paths: a Windows backslash must
+// remain a literal character when matching data attributes.
+export function dataSelector(name: string, value: string): string {
+  if (!/^data-[a-z-]+$/.test(name)) throw new Error('Expected a data attribute name.');
+  const escaped = value.replace(/[\x00-\x1f\x7f"\\]/g, char => `\\${char.codePointAt(0)!.toString(16)} `);
+  return `[${name}="${escaped}"]`;
+}
+
 export function chromeExecutablePath(): string | null {
   const override = process.env.CODETRAP_TEST_BROWSER;
   if (override) {

@@ -1,4 +1,4 @@
-import { chromeExecutablePath, launchBrowser } from "./browser-helper";
+import { chromeExecutablePath, dataSelector, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
 import { learningFixture } from "./web-learning-fixture";
 import { createWebHandler } from "../web/server";
@@ -20,9 +20,9 @@ browserTest("Learning keeps separate raw practice/proposal drafts across article
     await page.locator("#next-learning").click(); await page.locator("#begin-learning-candidate").click(); await page.locator(title).fill("Second proposal");
     await page.locator("#previous-learning").click(); expect(await page.locator(title).inputValue()).toBe("Alpha proposal");
     expect(await page.locator("#learning-practice-note").inputValue()).toBe("Alpha practice\nnot yet saved");
-    await page.locator(`[data-project='${f.b.root}']`).click(); await page.locator(`[data-learning-insight='${f.b.root}::one']`).click();
+    await page.locator(dataSelector("data-project", f.b.root)).click(); await page.locator(dataSelector("data-learning-insight", f.b.root + "::one")).click();
     await page.locator("#begin-learning-candidate").click(); await page.locator(title).fill("Beta proposal");
-    await page.locator(`[data-project='${f.a.root}']`).click(); await page.locator(`[data-learning-insight='${f.a.root}::one']`).click();
+    await page.locator(dataSelector("data-project", f.a.root)).click(); await page.locator(dataSelector("data-learning-insight", f.a.root + "::one")).click();
     expect(await page.locator(title).inputValue()).toBe("Alpha proposal");
     await page.locator('[data-locale="zh"]').click(); expect(await page.locator(tags).inputValue()).toBe(" one,  two ,");
     await page.locator('[data-main-view="library"]').click(); await page.goBack(); await page.locator(title).waitFor();
@@ -155,10 +155,10 @@ browserTest("switching projects removes the old Learning form immediately while 
     await page.addInitScript(() => localStorage.setItem("codetrap-queue-collapsed", "false"));
     await page.goto(`http://127.0.0.1:${server.port}/?token=learning-token` + f.a.hash());
     await page.locator("#begin-learning-candidate").click(); await page.locator(title).fill("Original project draft");
-    delay = true; await page.locator(`[data-project='${f.b.root}']`).click(); await started;
+    delay = true; await page.locator(dataSelector("data-project", f.b.root)).click(); await started;
     expect(await page.locator(title).count()).toBe(0); expect(await page.locator("#learning-practice-note").count()).toBe(0);
     release(); await page.locator("#learning-practice-note").waitFor();
-    await page.locator(`[data-project='${f.a.root}']`).click(); await page.locator(`[data-learning-insight='${f.a.root}::one']`).click();
+    await page.locator(dataSelector("data-project", f.a.root)).click(); await page.locator(dataSelector("data-learning-insight", f.a.root + "::one")).click();
     expect(await page.locator(title).inputValue()).toBe("Original project draft");
   } finally { release(); await browser.close(); server.stop(true); }
 }, 20000);

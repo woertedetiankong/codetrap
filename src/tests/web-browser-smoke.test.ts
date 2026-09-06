@@ -1,4 +1,4 @@
-import { chromeExecutablePath, launchBrowser } from "./browser-helper";
+import { chromeExecutablePath, dataSelector, launchBrowser } from "./browser-helper";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -258,7 +258,7 @@ describe("web browser smoke", () => {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.goto(`http://127.0.0.1:${server.port}/?token=${TOKEN}#/learning`);
-      const insightSelector = '[data-learning-insight="' + source + '::ins-browser-smoke"]';
+      const insightSelector = dataSelector("data-learning-insight", source + "::ins-browser-smoke");
       await page.locator(insightSelector).click();
       await page.locator("#open-learning-confirmed-trap").waitFor();
       await page.locator("#learning-practice-note").fill("PRIVATE practice: inspect the result");
