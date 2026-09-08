@@ -13,12 +13,13 @@ console plays isolated lessons alongside the existing written explanation.
 
 ## Current State
 
-Complete as of 2026-09-08. Implementation and validation finished; no release or
-installed-service upgrade performed.
+Complete as of 2026-09-08. Implementation, validation, user-authorized push and local upgrade finished.
+No public npm or GitHub Release was requested or published.
 
 ## Git And Persistent State
 
-Changes are uncommitted on `main`. Browser bundle regenerated. No database
+Feature commit `b71ea70` was pushed to `origin/main`. Browser bundle regenerated.
+The local CLI symlinks to this checkout (package version remains 0.1.9). No database
 migration; artifact storage is created on first import. Tests used temporary
 projects and did not add examples to the real Learning library.
 
@@ -44,9 +45,8 @@ coverage and generation instructions. Existing Phase2 target approval is preserv
 ## Next Steps
 
 No required implementation remains. Follow actual learner feedback on lesson
-usability before adding a persistent animation-state or grading bridge. Installing
-this source version's skill bundle and restarting the source web process makes
-it available in an existing local environment; releases remain separate work.
+usability before adding a persistent animation-state or grading bridge. Both local client skill bundles are current. Open a new agent session to load
+the new skill list; public releases remain separate work.
 
 ## Restart Verify
 
@@ -57,8 +57,9 @@ bun test src/tests/study-artifacts.test.ts src/tests/study-player-browser.test.t
 
 ## Environment and red lines
 
-Existing source preview is documented on port 4750 and installed service on 4751;
-neither was restarted. Do not replace real records with demonstration fixtures.
+Source preview on port 4750 returns the updated interactive lesson UI. No
+listener was present on 4751 during upgrade. Both Codex and Claude skill setup
+completed with `--no-agents`; a second dry run reported 7 unchanged skills each. Do not replace real records with demonstration fixtures.
 Do not expose launch tokens or publish without user authorization. External
 resources and same-origin storage are unavailable inside lessons; downloaded
 files use normal browser rules. Detail rebuilds reset in-memory animation state.

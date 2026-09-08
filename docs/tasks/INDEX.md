@@ -1,6 +1,6 @@
 # Task Index
 
-Current session entry (2026-09-08): [interactive study artifacts](2026-09-08-interactive-study/task-brief.md). HTML/SVG generation skill, versioned attachments and an isolated Learning player are complete. Read the [handoff](2026-09-08-interactive-study/handoff.md). Changes remain uncommitted.
+Current session entry (2026-09-08): [interactive study artifacts](2026-09-08-interactive-study/task-brief.md). HTML/SVG generation skill, versioned attachments and an isolated Learning player are complete. Read the [handoff](2026-09-08-interactive-study/handoff.md). Feature commit b71ea70 is pushed; local Codex and Claude skill bundles are current.
 
 | Module / Slice | Status | Task Dossier | Latest Handoff | Depends On | Referenced By | Notes |
 |---|---|---|---|---|---|---|
