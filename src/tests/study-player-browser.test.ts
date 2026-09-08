@@ -26,8 +26,13 @@ browserTest("player runs interactions but cannot access parent, storage, API or 
     await page.goto(`http://127.0.0.1:${server.port}/?token=learning-token`+f.a.hash());
     await page.locator('#study-interactive-tab').click();
     const frame=page.frameLocator('#study-player iframe');
-    await frame.locator('#advance').click();await frame.locator('#advance').filter({hasText:'Done'}).waitFor();expect(await frame.locator('#advance').textContent()).toBe('Done');
     await frame.locator('#result').filter({hasText:'fetch blocked'}).waitFor();
+    // Wait for the hostile fixture to finish initialization before interacting.
+    // Keyboard activation tests interaction without depending on cross-frame pointer coordinates.
+    await frame.locator('#advance').focus();
+    await frame.locator('#advance').press('Enter');
+    await frame.locator('#advance').filter({hasText:'Done'}).waitFor();
+    expect(await frame.locator('#advance').textContent()).toBe('Done');
     expect(await frame.locator('#result').textContent()).toContain('parent blocked');
     expect(await frame.locator('#result').textContent()).toContain('storage blocked');
     expect(await page.locator('body').getAttribute('data-compromised')).toBeNull();
