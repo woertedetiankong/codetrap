@@ -1,0 +1,79 @@
+{
+  "note": "Isolated deterministic audit run using copied repository fixture. Not observed production outcomes.",
+  "results": [
+    {
+      "profile": "retrieval_policy_v1",
+      "summary": {
+        "total_cases": 24,
+        "regressions": 0,
+        "improvements": 0,
+        "changed": 13,
+        "unchanged_pass": 11,
+        "unchanged_fail": 0,
+        "baseline_metrics": {
+          "recall_at_3": 1,
+          "recall_at_5": 1,
+          "mrr": 1,
+          "hybrid_fallback_count": 0,
+          "semantic_error_count": 0
+        },
+        "candidate_metrics": {
+          "recall_at_3": 1,
+          "recall_at_5": 1,
+          "mrr": 1,
+          "hybrid_fallback_count": 0,
+          "semantic_error_count": 0
+        },
+        "baseline_failed_cases": 0,
+        "candidate_failed_cases": 0,
+        "baseline_average_duration_ms": 9.89,
+        "candidate_average_duration_ms": 11.12,
+        "duration_delta_ms": 1.23
+      },
+      "reproducible": true,
+      "suite": {
+        "path": ".codetrap/evals/suite.json",
+        "sha256": "118f398837b2bee02812815f6bb123d0a354bb9276dae4237695450eec2d0dfd",
+        "snapshot": ".codetrap/evals/suites/118f398837b2bee02812815f6bb123d0a354bb9276dae4237695450eec2d0dfd.json",
+        "case_count": 24
+      }
+    },
+    {
+      "profile": "memory_contribution_v1",
+      "summary": {
+        "total_cases": 24,
+        "regressions": 0,
+        "improvements": 24,
+        "changed": 0,
+        "unchanged_pass": 0,
+        "unchanged_fail": 0,
+        "baseline_metrics": {
+          "recall_at_3": 0,
+          "recall_at_5": 0,
+          "mrr": 0,
+          "hybrid_fallback_count": 0,
+          "semantic_error_count": 0
+        },
+        "candidate_metrics": {
+          "recall_at_3": 1,
+          "recall_at_5": 1,
+          "mrr": 1,
+          "hybrid_fallback_count": 0,
+          "semantic_error_count": 0
+        },
+        "baseline_failed_cases": 24,
+        "candidate_failed_cases": 0,
+        "baseline_average_duration_ms": 6.49,
+        "candidate_average_duration_ms": 9.12,
+        "duration_delta_ms": 2.64
+      },
+      "reproducible": true,
+      "suite": {
+        "path": ".codetrap/evals/suite.json",
+        "sha256": "118f398837b2bee02812815f6bb123d0a354bb9276dae4237695450eec2d0dfd",
+        "snapshot": ".codetrap/evals/suites/118f398837b2bee02812815f6bb123d0a354bb9276dae4237695450eec2d0dfd.json",
+        "case_count": 24
+      }
+    }
+  ]
+}

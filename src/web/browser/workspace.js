@@ -6,7 +6,6 @@ import { reviewQueueModel, visibleReviewSummary } from '../client-review';
 import { createShell } from './shell';
 import { createImpactUI } from '../client-impact';
 import { createExperienceActions } from '../client-experience-actions';
-import { impactOverviewContent } from '../client-impact-overview';
 import { createLibraryUI } from './library';
 import { createReviewUI } from './review';
 import { createLearningWorkflow } from './learning';
@@ -53,6 +52,7 @@ export function mountWorkspace(boot) {
       ...createImpactState(),
       observationRunId: initialRoute.runId,
       impactView: initialRoute.impactView,
+      improvementId: initialRoute.improvementId,
       projectRoot: null,
       detailActionInFlight: false,
       externalRefreshInFlight: false,
@@ -92,13 +92,13 @@ export function mountWorkspace(boot) {
       changed: (project) => {
         if (state.projectRoot !== project) return;
         void loadTraps().catch((error) => showStatus(error.message, true));
-        if (state.mainView === "impact" && state.observationRunId && !state.observationDemoRun) {
-          void loadImpactRun(state.observationRunId).catch((error) => showStatus(error.message, true));
+        if (state.mainView === "impact") {
+          void loadImpact(true).catch((error) => showStatus(error.message, true));
         }
       }
     });
     const { setSidebarCollapsed, setQueueCollapsed, renderSidebarToggle, initShellResizers } = createShell({ state, el, t });
-    const { renderImpactQueue, syncImpactOverviewLayout, renderImpactDetail, syncEvalDeferredNotice, snapshotEvalReviewDraftFromDom } = createImpactUI({ state, evalSuiteUI, revisionUI, impactOverviewContent, el, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, api, syncWorkspaceRoute, showStatus, captureImpactScrollPosition, restoreImpactScrollPosition, loadImpactRun, loadImpactEvals, loadImpact, jumpToTrap });
+    const { renderImpactQueue, syncImpactOverviewLayout, renderImpactDetail, syncEvalDeferredNotice, snapshotEvalReviewDraftFromDom } = createImpactUI({ state, evalSuiteUI, revisionUI, el, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, api, syncWorkspaceRoute, showStatus, captureImpactScrollPosition, restoreImpactScrollPosition, loadImpactRun, loadImpactEvals, loadImpact, jumpToTrap, selectProject: (root) => { selectExperienceProject(root); syncWorkspaceRoute(); renderActiveView(); void loadImpact(); } });
     const { selectExperienceProject, openLearningConfirmedTrap, openLearningLinkedRun, openExperienceRun, openExperienceInsight } = createExperienceActions({ state, t, resetLibrary: () => library.reset(state.projectRoot), resetReview: () => review.reset(state.projectRoot), currentLearningInsight, snapshotLearningDraftFromDom, showStatus, resetObservationState, renderProjects, renderSessions, renderActiveView, revealCompactDetail, jumpToTrap, loadImpactRun, loadLearningInsights, selectLearningInsight });
     const library = createLibraryUI({
       context: () => ({ project: state.projectRoot, active: state.mainView === "library" && !state.routeError, options: state.options }),
@@ -155,6 +155,7 @@ export function mountWorkspace(boot) {
         projectRef: projectRouteRef(state.projectRoot),
         sessionId: state.mainView === "review" ? review.state.sessionId : null,
         candidateId: state.mainView === "review" ? review.state.candidateId : null,
+        improvementId: state.mainView === "impact" && state.impactView === "improve" ? state.improvementId : null,
         runId: state.mainView === "impact" && state.impactView === "runs" ? state.observationRunId : null,
         trapScope: parts[0] || null, trapId: parts.length ? Number(parts[1]) : null,
         insightProjectRef: state.routeInsightKey ? (insight ? projectRouteRef(insight.origin_project_root) : state.routeInsightTarget?.projectRef) : null,
@@ -220,6 +221,7 @@ export function mountWorkspace(boot) {
       review.reset(state.projectRoot, route.sessionId, route.candidateId);
       if (route.mainView === "impact") {
         state.impactView = route.impactView;
+        state.improvementId = route.improvementId;
         state.observationRunId = route.runId;
         state.observationRunDetail = null;
       }
@@ -546,14 +548,14 @@ export function mountWorkspace(boot) {
 
     function captureImpactScrollPosition() {
       return {
-        detail: document.querySelector(".impact-shell")?.scrollTop || 0,
+        detail: document.querySelector("#detail")?.scrollTop || 0,
         queue: document.querySelector(".rail > .scroll")?.scrollTop || 0
       };
     }
 
     function restoreImpactScrollPosition(position) {
       const restore = () => {
-        const detail = document.querySelector(".impact-shell");
+        const detail = document.querySelector("#detail");
         const queue = document.querySelector(".rail > .scroll");
         if (detail) detail.scrollTop = position.detail;
         if (queue) queue.scrollTop = position.queue;
@@ -565,7 +567,7 @@ export function mountWorkspace(boot) {
     function renderImpactAfterRefresh(scrollPosition = null, preserveActiveReview = false) {
       renderImpactQueue();
       const activeReview = preserveActiveReview
-        && state.impactView === "evals"
+        && ["evals", "improve"].includes(state.impactView)
         && (state.evalReviewDraft || document.activeElement?.closest("[data-controlled-eval-form]"));
       if (activeReview) {
         syncEvalDeferredNotice();
@@ -673,10 +675,10 @@ export function mountWorkspace(boot) {
     async function loadImpact(backgroundRefresh = false) {
       if (!state.projectRoot) { resetObservationState(); renderImpactQueue(); renderImpactDetail(); return; }
       const project = state.projectRoot;
-      await impactRequests.read("overview", backgroundRefresh);
+      await Promise.all([impactRequests.read("overview", backgroundRefresh), impactRequests.read("workbench", backgroundRefresh)]);
       if (state.projectRoot !== project || state.mainView !== "impact") return;
       if (state.impactView === "runs") await impactRequests.read("run", backgroundRefresh);
-      if (state.impactView === "evals") await loadImpactEvals(backgroundRefresh);
+      if (state.impactView === "evals" || state.impactView === "improve" && state.improvementId === "intake") await loadImpactEvals(backgroundRefresh);
     }
     async function loadImpactEvals(backgroundRefresh = false) {
       if (!backgroundRefresh) snapshotEvalReviewDraftFromDom();
@@ -685,7 +687,7 @@ export function mountWorkspace(boot) {
 
     async function loadImpactRun(runId) {
       if (!state.projectRoot || !runId) return;
-      if (state.impactView === "evals") snapshotEvalReviewDraftFromDom();
+      snapshotEvalReviewDraftFromDom();
       state.observationDemoRun = null;
       state.observationRunId = runId;
       state.observationRunDetail = null;
@@ -708,7 +710,7 @@ export function mountWorkspace(boot) {
 
     function syncDocumentTitle() {
       const view = state.mainView === "impact"
-        ? (state.impactView === "evals" ? t("evals.title") : state.impactView === "runs" ? t("impact.runs") : t("impact.overview"))
+        ? (state.impactView === "evals" ? t("evals.title") : state.impactView === "runs" ? t("apple.runs") : state.impactView === "improve" ? t("apple.improve") : t("apple.overview"))
         : t("nav." + state.mainView);
       document.title = "codetrap · " + view;
     }

@@ -33,7 +33,7 @@ for (const failure of ["unauthorized-html", "invalid-bootstrap", "server-error"]
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       fail = false;
       await page.locator("#bootstrap-retry").click();
-      await page.locator('[data-suite="library"]').waitFor();
+      await page.locator('[data-ia="verify-tab"]').first().waitFor();
       expect(new URL(page.url()).hash).toBe(hash);
       expect(errors).toEqual([]);
     } finally { await browser.close(); server.stop(true); }
@@ -52,7 +52,7 @@ browserTest("browser entry uses a one-tab launch when storage is blocked", async
       for (const name of ["localStorage", "sessionStorage"]) Object.defineProperty(window, name, { get() { throw new DOMException("Blocked", "SecurityError"); } });
     });
     await page.goto(`http://127.0.0.1:${server.port}/?token=suite-token#/impact/evals?project=${webProjectRouteRef(f.project)}`);
-    await page.locator('[data-suite="library"]').waitFor();
+    await page.locator('[data-ia="verify-tab"]').first().waitFor();
     expect(new URL(page.url()).searchParams.has("token")).toBe(false);
     expect(errors).toEqual([]);
   } finally { await browser.close(); server.stop(true); }

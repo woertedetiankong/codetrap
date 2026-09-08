@@ -1,3 +1,4 @@
+import { runDisplayStatus } from "./client-run-evidence";
 import type { ObservationOverviewProjection } from "../domain/observation";
 import type { ObservationWebRun } from "./observation-view";
 
@@ -25,6 +26,9 @@ export function impactOverviewContent(
     { value: ratings ? `${overview.helpful_feedback} / ${ratings}` : "—", label: "overview.helpful", detail: t(ratings ? "overview.ratingBasis" : "overview.awaitingFeedback") },
     { value: validations ? `${overview.validation_passed} / ${validations}` : "—", label: "overview.validation", detail: t(validations ? "overview.validationBasis" : "overview.awaitingValidation") },
   ];
+  const feedbackRun = runs.find(run => run.exposure_count > 0 && run.feedback_count === 0);
+  const needsReview = negative > 0 || overview.miss_reports > 0;
+  const nextTarget = needsReview ? 'data-impact-tab="evals"' : feedbackRun ? `data-overview-run="${e(feedbackRun.id)}"` : 'data-impact-tab="runs"';
   const signals = [
     { count: negative, title: "overview.negative", detail: t("overview.negativeDetail", { harmful: overview.harmful_feedback, irrelevant: overview.irrelevant_feedback }), target: "evals" },
     { count: overview.miss_reports, title: "overview.misses", detail: t("overview.missesDetail"), target: "evals" },
@@ -44,19 +48,19 @@ export function impactOverviewContent(
       <div class="overview-section-head"><div><span class="overview-eyebrow">${e(t("overview.activityKicker"))}</span><h3>${e(t("overview.recentRuns"))}</h3></div><button type="button" class="ghost" data-impact-tab="runs">${e(t("overview.allRuns"))} <span aria-hidden="true">↗</span></button></div>
       <div class="overview-run-list">${runs.slice(0, 5).map((run) => `<button type="button" class="overview-run" data-overview-run="${e(run.id)}">
         <span class="overview-run-marker ${run.status === "failed" ? "failed" : run.status === "completed" ? "completed" : "unknown"}" aria-hidden="true">${run.status === "completed" ? "✓" : run.status === "failed" ? "!" : "·"}</span>
-        <span class="overview-run-main"><strong>${e(run.source_client || "other")} <span>${e(ui.valueLabel(run.status || "unknown"))}</span></strong><small>${e(t("overview.runSummary", { exposures: run.exposure_count, feedback: run.feedback_count }))}</small><code>${e(run.id)}</code></span>
+        <span class="overview-run-main"><strong>${e(run.source_client || "other")} <span>${e(ui.valueLabel(runDisplayStatus(run)))}</span></strong><small>${e(t("overview.runSummary", { exposures: run.exposure_count, feedback: run.feedback_count }))}</small></span>
         <span class="overview-run-time"><time>${e(run.started_at ? ui.relativeTime(run.started_at) : t("impact.noStart"))}</time><small>${e(ui.duration(run.duration_ms))}</small></span>
       </button>`).join("") || `<p class="subtle">${e(t("impact.noRunsCopy"))}</p>`}</div>
     </section>
     <section class="overview-attention">
       <span class="overview-eyebrow">${e(t("overview.nextKicker"))}</span>
-      <h3>${e(t(negative || overview.miss_reports ? "overview.reviewNext" : ratings ? "overview.followNext" : "overview.feedbackNext"))}</h3>
-      <p>${e(t("overview.nextCopy"))}</p>
+      <h3>${e(t(needsReview ? "overview.reviewNext" : feedbackRun ? "overview.feedbackNext" : "overview.followNext"))}</h3>
+      <p>${e(t(needsReview ? "overview.nextCopy" : feedbackRun ? "bench.feedbackCopy" : "bench.followCopy"))}</p>
       <div class="overview-signals">${signals.map((signal) => `<button type="button" class="overview-signal ${signal.count ? "has-signal" : ""}" data-impact-tab="${signal.target}"><span><strong>${e(t(signal.title))}</strong><small>${e(signal.detail)}</small></span><b>${e(signal.count)}</b></button>`).join("")}</div>
-      <button type="button" class="primary" data-impact-tab="evals">${e(t("overview.reviewEvidence"))} <span aria-hidden="true">→</span></button>
+      <button type="button" class="primary" ${nextTarget}>${e(t(needsReview ? "overview.reviewEvidence" : feedbackRun ? "bench.feedback" : "overview.allRuns"))} <span aria-hidden="true">→</span></button>
     </section>
   </div>
-  <footer class="overview-evidence-note"><strong>${e(t("overview.evidenceTitle"))}</strong><p>${e(t("overview.evidenceCopy"))}</p><small>${e(t("overview.corrections", { count: overview.superseded_feedback }))}</small></footer>`;
+  <details class="overview-evidence-note"><summary>${e(t("overview.evidenceTitle"))}</summary><p>${e(t("overview.evidenceCopy"))}</p><small>${e(t("overview.corrections", { count: overview.superseded_feedback }))}</small></details>`;
 }
 
 // Compatibility adapter for the standalone inline client; the component above

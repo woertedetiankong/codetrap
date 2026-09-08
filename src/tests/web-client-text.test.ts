@@ -37,7 +37,7 @@ describe("web client text", () => {
     expect(WEB_TEXT.zh["evals.externalChangesDeferredCopy"]).toContain("未保存文字保持不变");
     expect(WEB_TEXT.zh["evals.controlledTitle"]).toContain("基线版本");
     expect(WEB_TEXT.zh["evals.controlledBoundary"]).toContain("分开计算");
-    expect(WEB_TEXT.zh["evals.profile.memory_contribution_v1.question"]).toContain("已确认");
+    expect(WEB_TEXT.zh["evals.profile.memory_contribution_v1.question"]).toContain("不衡量编码任务成效");
     expect(WEB_TEXT.zh["evals.fixtureUnchanged"]).toContain("保持不变");
     expect(WEB_INDEX_HTML).toContain('id="embedding-form"');
     expect(WEB_INDEX_HTML).toContain('id="embedding-reindex-project"');
@@ -128,12 +128,10 @@ describe("web client text", () => {
   });
 
   test("keeps every colour in the token layer", () => {
-    const rootStart = WEB_INDEX_HTML.indexOf(":root {");
-    const rootEnd = WEB_INDEX_HTML.indexOf("}", rootStart);
-    const outsideRoot = WEB_INDEX_HTML.slice(rootEnd);
-    // Themeable colour belongs to :root. A literal anywhere else cannot follow a
-    // palette change, which is how the console drifted to 277 loose colours.
-    const literals = outsideRoot.match(/#[0-9a-fA-F]{6}\b/g) ?? [];
+    const css = WEB_INDEX_HTML.match(/<style>([\s\S]*?)<\/style>/)?.[1] || '';
+    // Scoped light/dark themes are token layers too. Component rules must use them.
+    const outsideTokens = css.replace(/--[\w-]+\s*:[^;{}]+[;]/g, '');
+    const literals = outsideTokens.match(/#[0-9a-fA-F]{6}\b/g) ?? [];
     expect(literals).toEqual([]);
   });
 

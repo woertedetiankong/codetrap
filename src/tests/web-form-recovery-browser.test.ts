@@ -6,6 +6,14 @@ import { reviewFixture } from "./web-review-fixture";
 import { webSuiteFixture } from "./project-eval-suite-fixture";
 import { webProjectRouteRef } from "../web/project-registry";
 import { readProjectSuite, PROJECT_EVAL_SUITE } from "../lib/project-eval-suite";
+async function suiteAction(page: import("playwright-core").Page, action: string) {
+  const tab = page.locator('[data-ia="verify-tab"][data-tab="retrieval"]');
+  await tab.waitFor(); if(await tab.getAttribute('aria-pressed')!=='true') await tab.click();
+  const button = page.locator(`[data-suite="${action}"]`);
+  await button.waitFor({ state: "attached" });
+  if (!(await button.isVisible())) await page.locator('[data-eval-disclosure="suite"] > summary').click();
+  await button.click();
+}
 const chrome = chromeExecutablePath();
 const browserTest = chrome ? test : test.skip;
 async function editLesson(page: import("playwright-core").Page) {
@@ -58,19 +66,20 @@ browserTest("Evaluation case and run parameter recovery requires unchanged conte
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); page.setDefaultTimeout(5000); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.port}/?token=suite-token#/impact/evals?project=${webProjectRouteRef(f.project)}`);
-    await page.locator('[data-suite="case"]').click(); const dialog = page.locator(".suite-dialog");
+    await suiteAction(page, "case"); const dialog = page.locator(".suite-dialog");
     await dialog.locator('[name="query"]').fill(" raw transaction \nrollback "); await dialog.locator('[name="gold"]').check();
-    await page.reload(); await page.locator('[data-suite="case"]').click(); await dialog.locator(restore).click();
+    await page.reload(); await suiteAction(page, "case"); await dialog.locator(restore).click();
     expect(await dialog.locator('[name="query"]').inputValue()).toBe(" raw transaction \nrollback "); expect(await dialog.locator('[name="gold"]').isChecked()).toBe(true);
     expect(await dialog.locator('[data-case-accept]').isDisabled()).toBe(true); expect(writes).toBe(0);
     expect(await dialog.evaluate(n => n.scrollWidth <= n.clientWidth)).toBe(true);
     await dialog.locator('[data-suite-close]').click();
     const path = join(f.project, PROJECT_EVAL_SUITE), suite = JSON.parse(readFileSync(path, "utf8"));
     suite.queries.push({ query: "transaction", mode: "fts", goldTrapIds: [1], judgment: "useful_hit" }); writeFileSync(path, JSON.stringify(suite));
-    await page.reload(); await page.locator('[data-suite="case"]').click(); expect(await dialog.locator(restore).isDisabled()).toBe(true);
+    await page.reload(); await suiteAction(page, "case"); expect(await dialog.locator(restore).isDisabled()).toBe(true);
     await dialog.locator('[data-suite-close]').click();
+    await page.locator('[data-eval-disclosure="settings"] > summary').click();
     await page.locator('[data-controlled-eval-form] [name="seed"]').fill(" Raw seed ");
-    await page.reload(); const runRecovery = page.locator(".form-draft-recovery").filter({ has: page.locator(restore) });
+    await page.reload(); await page.locator('[data-ia="verify-tab"][data-tab="retrieval"]').click(); const runRecovery = page.locator(".form-draft-recovery").filter({ has: page.locator(restore) });
     await runRecovery.locator(restore).click(); expect(await page.locator('[data-controlled-eval-form] [name="seed"]').inputValue()).toBe(" Raw seed "); expect(writes).toBe(0);
     expect(readProjectSuite(f.project).fixture.queries).toHaveLength(1); expect(errors).toEqual([]);
   } finally { await browser.close(); server.stop(true); }
@@ -94,13 +103,13 @@ browserTest("observed evaluation drafts survive switching findings and reload, a
   } }), browser = await launch();
   try {
     const page = await browser.newPage(); page.setDefaultTimeout(5000); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
-    await page.goto(`http://127.0.0.1:${server.port}/?token=suite-token#/impact/evals?project=${webProjectRouteRef(f.project)}`);
+    await page.goto(`http://127.0.0.1:${server.port}/?token=suite-token#/impact/improve/intake?project=${webProjectRouteRef(f.project)}`);
     const choose = (id: string) => page.locator(`[data-eval-review="${id}"]`).click();
     const form = page.locator("[data-eval-review-form]");
     await choose(candidates[0]!);
     const { GovernedEvalOperations } = await import("../lib/governed-eval-operations"), { TrapOperations } = await import("../lib/trap-operations"), { TrapStore } = await import("../lib/store");
     new GovernedEvalOperations(f.project, new TrapOperations(new TrapStore(f.project, undefined, f.home))).draft(candidates[0]!, { query: "external new question", mode: "fts", judgment: "miss", goldTrapIds: [1], note: "external note" });
-    await page.locator('[data-impact-tab="evals"]').click();
+    await page.reload(); await choose(candidates[0]!);
     await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>('[data-eval-review-form] [name="query"]')?.value === "external new question");
     expect(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith("codetrap-form-draft:")).length)).toBe(0);
     await page.waitForResponse(r => new URL(r.url()).pathname === "/api/observations/evals", { timeout: 7000 });
@@ -129,17 +138,17 @@ browserTest("accepting an earlier evaluation case cannot delete a new dialog's d
   try {
     const page = await browser.newPage(); page.setDefaultTimeout(5000);
     await page.goto(`http://127.0.0.1:${server.port}/?token=suite-token#/impact/evals?project=${webProjectRouteRef(f.project)}`);
-    await page.locator('[data-suite="case"]').click(); const dialog = page.locator(".suite-dialog");
+    await suiteAction(page, "case"); const dialog = page.locator(".suite-dialog");
     await dialog.locator('[name="query"]').fill("first transaction"); await dialog.locator('[name="gold"]').check(); await dialog.locator('[data-case-preview-button]').click();
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("[data-case-accept]")?.disabled);
     await dialog.locator('[data-case-accept]').click(); await received; await dialog.locator('[data-suite-close]').click();
-    await page.locator('[data-suite="case"]').click(); await dialog.locator('[name="query"]').fill("second unsaved query");
+    await suiteAction(page, "case"); await dialog.locator('[name="query"]').fill("second unsaved query");
     const response = page.waitForResponse(r => new URL(r.url()).pathname === "/api/eval-suite/case-accept"); release(); await response;
     await page.waitForFunction(() => document.querySelector("[data-suite='case']"));
     const saved = await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith("codetrap-form-draft:")).map(k => JSON.parse(localStorage.getItem(k)!)));
     expect(saved.some(s => s.fields.query === "second unsaved query")).toBe(true);
     expect(await dialog.locator('[name="query"]').inputValue()).toBe("second unsaved query");
-    await page.reload(); await page.locator('[data-suite="case"]').click(); await dialog.locator(restore).waitFor();
+    await page.reload(); await suiteAction(page, "case"); await dialog.locator(restore).waitFor();
     await dialog.locator(".form-draft-recovery summary").click(); expect(await dialog.locator(".learning-recovery-preview").textContent()).toContain("second unsaved query");
   } finally { release(); await browser.close(); server.stop(true); }
 }, 20000);

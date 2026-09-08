@@ -1,5 +1,5 @@
 import { createLatestRequests } from "./browser/latest-request";
-import { parseEvals, parseOverview, parseRun } from "./client-impact-data";
+import { parseEvals, parseOverview, parseRun, parseWorkbench } from "./client-impact-data";
 import type { ImpactState } from "./client-impact-state";
 export function createImpactRequests(deps: {
   state: ImpactState & { projectRoot: string | null; mainView: string };
@@ -10,8 +10,8 @@ export function createImpactRequests(deps: {
   const { state } = deps, gate = createLatestRequests();
   const loading = new Set<string>();
   function reset() { gate.reset(); loading.clear(); }
-  const signature = () => JSON.stringify([state.observationAvailability, state.observationOverview, state.observationConnection, state.observationHookHealth, state.observationRuns, state.observationRunDetail, state.observationEvals, state.evalExternalChangesDeferred, state.observationError]);
-  async function read(kind: "overview" | "evals" | "run", background = false, runId = state.observationRunId) {
+  const signature = () => JSON.stringify([state.observationAvailability, state.observationOverview, state.observationConnection, state.observationHookHealth, state.observationRuns, state.observationRunDetail, state.observationEvals, state.impactWorkbench, state.evalExternalChangesDeferred, state.observationError]);
+  async function read(kind: "overview" | "evals" | "run" | "workbench", background = false, runId = state.observationRunId) {
     const project = state.projectRoot;
     if (!project || kind === "run" && !runId) return;
     const latest = gate.start(kind), view = state.impactView, before = signature();
@@ -28,6 +28,7 @@ export function createImpactRequests(deps: {
         if (value.recent_runs.length) state.observationDemoRun = null;
         if (!background && state.impactView === "runs" && !state.observationRunId && value.recent_runs[0]) { state.observationRunId = value.recent_runs[0].id; deps.route(); }
       } else if (kind === "run") state.observationRunDetail = parseRun(raw, project, runId!);
+      else if (kind === "workbench") state.impactWorkbench = parseWorkbench(raw, project);
       else {
         const value = parseEvals(raw, project);
         if (background && state.evalReviewDraft && JSON.stringify(value) !== JSON.stringify(state.observationEvals)) { state.evalExternalChangesDeferred = true; return; }

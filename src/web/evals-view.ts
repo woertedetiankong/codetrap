@@ -1,5 +1,5 @@
-import { PROJECT_EVAL_SUITE, LEGACY_EVAL_SUITE, projectEvalPath, readProjectSuite, type EvalSuitePath } from "../lib/project-eval-suite";
-import { existsSync } from "node:fs";
+import { PROJECT_EVAL_SUITE, LEGACY_EVAL_SUITE, evalSuiteHash, projectEvalPath, readProjectSuite, type EvalSuitePath } from "../lib/project-eval-suite";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
   ObservationEvalCandidateGroupProjection,
@@ -17,7 +17,7 @@ import {
   type ControlledEvalExperiment,
   type ControlledEvalProfileInfo,
 } from "../lib/controlled-eval";
-import { reportDogfood } from "../lib/search-eval";
+import { EvalEmbedder, evaluateSearchFixture, parseEvalFixture } from "../lib/search-eval";
 import type { ObservationWebAvailability } from "./observation-view";
 
 export const PROJECT_SEARCH_EVAL_FIXTURE = PROJECT_EVAL_SUITE;
@@ -31,6 +31,10 @@ export interface RetrievalEvalWebSummary {
   mode: "deterministic";
   sha256?: string | null;
   total_cases: number;
+  positive_cases: number;
+  negative_cases: number;
+  engine: "keyword_vector_v1";
+  modes: { fts: number; hybrid: number; semantic: number };
   recall_at_3: number | null;
   recall_at_5: number | null;
   mrr: number | null;
@@ -39,6 +43,14 @@ export interface RetrievalEvalWebSummary {
   noisy_hit_cases: number;
   issue: string | null;
 }
+
+/** Read-only enrichment; persisted v1 experiment contracts remain unchanged. */
+export type ControlledEvalWebExperiment = ControlledEvalExperiment & {
+  snapshot_evidence: {
+    availability: "ready" | "unavailable";
+    expected_traps: Array<{ id: number; title: string }>;
+  };
+};
 
 export type ObservationEvalWebCandidate = Omit<Pick<ObservationEvalCandidateProjection,
   | "id"
@@ -85,7 +97,7 @@ export interface ObservationEvalsWebPayload {
     can_run: boolean;
     availability: ControlledEvalAvailability;
     profiles: ControlledEvalProfileInfo[];
-    experiments: ControlledEvalExperiment[];
+    experiments: ControlledEvalWebExperiment[];
     corrupt_results: Array<{ file: string; issue: "invalid_experiment" }>;
     issue: string | null;
   };
@@ -146,7 +158,7 @@ function controlledEvalWebPayload(
       can_run: fixtureAvailability === "ready" && hasCases,
       availability: history.corrupt_results.length ? "partial" : fixtureAvailability === "ready" ? "ready" : history.experiments.length ? "partial" : fixtureAvailability,
       profiles: operations.profiles(),
-      experiments: history.experiments,
+      experiments: history.experiments.map(experiment => enrichExperiment(projectRoot, experiment)),
       corrupt_results: history.corrupt_results,
       issue: history.corrupt_results.length ? "controlled_result_store_partial" : fixtureAvailability === "invalid" ? "fixture_evaluation_failed" : null,
     };
@@ -162,27 +174,59 @@ function controlledEvalWebPayload(
   }
 }
 
+function enrichExperiment(projectRoot: string, experiment: ControlledEvalExperiment): ControlledEvalWebExperiment {
+  let snapshot_evidence: ControlledEvalWebExperiment["snapshot_evidence"] = { availability: "unavailable", expected_traps: [] };
+  try {
+    const digest = experiment.suite.sha256;
+    if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error("Invalid snapshot digest");
+    // Derive the path from a validated digest, never from stored arbitrary paths.
+    const bytes = readFileSync(join(projectRoot, ".codetrap/evals/suites", `${digest}.json`));
+    if (evalSuiteHash(bytes) !== digest) throw new Error("Snapshot digest mismatch");
+    const fixture = parseEvalFixture(bytes.toString("utf8"), experiment.suite.snapshot);
+    const expected = new Set(experiment.cases.flatMap(item => item.gold_trap_ids));
+    snapshot_evidence = { availability: "ready", expected_traps: fixture.traps.flatMap((trap, index) => expected.has(index + 1) ? [{ id: index + 1, title: trap.title }] : []) };
+  } catch { /* Missing evidence must not conceal a healthy historical experiment. */ }
+  return { ...experiment, snapshot_evidence };
+}
+
+// Engine/config are fixed for the lifetime of this process. Cache promises to
+// coalesce refreshes, with a bound to avoid retaining every edited suite.
+const retrievalCache = new Map<string, Promise<RetrievalEvalWebSummary>>();
 async function retrievalEvalWebSummary(projectRoot: string): Promise<RetrievalEvalWebSummary> {
   const source = projectEvalPath(projectRoot);
   const fixture = join(projectRoot, source);
   if (!existsSync(fixture)) return emptyRetrievalSummary("not_configured", null, source);
   try {
     const suite = readProjectSuite(projectRoot, source);
-    const report = await reportDogfood(fixture, false);
-    return {
-      availability: "ready",
-      sha256: suite.sha256,
-      source,
-      mode: "deterministic",
-      total_cases: report.total_cases,
-      recall_at_3: report.metrics.recall_at_3,
-      recall_at_5: report.metrics.recall_at_5,
-      mrr: report.metrics.mrr,
-      failed_cases: report.failures.length,
-      miss_cases: report.misses.length,
-      noisy_hit_cases: report.noisy_hits.length,
-      issue: null,
-    };
+    const cacheKey = `${source}:${suite.sha256}`;
+    const cached = retrievalCache.get(cacheKey);
+    if (cached) return { ...await cached };
+    const pending = (async (): Promise<RetrievalEvalWebSummary> => {
+      const report = await evaluateSearchFixture(suite.fixture, new EvalEmbedder());
+      const positive = suite.fixture.queries.filter(query => query.goldTrapIds.length > 0).length;
+      return {
+        availability: "ready",
+        sha256: suite.sha256,
+        source,
+        mode: "deterministic",
+        total_cases: report.total_cases,
+        positive_cases: positive,
+        negative_cases: report.total_cases - positive,
+        engine: "keyword_vector_v1",
+        modes: { fts: suite.fixture.queries.filter(q => q.mode === "fts").length, hybrid: suite.fixture.queries.filter(q => q.mode === "hybrid").length, semantic: suite.fixture.queries.filter(q => q.mode === "semantic").length },
+        recall_at_3: positive ? report.metrics.recall_at_3 : null,
+        recall_at_5: positive ? report.metrics.recall_at_5 : null,
+        mrr: positive ? report.metrics.mrr : null,
+        failed_cases: report.failures.length,
+        miss_cases: report.misses.length,
+        noisy_hit_cases: report.noisy_hits.length,
+        issue: null,
+      };
+    })();
+    retrievalCache.set(cacheKey, pending);
+    if (retrievalCache.size > 24) retrievalCache.delete(retrievalCache.keys().next().value!);
+    try { return { ...await pending }; }
+    catch (error) { retrievalCache.delete(cacheKey); throw error; }
   } catch {
     return emptyRetrievalSummary("invalid", "fixture_evaluation_failed", source);
   }
@@ -198,6 +242,10 @@ function emptyRetrievalSummary(
     source,
     mode: "deterministic",
     total_cases: 0,
+    positive_cases: 0,
+    negative_cases: 0,
+    engine: "keyword_vector_v1",
+    modes: { fts: 0, hybrid: 0, semantic: 0 },
     recall_at_3: null,
     recall_at_5: null,
     mrr: null,

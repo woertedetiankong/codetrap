@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Impact · Codetrap 交互原型</title>
+<link rel="icon" type="image/svg+xml" href="icons/stack.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="light">
+<a class="skip-link" href="#content">跳至主内容</a>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar" aria-label="Impact 导航"></aside>
+  <div class="workspace">
+    <header class="toolbar" id="toolbar"></header>
+    <main id="content" tabindex="-1"></main>
+  </div>
+</div>
+<dialog class="sheet" id="sheet" aria-labelledby="sheet-title"><div class="sheet-grab" data-sheet-drag><span></span></div><header class="sheet-header"><button class="icon-button" data-action="close-sheet" aria-label="关闭面板"><span class="icon" style="--icon:url('icons/x.svg')" aria-hidden="true"></span></button><h2 id="sheet-title"></h2><span class="sheet-context">Impact</span></header><div class="sheet-content" id="sheet-content"></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

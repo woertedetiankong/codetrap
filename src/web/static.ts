@@ -1,3 +1,5 @@
+import { IMPACT_APPLE_STYLE } from "./impact-apple-style";
+import { EVAL_WORKBENCH_STYLE } from "./eval-workbench-style";
 import { WORKBENCH_STYLE } from "./workbench-style";
 import { NAVIGATION_ICONS } from "./navigation-icons";
 import { REVISION_STYLE } from "./revision-style";
@@ -2979,6 +2981,8 @@ export const WEB_INDEX_HTML = `<!doctype html>
     @media (max-width: 600px) { .observation-connection { grid-template-columns: 1fr; padding: 16px; } }
   ${REVISION_STYLE}
   ${WORKBENCH_STYLE}
+  ${EVAL_WORKBENCH_STYLE}
+  ${IMPACT_APPLE_STYLE}
   </style>
 </head>
 <body>

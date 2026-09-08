@@ -1,3 +1,5 @@
+import { ExperienceRevisions } from "../lib/experience-revisions";
+import { revisionFields, type RevisionFields } from "../domain/experience-revision";
 import { observationConnection, type ObservationConnection } from "./observation-connection";
 import type {
   CandidateStatusPayload,
@@ -75,6 +77,9 @@ export interface ObservationRunWebPayload {
   availability: ObservationWebAvailability;
   run: ObservationWebRun | null;
   timeline: ObservationWebTimelineEvent[];
+  lesson_titles?: Record<string, string>;
+  lesson_previews?: Record<string, RevisionFields>;
+  improvements?: ReturnType<ExperienceRevisions["forRun"]>;
 }
 
 export function observationOverviewWebPayload(projectRoot: string, limit = 50): ObservationOverviewWebPayload {
@@ -109,7 +114,7 @@ export function observationRunsWebPayload(projectRoot: string, limit = 100): Obs
   }
 }
 
-export function observationRunWebPayload(projectRoot: string, runId: string): ObservationRunWebPayload {
+export function observationRunWebPayload(projectRoot: string, runId: string, home?: string): ObservationRunWebPayload {
   const ledger = openObservationLedgerReadOnly(projectRoot);
   if (!ledger) {
     return { project_root: projectRoot, availability: "not_configured", run: null, timeline: [] };
@@ -121,6 +126,9 @@ export function observationRunWebPayload(projectRoot: string, runId: string): Ob
       availability: "ready",
       run: run ? observationWebRun(run) : null,
       timeline: run ? ledger.listRunEvents(runId).map(observationTimelineEvent) : [],
+      lesson_titles: run ? runLessonTitles(projectRoot, ledger.listRunEvents(runId), home) : undefined,
+      lesson_previews: run ? runLessonPreviews(projectRoot, ledger.listRunEvents(runId), home) : undefined,
+      improvements: run ? runImprovements(projectRoot, runId, home) : undefined,
     };
   } finally {
     ledger.close();
@@ -188,11 +196,11 @@ function safeTimelineFacts(event: ObservationEvent): Record<string, string | num
     }
     case "trap/exposed": {
       const value = event.attributes as TrapExposurePayload;
-      return { trap_id: value.trap_id, trap_scope: observationTrapScope(value.revision), rank: value.rank };
+      return { trap_id: value.trap_id, trap_scope: observationTrapScope(value.revision), revision: value.revision, rank: value.rank };
     }
     case "trap/feedback-recorded": {
       const value = event.attributes as TrapFeedbackPayload;
-      return { trap_id: value.trap_id, trap_scope: observationTrapScope(value.revision), feedback: value.feedback };
+      return { trap_id: value.trap_id, trap_scope: observationTrapScope(value.revision), revision: value.revision, feedback: value.feedback };
     }
     case "trap/missed-reported": {
       const value = event.attributes as TrapMissedPayload;
@@ -237,4 +245,33 @@ function safeTimelineFacts(event: ObservationEvent): Record<string, string | num
       return { baseline_passed: value.baseline_passed, candidate_passed: value.candidate_passed, total_cases: value.total_cases };
     }
   }
+}
+
+function runImprovements(project: string, runId: string, home?: string) {
+  try { return new ExperienceRevisions(project, home).forRun(runId); }
+  catch { return { items: [], unavailable: true }; }
+}
+
+function runLessonTitles(project: string, events: ObservationEvent[], home?: string): Record<string, string> {
+  const titles: Record<string, string> = {};
+  const revisions = new ExperienceRevisions(project, home);
+  for (const event of events) {
+    if (!["trap/exposed", "trap/feedback-recorded"].includes(event.type)) continue;
+    try {
+      const context = revisions.context(event.id);
+      // Never label an old exposure with the title of a different revision.
+      if (context.same_revision && context.current) titles[event.id] = context.current.title;
+    } catch { /* Historical or unavailable lessons retain their scoped identity. */ }
+  }
+  return titles;
+}
+
+function runLessonPreviews(project: string, events: ObservationEvent[], home?: string): Record<string, RevisionFields> {
+  const previews: Record<string, RevisionFields> = {}, revisions = new ExperienceRevisions(project, home);
+  for (const event of events) {
+    if (!["trap/exposed", "trap/feedback-recorded"].includes(event.type)) continue;
+    try { const c = revisions.context(event.id); if (c.same_revision && c.current) previews[event.id] = revisionFields(c.current); }
+    catch { /* Never substitute a newer lesson for unavailable historical evidence. */ }
+  }
+  return previews;
 }

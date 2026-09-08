@@ -1,16 +1,44 @@
 # Review an experience from task feedback
 
-Updated: 2026-09-04 (America/Los_Angeles).
+Updated: 2026-09-08 (America/Los_Angeles).
 
-In **Impact → Runs**, expand a real lesson exposure or feedback event and choose
-**Review this lesson**. Record your judgment, explain the issue, edit the lesson,
-and add at least one query where it should surface and one where it should stay
-out. **Save & test** compares the original and proposed content against the same
-frozen corpus. **Apply tested revision** changes the selected lesson after every
-case passes; **Reject draft** closes a proposal without changing the lesson.
-The Library's **Experience revisions** section reopens saved drafts and receipts.
-Unsaved editor text remains intact during operations in the open dialog; save
-before closing the dialog or reloading the page.
+**Impact** now uses the approved prototype throughout: **Impact overview**, **Tasks**,
+**Improvements**, and **Verification**. The former three-pane Impact UI is replaced.
+The other Codetrap destinations remain available through the sidebar's workspace action.
+
+In **Tasks**, search the loaded task history by client, date, or run ID. Filter by
+pending feedback or issues needing attention. Open a task, then a lesson title for
+a read-only sheet; editing starts only through **Open improvements**. Lesson bodies
+are shown only when the stored version matches the exposure. Missing task titles
+and query bodies are not invented. Event and version details remain expandable.
+
+Record **Helpful**, **Not relevant**, or **Harmful** on a lesson. Corrections append
+new evidence; a failed request reuses its identity on retry. Opening a task or lesson
+never records feedback. Feedback is a human judgment, not a controlled experiment.
+
+**Improvements** aggregates negative judgments on the same scoped lesson version,
+miss signals, saved drafts, and completed revisions across tasks. Saved revisions
+replace their source issue. Accepted or rejected retrieval signals leave the pending
+list while remaining available in their governed review history. Unknown or damaged
+records show an availability warning without suppressing healthy records.
+
+A revision has three steps: review the source, edit the lesson, then add applicable
+and inapplicable queries. **Save & test** compares the original and proposed content
+against the same frozen corpus. Every case must pass before **Apply tested revision**
+is available. Editing invalidates this gate. **Reject draft** closes a proposal;
+**Roll back content** retains its receipt and requires the exact applied version.
+
+Unsaved revision text remains in this browser tab across area and project switches.
+Reloading with unsaved changes prompts the user. Save to persist on the server;
+the address changes to the saved revision so reopening does not create another draft.
+The Library's **Experience revisions** section still reopens saved records.
+
+**Verification → Lesson changes** separates saved revision evidence from
+**Retrieval & examples** comparisons. Filters show all, changed, or failed cases.
+Applied revisions link later tasks only when scope, lesson ID and applied version
+match; at most 20 later tasks are retained by the existing activity projection.
+An applied or retrieval-passing revision does not establish improved task performance.
+**Awaiting completion** means a start record lacks an end, not that an Agent is online.
 
 Only title, context, mistake, fix and tags change. IDs, provenance, evidence and
 usage remain attached to the lesson. Global lessons carry an explicit warning:
@@ -65,6 +93,8 @@ An unreadable ledger does not hide a successful revision receipt.
   migrating revision ownership is not implemented in this slice.
 
 ## Web API
+
+`GET /api/observations/workbench?project=...` returns the registered project’s issues, pending run IDs and revision summaries. No private query, reason or frozen corpus appears in this list. Run responses include version-matching `lesson_previews`; unavailable historical bodies are omitted.
 
 All endpoints require the normal local Web token and a registered project.
 GET uses `project`; POST uses `projectRoot`. Read payloads omit other lessons and

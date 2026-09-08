@@ -254,6 +254,13 @@ export class ObservationLedger {
     return this.eventsForRun(runId);
   }
 
+  /** Review metadata only, across the complete ledger so corrections are not paginated away. */
+  reviewEvidence(): ObservationEvent[] {
+    return queryAll<ObservationRow>(this.db, `SELECT ${EVENT_COLUMNS} FROM observation_events
+      WHERE project_id = ? AND type IN ('trap/exposed', 'trap/feedback-recorded', 'trap/missed-reported')
+      ORDER BY recorded_at, id`, this.projectId).map(eventFromRow);
+  }
+
   lessonRevisionEvents(id: number, revision: string): ObservationEvent[] {
     return queryAll<ObservationRow>(this.db, `
       SELECT ${EVENT_COLUMNS} FROM observation_events

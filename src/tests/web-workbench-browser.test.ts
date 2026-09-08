@@ -67,7 +67,7 @@ browserTest("Learning distinguishes filtered results from an empty library and k
   } finally { await browser.close(); server.stop(true); }
 }, 15000);
 
-browserTest("Impact tabs work by keyboard and all remaining destinations fit narrow and wide viewports", async () => {
+browserTest("Impact navigation works by keyboard and all remaining destinations fit narrow and wide viewports", async () => {
   const fixture = learningFixture();
   const recorder = new ObservationRunRecorder(fixture.a.root);
   for (const id of ["first", "second"]) {
@@ -80,23 +80,23 @@ browserTest("Impact tabs work by keyboard and all remaining destinations fit nar
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); page.setDefaultTimeout(5000);
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.port}/?token=learning-token#/impact/overview`);
-    const overview = page.locator('.impact-tabs [data-impact-tab="overview"]');
-    await overview.focus(); await overview.press("ArrowRight");
-    expect(await page.locator('.impact-tabs [data-impact-tab="runs"]').evaluate(node => node === document.activeElement)).toBe(true);
-    await page.keyboard.press("Enter");
-    await page.locator("[data-impact-run-select]").waitFor();
-    await page.locator("[data-impact-run-select]").selectOption("first");
-    await page.waitForURL(/runs\/first/);
-    expect(await page.locator(".rail").isVisible()).toBe(false);
-    for (const width of [320, 390, 768, 1024, 1280, 1487]) {
-      await page.setViewportSize({ width, height: 900 });
-      for (const view of ["learning", "embeddings", "impact"]) {
+    await page.locator('[data-ia="menu"]').click();
+    const overview=page.locator('.ia-sheet .ia-nav [data-page="overview"]');
+    await overview.focus();await overview.press('ArrowDown');
+    expect(await page.locator('.ia-sheet [data-page="runs"]').evaluate(node=>node===document.activeElement)).toBe(true);
+    await page.keyboard.press('Enter');await page.locator('.ia-sheet').waitFor({state:'hidden'});
+    await page.locator('.ia-task-row[data-id="first"]').click();await page.waitForURL(/runs\/first/);
+    expect(await page.locator('.rail').isVisible()).toBe(false);
+    for(const width of [320,390,768,1024,1280,1487]){
+      await page.setViewportSize({width,height:900});
+      if(width<=760){await page.locator('[data-ia="menu"]').click();await page.locator('.ia-sheet [data-ia="workspace"]').click();await page.locator('.ia-sheet').waitFor({state:'hidden'});}
+      else await page.locator('.ia-root [data-ia="workspace"]').click();
+      for(const view of ['learning','embeddings','impact']){
         await page.locator(`[data-main-view="${view}"]`).click();
-        if (view === "embeddings") await page.locator("#embedding-form").waitFor();
-        else if (view === "learning") await page.locator("#learning-search").waitFor();
-        else await page.locator(".impact-tabs").waitFor();
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${view} at ${width}px`).toBe(true);
-        expect(await page.locator(".app-topbar").evaluate(node => node.getBoundingClientRect().top)).toBeGreaterThanOrEqual(0);
+        if(view==='embeddings')await page.locator('#embedding-form').waitFor();
+        else if(view==='learning')await page.locator('#learning-search').waitFor();
+        else await page.locator('.ia-toolbar').waitFor();
+        expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),view+' at '+width).toBe(true);
       }
     }
     expect(errors).toEqual([]);

@@ -153,5 +153,14 @@ export function createRevisionUI(ui: RevisionUIAdapter) {
     render();
     dialog.querySelector<HTMLButtonElement>('[data-action="close"]')?.focus({ preventScroll: true });
   }
-  return { openEvent: (project: string, eventId: string) => open(project, { eventId }), history };
+  const feedbackRequests = new Map<string, string>();
+  async function recordFeedback(project: string, eventId: string, feedback: string) {
+    const key = JSON.stringify([project, eventId, feedback]);
+    const requestId = feedbackRequests.get(key) ?? crypto.randomUUID();
+    feedbackRequests.set(key, requestId);
+    await post(project, "feedback", { eventId, feedback, requestId });
+    feedbackRequests.delete(key);
+    ui.changed(project);
+  }
+  return { recordFeedback, openRevision: (project: string, id: string) => open(project, { id }), openEvent: (project: string, eventId: string) => open(project, { eventId }), history };
 }

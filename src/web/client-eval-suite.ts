@@ -46,7 +46,7 @@ export function createEvalSuiteUI(ui: SuiteAdapter) {
     if (dialogOpen) return;
     dialogOpen = true;
     const dialog = document.createElement("dialog");
-    dialog.className = "revision-dialog suite-dialog";
+    dialog.className = "revision-dialog suite-dialog" + (document.querySelector(".ia-root") ? " ia-sheet" : "");
     dialog.setAttribute("aria-labelledby", "suite-title");
     document.body.append(dialog);
     dialog.addEventListener("close", () => { dialogOpen = false; dialog.remove(); });

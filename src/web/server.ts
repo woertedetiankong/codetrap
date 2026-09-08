@@ -1,5 +1,6 @@
 import { EvalSuiteOperations } from "../lib/eval-suite-operations";
 import { ExperienceRevisions } from "../lib/experience-revisions";
+import { impactWorkbenchWebPayload } from "./impact-workbench-view";
 import { revisionView, revisionContext } from "./revision-view";
 import { randomBytes } from "node:crypto";
 import { DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL, EmbeddingProviderUnavailableError } from "../lib/embedder";
@@ -303,6 +304,10 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     throw new WebHttpError(404, "Not found");
   }
 
+  if (request.method === "GET" && url.pathname === "/api/observations/workbench") {
+    const projectRoot=projectRootFromQuery(url, context);
+    return jsonResponse(impactWorkbenchWebPayload(projectRoot, context.home, governedEvalOperations(projectRoot,context.home)));
+  }
   if (request.method === "GET" && url.pathname === "/api/observations/overview") {
     const projectRoot = projectRootFromQuery(url, context);
     return jsonResponse(observationOverviewWebPayload(projectRoot, optionalNumberQuery(url, "limit") ?? 50));
@@ -315,7 +320,7 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
 
   if (request.method === "GET" && url.pathname === "/api/observations/run") {
     const projectRoot = projectRootFromQuery(url, context);
-    const payload = observationRunWebPayload(projectRoot, requiredQuery(url, "id"));
+    const payload = observationRunWebPayload(projectRoot, requiredQuery(url, "id"), context.home);
     if (payload.availability === "ready" && payload.run === null) {
       throw new WebHttpError(404, "Observation Run not found.");
     }

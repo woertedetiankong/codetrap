@@ -84,6 +84,46 @@ export class ExperienceRevisions {
       });
   }
 
+  /** Project-owned summaries; never return the frozen corpus or unsaved lesson content. */
+  workbench() {
+    const items: Array<{ id: string; title: string; created_at: string; source: RevisionSource; status: string;
+      evaluation: "passed" | "failed" | "untested"; positive: number; negative: number; passed: number;
+      later_runs: number | null; later_helpful: number | null }> = [];
+    let unavailable = false;
+    if (!existsSync(this.dir)) return { items, unavailable };
+    for (const name of readdirSync(this.dir).filter(n => /^rev-[a-zA-Z0-9_-]{8,64}\.json$/.test(n))) {
+      try {
+        const value = this.get(name.slice(0, -5)), draft = value.draft;
+        items.push({ id: draft.id, title: draft.fields.title, created_at: draft.created_at, source: draft.source, status: value.status,
+          evaluation: !draft.evaluation ? "untested" : draft.evaluation.passed ? "passed" : "failed",
+          positive: draft.cases.filter(c => c.expectation === "include").length, negative: draft.cases.filter(c => c.expectation === "exclude").length,
+          passed: draft.evaluation?.cases.filter(c => c.candidate && !c.error).length ?? 0,
+          later_runs: value.activity?.availability === "ready" ? value.activity.runs.length : null,
+          later_helpful: value.activity?.availability === "ready" ? value.activity.runs.filter(r => r.feedback === "helpful").length : null });
+      } catch { unavailable = true; }
+    }
+    return { items: items.sort((a,b) => b.created_at.localeCompare(a.created_at)), unavailable };
+  }
+
+  /** Read-only lineage for one source Run; never expose frozen corpora or draft text. */
+  forRun(runId: string) {
+    const items: Array<{ id: string; scope: ExperienceScope; trap_id: number; source_revision: string; status: string; evaluation: "passed" | "failed" | "untested"; later_runs: number | null }> = [];
+    let unavailable = false;
+    if (!existsSync(this.dir)) return { items, unavailable };
+    for (const name of readdirSync(this.dir).filter(n => /^rev-[a-zA-Z0-9_-]{8,64}\.json$/.test(n))) {
+      try {
+        const draft = this.read(name.slice(0, -5));
+        if (draft.source.run_id !== runId) continue;
+        const value = this.get(draft.id);
+        items.push({ id: draft.id, scope: draft.source.scope, trap_id: draft.source.trap_id,
+          source_revision: draft.source.revision, status: value.status,
+          evaluation: !draft.evaluation ? "untested" : draft.evaluation.passed ? "passed" : "failed",
+          later_runs: !value.activity || value.activity.availability !== "ready" ? null : value.activity.runs.length });
+      } catch { unavailable = true; }
+    }
+    return { items, unavailable };
+  }
+
   save(id: string, eventId: string, input: Record<string, unknown>, expectedDigest?: string) {
     return this.lock(id, () => {
       let draft: RevisionDraft;

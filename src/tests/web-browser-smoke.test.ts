@@ -182,40 +182,33 @@ describe("web browser smoke", () => {
       await expectText(page.locator(".collection-header"), "1 of 2 learned");
 
       await page.getByRole("button", { name: "Impact" }).click();
-      await page.waitForSelector(".impact-hero");
-      await expectText(page.locator(".impact-hero"), "See where your experience helps.");
-      await expectText(page.locator(".overview-metrics"), "1 / 2");
+      await page.waitForSelector(".ia-stats");
+      await expectText(page.locator(".ia-page-heading"), "See whether lessons help");
+      await expectText(page.locator(".ia-stats"), "1 / 2");
       expect(await page.locator(".rail").isHidden()).toBe(true);
-      await page.locator('[data-overview-run="run-browser-smoke"]').click();
-      await page.waitForSelector(".impact-timeline");
-      expect(await page.locator(".rail").isVisible()).toBe(true);
-      await page.locator(".impact-event.cat-expose").nth(1).locator("summary").click();
-      await page.locator('.impact-event.cat-expose [data-impact-trap="1"][data-trap-scope="global"]').click();
-      await page.waitForSelector("text=Browser smoke global trap");
-      expect(new URL(page.url()).hash).toContain("library");
-      await page.getByRole("button", { name: "Impact", exact: true }).click();
-      await page.getByRole("tab", { name: "Evals" }).click();
-      await page.waitForSelector(".evals-hero");
-      await expectText(page.locator(".evals-hero"), "Is your experience helping?");
-      await expectText(page.locator(".eval-rate-grid"), "50%");
-      expect(new URL(page.url()).hash).toBe("#/impact/evals?project=" + webProjectRouteRef(project));
-      expect(await page.title()).toBe("codetrap · Evals");
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await page.waitForSelector(".evals-hero");
-      await expectText(page.locator(".evals-hero"), "Is your experience helping?");
-      await page.getByRole("tab", { name: "Runs" }).click();
-      await page.locator("[data-observation-run='run-browser-smoke']").click();
-      await page.waitForSelector(".impact-timeline");
-      expect(new URL(page.url()).hash).toBe("#/impact/runs/run-browser-smoke?project=" + webProjectRouteRef(project));
-      expect(await page.locator(".impact-event").count()).toBe(9);
-      await expectText(page.locator("#detail"), "Trap search completed");
-      expect((await page.locator("#detail").textContent()) || "").not.toContain("BROWSER_RAW_SECRET");
-
-      await page.setViewportSize({ width: 500, height: 900 });
-      const impactColumns = await page.locator(".impact-run-meta").evaluate((node) =>
-        getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length
-      );
-      expect(impactColumns).toBe(2);
+      await page.locator('.ia-activity[data-id="run-browser-smoke"]').click();
+      await page.waitForSelector('.ia-lesson');
+      expect(await page.locator('.rail').isVisible()).toBe(false);
+      await page.locator('[data-ia="inspect"]').nth(1).click();
+      await page.locator('.ia-sheet [data-ia="trap"]').click();
+      await page.waitForSelector('text=Browser smoke global trap');
+      expect(new URL(page.url()).hash).toContain('library');
+      await page.getByRole('button',{name:'Impact',exact:true}).click();
+      await page.locator('.ia-nav [data-page="evals"]').click();
+      await page.locator('[data-ia="verify-tab"]').first().waitFor();
+      expect(new URL(page.url()).hash).toBe('#/impact/evals?project='+webProjectRouteRef(project));
+      await page.reload({waitUntil:'domcontentloaded'});
+      await page.locator('.ia-nav [data-page="runs"]').click();
+      await page.locator('.ia-task-row[data-id="run-browser-smoke"]').click();
+      await page.locator('.ia-disclosure').waitFor();
+      expect(new URL(page.url()).hash).toBe('#/impact/runs/run-browser-smoke?project='+webProjectRouteRef(project));
+      expect(await page.locator('.ia-event').count()).toBe(9);
+      expect((await page.locator('#detail').textContent())||'').not.toContain('BROWSER_RAW_SECRET');
+      await page.setViewportSize({width:500,height:900});
+      expect(await page.locator('.ia-task-detail').isVisible()).toBe(true);
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      await page.locator('[data-ia="back-list"]').click();
+      expect(await page.locator('.ia-task-list').isVisible()).toBe(true);
 
       expect(errors).toEqual([]);
     } finally {
@@ -351,17 +344,17 @@ describe("web browser smoke", () => {
 
       try { await page.locator('[data-experience-run="run-browser-smoke"]').click(); }
       catch (error) { console.log(JSON.stringify({ url: page.url(), body: (await page.locator("#detail").textContent())?.slice(0, 2400), errors })); throw error; }
-      await page.locator(".impact-timeline").waitFor();
+      await page.locator(".ia-task-detail").waitFor();
       expect(new URL(page.url()).hash).toBe("#/impact/runs/run-browser-smoke?project=" + webProjectRouteRef(source));
-      await page.getByRole("button", { name: "Library", exact: true }).click();
+      await page.locator('[data-ia="workspace"]').click();
       await page.locator(".experience-path").waitFor();
       await page.locator('[data-trap-key="global:1"]').click();
       await page.locator('[data-experience-insight="ins-browser-smoke"]').click();
       await page.locator("#learning-practice-note").waitFor();
       expect(await page.locator("#learning-practice-note").inputValue()).toBe("PRIVATE newer draft");
       await page.locator("#open-learning-linked-run").click();
-      await page.locator(".impact-timeline").waitFor();
-      await page.getByRole("button", { name: "Library", exact: true }).click();
+      await page.locator(".ia-task-detail").waitFor();
+      await page.locator('[data-ia="workspace"]').click();
       await page.locator(".experience-path").waitFor();
       await page.setViewportSize({ width: 390, height: 844 });
       await page.locator('[data-trap-key="global:1"]').click();
@@ -391,7 +384,7 @@ describe("web browser smoke", () => {
     } finally { releaseSave?.(); await browser.close(); server.stop(true); }
   }, 30_000);
 
-  browserTest("empty Impact explains setup, keeps its demo disposable, and fits a phone", async () => {
+  browserTest("empty Impact explains real connections without fabricating evidence and fits a phone", async () => {
     const home = tempHome("codetrap-overview-home-", { realpath: true, initCodetrap: true });
     const project = tempProjectDir("codetrap-overview-empty-", { realpath: true });
     addWebProject(project, home);
@@ -402,44 +395,32 @@ describe("web browser smoke", () => {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       page.setDefaultTimeout(5_000);
       await page.goto(`http://127.0.0.1:${server.port}/?token=${TOKEN}#/impact/overview`);
-      await page.waitForSelector(".overview-welcome");
-      expect(await page.locator(".rail").isHidden()).toBe(true);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
-      for (const language of ["EN", "中文"]) {
-        await page.getByRole("button", { name: language, exact: true }).click();
-        const navigation = await page.locator(".app-topbar").evaluate((node) => {
-          const buttons = [...node.querySelectorAll("button")];
-          return buttons.map((button) => ({
-            text: button.textContent,
-            left: button.getBoundingClientRect().left,
-            right: button.getBoundingClientRect().right,
-            height: button.getBoundingClientRect().height,
-            clipped: button.scrollWidth > button.clientWidth + 1,
-          }));
-        });
-        expect(navigation).toHaveLength(9);
-        expect(navigation.filter((item) => item.left < 0 || item.right > 390 || item.height > 48 || item.clipped)).toEqual([]);
+      await page.waitForSelector('.ia-empty');
+      expect(await page.locator('.rail').isHidden()).toBe(true);
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      for(let i=0;i<2;i++){
+        await page.locator('[data-ia="locale"]').click();
+        const navigation=await page.locator('.ia-toolbar').evaluate(node=>[...node.querySelectorAll('button')].map(button=>({left:button.getBoundingClientRect().left,right:button.getBoundingClientRect().right,height:button.getBoundingClientRect().height})));
+        expect(navigation.filter(n=>n.left<0||n.right>390||n.height>48)).toEqual([]);
       }
-      await page.locator("[data-impact-guide]").click();
-      await page.waitForSelector(".impact-connection-guide");
-      await expectTextContent(page.locator(".impact-connection-guide"), "codetrap observe enable codex");
-      await page.locator("[data-impact-demo-preview]").click();
-      await page.waitForSelector(".impact-timeline");
-      expect(await page.locator(".impact-event").count()).toBe(5);
-      expect(existsSync(join(project, ".codetrap", "observations", "ledger.sqlite"))).toBe(false);
-      await page.locator("[data-impact-demo-exit]").click();
+      await page.locator('[data-ia="menu"]').click();
+      await page.locator('.ia-sheet [data-ia="connections"]').click();
       await page.locator('[data-connection-state="not_configured"]').waitFor();
-      configureObservationIntegration(project, "codex", "enable", true);
+      await expectTextContent(page.locator('.ia-sheet'),'codetrap observe enable codex');
+      expect(existsSync(observationLedgerPath(project))).toBe(false);
+      await page.keyboard.press('Escape');
+      configureObservationIntegration(project,'codex','enable',true);
       await page.reload();
+      await page.locator('[data-ia="menu"]').click();
+      await page.locator('.ia-sheet [data-ia="connections"]').click();
       await page.locator('[data-connection-state="awaiting_run"]').waitFor();
       expect(existsSync(observationLedgerPath(project))).toBe(false);
-      const ledger = observationLedgerPath(project);
-      mkdirSync(join(project, ".codetrap", "observations"), { recursive: true });
-      writeFileSync(ledger, "broken ledger");
+      await page.keyboard.press('Escape');
+      const ledger=observationLedgerPath(project);
+      mkdirSync(join(project,'.codetrap','observations'),{recursive:true});writeFileSync(ledger,'broken ledger');
       await page.reload();
-      await page.locator('[data-connection-state="unavailable"]').waitFor();
-      expect(await page.locator(".overview-welcome").count()).toBe(0);
-      expect(await page.locator("[data-impact-retry]").isVisible()).toBe(true);
+      await page.locator('[data-ia="retry"]').waitFor();
+      expect(await page.locator('[data-ia="retry"]').isVisible()).toBe(true);
     } finally { await browser.close(); server.stop(true); }
   }, 20_000);
 

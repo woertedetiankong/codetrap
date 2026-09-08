@@ -1,7 +1,11 @@
+import { EVAL_WORKBENCH_TEXT } from "./client-eval-workbench-text";
+import { IMPACT_APPLE_TEXT } from "./client-impact-apple-text";
+import { RUN_EVIDENCE_TEXT } from "./client-run-evidence-text";
 import { EVAL_SUITE_TEXT } from "./client-eval-suite-text";
 import { REVISION_TEXT } from "./client-revision-text";
 export const WEB_TEXT = {
       en: {
+        ...IMPACT_APPLE_TEXT.en,
         "reader.backReview": "Candidate list",
         "reader.context": "When this applies",
         "reader.mistake": "What went wrong",
@@ -15,7 +19,9 @@ export const WEB_TEXT = {
         "reader.activity": "Task evidence and revisions",
 
         ...REVISION_TEXT.en,
+        ...RUN_EVIDENCE_TEXT.en,
         ...EVAL_SUITE_TEXT.en,
+        ...EVAL_WORKBENCH_TEXT.en,
         "route.invalid": "This link is incomplete or invalid. Choose a registered project to continue.",
         "route.projectMissing": "The project in this link is not registered on this machine. Choose or add the original project.",
         "route.unavailableTitle": "This location is unavailable",
@@ -317,11 +323,11 @@ export const WEB_TEXT = {
         "evals.controlledRunComplete": "Controlled comparison completed",
         "evals.profile.retrieval_policy_v1.name": "Retrieval policy check",
         "evals.profile.retrieval_policy_v1.short": "retrieval policy",
-        "evals.profile.retrieval_policy_v1.question": "Does the confirmed hybrid/semantic policy beat an FTS-only baseline?",
+        "evals.profile.retrieval_policy_v1.question": "Compares FTS with the fixture’s retrieval modes using keyword test vectors; does not use your active embedding model.",
         "evals.profile.retrieval_policy_v1.variable": "retrieval mode and deterministic semantic availability",
-        "evals.profile.memory_contribution_v1.name": "Memory contribution check",
+        "evals.profile.memory_contribution_v1.name": "Retrieval content contribution",
         "evals.profile.memory_contribution_v1.short": "memory contribution",
-        "evals.profile.memory_contribution_v1.question": "Does providing confirmed Codetrap memory make the expected experience retrievable?",
+        "evals.profile.memory_contribution_v1.question": "Compares a corpus with expected lessons masked against the full corpus. Measures retrieval content contribution, not coding-task success.",
         "evals.profile.memory_contribution_v1.variable": "availability of fixture-confirmed expected traps",
         "evals.side.fts_only_v1": "FTS-only baseline",
         "evals.side.fixture_policy_v1": "Confirmed fixture policy",
@@ -957,6 +963,7 @@ export const WEB_TEXT = {
         "value.noSource": "No source recorded",
       },
       zh: {
+        ...IMPACT_APPLE_TEXT.zh,
         "reader.backReview": "候选列表",
         "reader.context": "适用场景",
         "reader.mistake": "哪里出了问题",
@@ -970,7 +977,9 @@ export const WEB_TEXT = {
         "reader.activity": "任务证据与修订记录",
 
         ...REVISION_TEXT.zh,
+        ...RUN_EVIDENCE_TEXT.zh,
         ...EVAL_SUITE_TEXT.zh,
+        ...EVAL_WORKBENCH_TEXT.zh,
         "route.invalid": "这个链接不完整或已损坏，请选择已登记的项目继续。",
         "route.projectMissing": "链接中的项目未在这台机器登记，请选择或添加原来的项目。",
         "route.unavailableTitle": "无法打开这个位置",
@@ -1271,11 +1280,11 @@ export const WEB_TEXT = {
         "evals.controlledRunComplete": "受控对照已完成",
         "evals.profile.retrieval_policy_v1.name": "检索策略对照",
         "evals.profile.retrieval_policy_v1.short": "检索策略",
-        "evals.profile.retrieval_policy_v1.question": "已确认的混合/语义策略，是否优于仅 FTS 的基线？",
+        "evals.profile.retrieval_policy_v1.question": "比较 FTS 与案例指定的检索模式，语义部分使用关键词测试向量，不调用当前 embedding 模型。",
         "evals.profile.retrieval_policy_v1.variable": "检索模式与确定性语义能力",
-        "evals.profile.memory_contribution_v1.name": "经验贡献对照",
+        "evals.profile.memory_contribution_v1.name": "经验内容检索对照",
         "evals.profile.memory_contribution_v1.short": "经验贡献",
-        "evals.profile.memory_contribution_v1.question": "提供已确认的 Codetrap 经验后，目标经验是否更容易被召回？",
+        "evals.profile.memory_contribution_v1.question": "比较屏蔽预期经验后的语料与完整语料，验证经验内容对检索的贡献，不衡量编码任务成效。",
         "evals.profile.memory_contribution_v1.variable": "fixture 已确认目标经验是否可用",
         "evals.side.fts_only_v1": "仅 FTS 的基线",
         "evals.side.fixture_policy_v1": "已确认的 fixture 策略",

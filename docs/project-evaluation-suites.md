@@ -1,8 +1,8 @@
 # Project evaluation sets
 
-Updated: 2026-09-04 (America/Los_Angeles).
+Updated: 2026-09-08 (America/Los_Angeles).
 
-Open **Impact → Evals** in the selected project. **Prepare from my lessons**
+Open **Impact → Verification → Retrieval & examples → Manage evaluation set** in the selected project. **Prepare from my lessons**
 previews a fixed copy of active, confirmed project and global lessons. Inspect
 the titles and sources, then explicitly create the set. If the project already
 has the legacy source fixture, **Copy existing tests** previews and copies its
@@ -11,7 +11,7 @@ lessons and examples instead. Creating a set never changes the live lessons.
 Choose **Add a reviewed example**, write a query, and select the lessons that
 should appear—or choose **No lesson should appear**. Preview the expectation,
 then confirm it. The receipt is available in **Review → Reviewed**, with the
-existing rollback action. Closing an unsaved editor discards its text. Creating
+existing rollback action. Unsaved text can be explicitly recovered from a local browser draft while its source context remains unchanged. Recovery never replays preview or acceptance. Creating
 a corpus without examples does not produce a retrieval quality score.
 
 Manual examples use offline keyword search (FTS). All selected lessons must be
@@ -27,6 +27,46 @@ The runner records the exact suite path, SHA and immutable bytes under
 `.codetrap/evals/suites/`, with results under `.codetrap/evals/experiments/`.
 These histories remain readable if the active set becomes missing, empty or
 invalid; a new comparison requires a valid set with at least one example.
+
+## Reading the evaluation workbench
+
+Verification separates lesson revision evidence from retrieval comparisons. **Retrieval & examples**
+shows coverage, saved history, the selected result and a case table. When history
+exists, the new comparison form is collapsed so its settings do not displace the
+result. Set maintenance is a disclosure. Actual task signals are reviewed through
+**Improvements → Add a retrieval example**. The entire Impact shell uses the approved
+prototype; none of its areas uses the old review rail. Expanded sections and
+context-bound form recovery remain available per project.
+
+- Coverage distinguishes positive and negative examples and names the actual
+  engine: offline FTS plus 14-dimensional keyword test vectors. It does not
+  evaluate the active embedding profile or real coding-task effectiveness.
+- Recall and MRR use positive examples only. An all-negative or empty set shows
+  no recall score. The comparison shows passing-example counts; zero new
+  regressions can still mean candidate examples fail. Repeats check
+  reproducibility and do not increase the number of examples.
+- The content-contribution profile masks expected lessons in the baseline. The
+  policy profile compares FTS against fixture-directed modes. These are fixed
+  retrieval experiments with different intentional variables.
+- Table filters expose cases needing inspection, improvements, regressions and
+  all cases. Open a query for complete saved top-five rankings on each side,
+  expected matches and previous/next navigation within the selected filter.
+  Native dialogs support Escape, focus return and a stacked narrow layout.
+- Expected titles come from SHA-verified experiment snapshots, never the active
+  corpus. Missing or corrupt snapshots retain healthy history with an explicit
+  warning and historical IDs. A changed active set is labeled as newer than the
+  selected result; rerun to evaluate it.
+- The read API evaluates the same parsed bytes that supply the digest. A
+  process-local, 24-entry digest/source cache coalesces deterministic summary
+  requests; file changes invalidate it. Feedback and history are read fresh.
+  Existing persisted experiment schema and approval/rollback rules are unchanged.
+
+Overview's next action opens a recent task with exposure but no feedback when
+one is present in the returned recent history. Negative feedback and misses
+continue to lead to finding review. No eligible task means ordinary task history,
+not an empty evaluation queue; no judgment is recorded by navigation.
+
+Implementation and rendered evidence: [evaluation workbench dossier](tasks/2026-09-08-evals-workbench/handoff.md).
 
 ## Storage, identity and compatibility
 
@@ -49,7 +89,7 @@ outdated acceptance preview.
 Legacy copies preserve positions, content and expectations. Their live source
 identities remain explicitly unknown; a fixture ID is never guessed to be a
 live trap ID. Copying is explicit, checks the previewed bytes, creates only the
-new local file, and does not delete or modify the old file. Opening Evals and
+new local file, and does not delete or modify the old file. Opening Verification and
 previewing do not migrate data. Existing local corpora cannot be replaced or
 refreshed through this first workflow. Later lesson edits do not change them.
 

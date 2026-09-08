@@ -1,5 +1,5 @@
 export type WorkspaceMainView = "review" | "library" | "learning" | "embeddings" | "impact";
-export type WorkspaceImpactView = "overview" | "runs" | "evals";
+export type WorkspaceImpactView = "overview" | "runs" | "improve" | "evals";
 
 export interface WorkspaceRoute {
   mainView: WorkspaceMainView;
@@ -7,6 +7,7 @@ export interface WorkspaceRoute {
   sessionId: string | null;
   candidateId: string | null;
   runId: string | null;
+  improvementId: string | null;
   projectRef: string | null;
   trapScope: "project" | "global" | null;
   trapId: number | null;
@@ -17,7 +18,7 @@ export interface WorkspaceRoute {
 }
 
 function emptyWorkspaceRoute(): WorkspaceRoute {
-  return { mainView: "review", impactView: "overview", sessionId: null, candidateId: null, runId: null,
+  return { mainView: "review", impactView: "overview", sessionId: null, candidateId: null, runId: null, improvementId: null,
     projectRef: null, trapScope: null, trapId: null, insightProjectRef: null, insightId: null, pane: "list", invalid: false };
 }
 function safeDecodeRouteSegment(value: string | undefined): string | null {
@@ -49,6 +50,7 @@ export function parseWorkspaceRoute(hash: string): WorkspaceRoute {
   } else if (mainView === "impact") {
     route.mainView = "impact";
     if (segments[1] === "evals") route.impactView = "evals";
+    else if (segments[1] === "improve") { route.impactView = "improve"; route.improvementId = safeDecodeRouteSegment(segments[2]); }
     else if (segments[1] === "runs") { route.impactView = "runs"; route.runId = safeDecodeRouteSegment(segments[2]); }
   } else if (mainView === "review") {
     route.sessionId = safeDecodeRouteSegment(segments[1]);
@@ -68,7 +70,7 @@ export function workspaceRouteHash(route: Partial<WorkspaceRoute>): string {
     if (route.insightProjectRef && route.insightId) path += `/${encodeURIComponent(route.insightProjectRef)}/${encodeURIComponent(route.insightId)}`;
   } else if (route.mainView === "embeddings") path = "#/embeddings";
   else if (route.mainView === "impact") {
-    path = route.impactView === "evals" ? "#/impact/evals" : route.impactView === "runs"
+    path = route.impactView === "improve" ? "#/impact/improve" + (route.improvementId ? "/" + encodeURIComponent(route.improvementId) : "") : route.impactView === "evals" ? "#/impact/evals" : route.impactView === "runs"
       ? route.runId ? `#/impact/runs/${encodeURIComponent(route.runId)}` : "#/impact/runs" : "#/impact/overview";
   } else if (route.sessionId) {
     path += `/${encodeURIComponent(route.sessionId)}`;
