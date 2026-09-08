@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { learningFixture } from "./web-learning-fixture";
 import { StudyArtifacts } from "../lib/study-artifacts";
-import { chromeExecutablePath, launchBrowser } from "./browser-helper";
+import { chromeExecutablePath, launchBrowser, configureBrowserPage, browserTestTimeout } from "./browser-helper";
 const browserTest=chromeExecutablePath()?test:test.skip;
 function importLesson(root:string,html:string,title="Lesson"){
   const file=join(root,'browser-lesson.html');writeFileSync(file,html);
@@ -22,11 +22,11 @@ browserTest("player runs interactions but cannot access parent, storage, API or 
   const server=Bun.serve({hostname:'127.0.0.1',port:0,fetch(req){if(new URL(req.url).pathname.includes('probe'))probes++;return f.handler(req)}});
   const browser=await launchBrowser();
   try{
-    const page=await browser.newPage({viewport:{width:1400,height:950}});page.setDefaultTimeout(5000);
+    const page=await browser.newPage({viewport:{width:1400,height:950}});configureBrowserPage(page);
     await page.goto(`http://127.0.0.1:${server.port}/?token=learning-token`+f.a.hash());
     await page.locator('#study-interactive-tab').click();
     const frame=page.frameLocator('#study-player iframe');
-    await frame.locator('#advance').click();expect(await frame.locator('#advance').textContent()).toBe('Done');
+    await frame.locator('#advance').click();await frame.locator('#advance').filter({hasText:'Done'}).waitFor();expect(await frame.locator('#advance').textContent()).toBe('Done');
     await frame.locator('#result').filter({hasText:'fetch blocked'}).waitFor();
     expect(await frame.locator('#result').textContent()).toContain('parent blocked');
     expect(await frame.locator('#result').textContent()).toContain('storage blocked');
@@ -43,7 +43,7 @@ browserTest("player runs interactions but cannot access parent, storage, API or 
     await page.setViewportSize({width:390,height:844});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }finally{await browser.close();server.stop(true)}
-},20000);
+},browserTestTimeout(20000));
 browserTest("late content cannot replace another insight and failed loads allow retry",async()=>{
   const f=learningFixture();importLesson(f.a.root,'<html><body><h1>First insight</h1></body></html>');
   let release=()=>{},arrived=()=>{};const pending=new Promise<void>(r=>{release=r}),started=new Promise<void>(r=>{arrived=r});let hold=true,fail=false;
@@ -55,7 +55,7 @@ browserTest("late content cannot replace another insight and failed loads allow 
     return f.handler(req);
   }}),browser=await launchBrowser();
   try{
-    const page=await browser.newPage();page.setDefaultTimeout(5000);
+    const page=await browser.newPage();configureBrowserPage(page);
     await page.goto(`http://127.0.0.1:${server.port}/?token=learning-token`+f.a.hash());await page.locator('#study-interactive-tab').click();await started;
     await page.locator('#next-learning').click();release();await page.locator('#study-interactive-tab').click();
     await page.getByText('No interactive lesson attached yet.',{exact:false}).waitFor();expect(await page.locator('#study-player iframe').count()).toBe(0);
@@ -65,4 +65,4 @@ browserTest("late content cannot replace another insight and failed loads allow 
     await page.frameLocator('#study-player iframe').locator('h1').waitFor();
     expect(await page.frameLocator('#study-player iframe').locator('h1').textContent()).toBe('First insight');
   }finally{release();await browser.close();server.stop(true)}
-},20000);
+},browserTestTimeout(20000));
