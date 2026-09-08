@@ -1,3 +1,4 @@
+import { mountStudyPlayer } from "./study-player";
 import { createImpactRequests } from "../client-impact-requests";
 import { createImpactState } from "../client-impact-state";
 import { WEB_TEXT } from '../client-text';
@@ -1384,8 +1385,12 @@ export function mountWorkspace(boot) {
             </div>
           </div>
           <div class="section">
-            <div class="title">${escapeHtml(t("label.body"))}</div>
-            <div class="learning-body">${renderLearningMarkup(insight.body)}</div>
+            <div class="study-tabs" role="group" aria-label="${escapeAttr(t("study.label"))}">
+              <button type="button" id="study-text-tab" class="ghost" aria-pressed="true">${escapeHtml(t("study.text"))}</button>
+              <button type="button" id="study-interactive-tab" class="ghost" aria-pressed="false">${escapeHtml(t("study.open"))}</button>
+            </div>
+            <div id="study-written" class="learning-body">${renderLearningMarkup(insight.body)}</div>
+            <div id="study-player" hidden></div>
           </div>
           <div class="section">
             <div class="title">${escapeHtml(t("label.sourceRefs"))}</div>
@@ -1415,6 +1420,16 @@ export function mountWorkspace(boot) {
           </div>
         </div>
       `;
+      let studyMounted = false;
+      el("study-text-tab").onclick = () => {
+        el("study-written").hidden = false; el("study-player").hidden = true;
+        el("study-text-tab").setAttribute("aria-pressed", "true"); el("study-interactive-tab").setAttribute("aria-pressed", "false");
+      };
+      el("study-interactive-tab").onclick = () => {
+        el("study-written").hidden = true; el("study-player").hidden = false;
+        el("study-text-tab").setAttribute("aria-pressed", "false"); el("study-interactive-tab").setAttribute("aria-pressed", "true");
+        if (!studyMounted) { studyMounted = true; mountStudyPlayer(el("study-player"), insight.origin_project_root, insight.id, { api, t }); }
+      };
       restoreWorkspacePosition();
       learning.bind();
       el("learning-runs-retry")?.addEventListener("click", () => { void catalog.runs(); });

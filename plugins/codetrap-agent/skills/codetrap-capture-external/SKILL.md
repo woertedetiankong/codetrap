@@ -77,6 +77,10 @@ instruction:
 
 > 用ASCII流程图结合通俗易懂的例子讲解
 
+When the user asks for animation or an interactive course, use the bundled
+`codetrap-study` skill to add a self-contained HTML attachment after the Learning
+target is approved. Keep this textual body useful without the attachment.
+
 The body must contain a compact ASCII flow diagram that explains the important
 sequence or relationship and a concrete, plain-language example. Keep the
 diagram aligned as plain text and explain what the reader should notice. Do not

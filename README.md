@@ -538,6 +538,17 @@ codetrap session delete <session-id>
 codetrap session prune --older-than 90d --apply
 ```
 
+### Interactive HTML and SVG lessons
+
+Use the bundled `codetrap-study` skill to turn articles or code into step-by-step
+interactive lessons and attach them to Learning insights or collections. The
+Learning detail offers text and interactive tabs, version selection, restart and
+HTML download. Files are copied into the project; updates retain earlier versions.
+
+See [interactive study lessons](docs/interactive-study.md) for conversation examples,
+CLI import/update/export commands, source coverage expectations and player limits.
+Refresh your agent's bundled skills with `codetrap setup codex` or `codetrap setup claude`.
+
 ### Learning Review
 
 `codetrap learn` reads your own agent history and turns it into reviewable
@@ -1259,8 +1270,8 @@ Accepting or rejecting a candidate is intentionally *not* an MCP tool — it sta
 
 ### Resources
 
-- `codetrap://project/recent` — Recently added project traps
-- `codetrap://global/recent` — Recently added global traps
+- `codetrap://project/recent` — Project traps ordered by creation recency
+- `codetrap://global/recent` — Global traps ordered by creation recency
 - `codetrap://project/top` — Most-hit project traps
 - `codetrap://global/top` — Most-hit global traps
 - `codetrap://{scope}/trap/{id}` — Individual trap by ID

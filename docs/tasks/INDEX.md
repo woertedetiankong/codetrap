@@ -1,9 +1,10 @@
 # Task Index
 
-Current session entry (2026-09-08): [whole Impact production migration](2026-09-08-impact-production-migration/task-brief.md). The approved prototype replaces the entire Impact interface. Read its [handoff](2026-09-08-impact-production-migration/handoff.md). Changes remain uncommitted.
+Current session entry (2026-09-08): [interactive study artifacts](2026-09-08-interactive-study/task-brief.md). HTML/SVG generation skill, versioned attachments and an isolated Learning player are complete. Read the [handoff](2026-09-08-interactive-study/handoff.md). Changes remain uncommitted.
 
 | Module / Slice | Status | Task Dossier | Latest Handoff | Depends On | Referenced By | Notes |
 |---|---|---|---|---|---|---|
+| Interactive study artifacts | Done | [task](2026-09-08-interactive-study/task-brief.md) | [handoff](2026-09-08-interactive-study/handoff.md) | Learning insights/collections, agent setup | README, interactive study documentation | Versioned local HTML, CLI, authenticated player, and bundled generation skill; 104/104 test files pass. |
 | Whole Impact production migration | Done | [task](2026-09-08-impact-production-migration/task-brief.md) | [handoff](2026-09-08-impact-production-migration/handoff.md) | Approved prototype, revisions, observation, evaluations | Impact feature documentation | Entire UI replaced; real workbench, readonly lesson sheets and inline revision flow. |
 | Whole Impact Apple Design prototype | Prototype complete | [task](2026-09-08-impact-apple-prototype/task-brief.md) | [handoff](2026-09-08-impact-apple-prototype/handoff.md) | Impact audit, Evals, Run evidence | Whole Impact integration | Four connected areas, Apple motion, responsive prototype and backend contract; visual source for the completed production migration. |
 | Evaluation workbench | Done | [task](2026-09-08-evals-workbench/task-brief.md) | [handoff](2026-09-08-evals-workbench/handoff.md) | UX audit, Run evidence, project evaluation sets | Impact/Evals design, evaluation workflow | Result-first comparison, verified historical titles, honest coverage, digest cache and actionable Overview; 58 targeted tests pass. |

@@ -1,3 +1,4 @@
+import { STUDY_TEXT } from "./client-study-text";
 import { EVAL_WORKBENCH_TEXT } from "./client-eval-workbench-text";
 import { IMPACT_APPLE_TEXT } from "./client-impact-apple-text";
 import { RUN_EVIDENCE_TEXT } from "./client-run-evidence-text";
@@ -5,6 +6,7 @@ import { EVAL_SUITE_TEXT } from "./client-eval-suite-text";
 import { REVISION_TEXT } from "./client-revision-text";
 export const WEB_TEXT = {
       en: {
+        ...STUDY_TEXT.en,
         ...IMPACT_APPLE_TEXT.en,
         "reader.backReview": "Candidate list",
         "reader.context": "When this applies",
@@ -963,6 +965,7 @@ export const WEB_TEXT = {
         "value.noSource": "No source recorded",
       },
       zh: {
+        ...STUDY_TEXT.zh,
         ...IMPACT_APPLE_TEXT.zh,
         "reader.backReview": "候选列表",
         "reader.context": "适用场景",

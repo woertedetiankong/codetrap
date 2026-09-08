@@ -19,6 +19,7 @@ const pluginSkillNames = [
   "codetrap-check",
   "codetrap-learning-review",
   "codetrap-search",
+  "codetrap-study",
 ];
 
 describe("agent first-run onboarding assets", () => {

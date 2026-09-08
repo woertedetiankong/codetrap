@@ -1,3 +1,4 @@
+import codetrapStudySkill from "../../plugins/codetrap-agent/skills/codetrap-study/SKILL.md" with { type: "text" };
 import {
   appendFileSync,
   cpSync,
@@ -117,6 +118,7 @@ export const TEMPLATE_MARKER = "codetrap search \"<keywords>\" --mode hybrid --j
 const EMBEDDED_PLUGIN_ROOT = "embedded://plugins/codetrap-agent";
 // Also the doctor's reference copy for per-client skill-currency checks (§13.3).
 export const BUNDLED_SKILLS = [
+  { name: "codetrap-study", skill: codetrapStudySkill },
   { name: "codetrap-add", skill: codetrapAddSkill },
   { name: "codetrap-capture", skill: codetrapCaptureSkill },
   { name: "codetrap-capture-external", skill: codetrapCaptureExternalSkill },

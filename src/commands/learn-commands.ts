@@ -1,3 +1,4 @@
+import { cmdStudyArtifact } from "./study-commands";
 import { homedir } from "node:os";
 import type { TrapStore } from "../lib/store";
 import type { TrapOperations } from "../lib/trap-operations";
@@ -9,7 +10,7 @@ import { parseLearningSourceId, type LearningSourceId } from "../domain/learning
 import { errorResult, jsonResult, textResult, type CommandResult } from "./command-result";
 import { errorFrom, parseArgs } from "./command-args";
 
-const USAGE = "Usage: codetrap learn <sources|evidence-pack|review|stage|reviews|delete>";
+const USAGE = "Usage: codetrap learn <sources|evidence-pack|review|stage|reviews|delete|artifact>";
 
 export function cmdLearn(args: string[], store: TrapStore, trapOperations: TrapOperations): CommandResult {
   const sub = args[0];
@@ -27,6 +28,7 @@ export function cmdLearn(args: string[], store: TrapStore, trapOperations: TrapO
 
   try {
     switch (sub) {
+      case "artifact": return cmdStudyArtifact(rest, projectRoot);
       case "sources":
         return cmdLearnSources(rest, learning);
       // `evidence-pack` and `review` build the same directory; §9.4 names them

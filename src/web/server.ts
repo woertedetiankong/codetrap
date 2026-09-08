@@ -1,3 +1,4 @@
+import { StudyArtifacts } from "../lib/study-artifacts";
 import { EvalSuiteOperations } from "../lib/eval-suite-operations";
 import { ExperienceRevisions } from "../lib/experience-revisions";
 import { impactWorkbenchWebPayload } from "./impact-workbench-view";
@@ -383,6 +384,28 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     } catch (error) {
       throw new WebHttpError(400, error instanceof Error ? error.message : String(error));
     }
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/learning/artifacts") {
+    requiredQuery(url, "project");
+    const projectRoot = projectRootFromQuery(url, context);
+    try {
+      return jsonResponse({ project_root: projectRoot, insight_id: requiredQuery(url, "insight"),
+        artifacts: new StudyArtifacts(projectRoot).forInsight(requiredQuery(url, "insight")) });
+    } catch (error) { throw new WebHttpError(400, error instanceof Error ? error.message : String(error)); }
+  }
+  if (request.method === "GET" && url.pathname === "/api/learning/artifact") {
+    requiredQuery(url, "project");
+    const projectRoot = projectRootFromQuery(url, context);
+    const version = requiredQuery(url, "version");
+    if (!/^[1-9]\d*$/.test(version)) throw new WebHttpError(400, "Invalid study version.");
+    try {
+      const content = new StudyArtifacts(projectRoot).content(requiredQuery(url, "id"), Number(version));
+      // Never serve user-authored HTML as an executable same-origin response.
+      return new Response(JSON.stringify({ project_root: projectRoot, ...content }), {
+        headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" },
+      });
+    } catch (error) { throw new WebHttpError(400, error instanceof Error ? error.message : String(error)); }
   }
 
   if (request.method === "GET" && url.pathname === "/api/insights") {

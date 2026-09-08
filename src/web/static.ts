@@ -1191,6 +1191,14 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .learning-actions { align-items: center; }
     .learning-navigation { display: flex; gap: 7px; margin-right: auto; }
     .learning-navigation button { min-height: 32px; font-size: 13px; }
+    .study-tabs, .study-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .study-tabs button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-strong); }
+    #study-written[hidden], #study-player[hidden] { display: none; }
+    .study-controls label { font-size: 14px; }
+    .study-controls select { min-width: 0; max-width: 100%; flex: 1 1 220px; }
+    .study-controls button { font-size: 13px; }
+    .study-frame-host iframe { width: 100%; height: min(75vh, 850px); min-height: 420px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+    #study-player pre { white-space: pre-wrap; overflow-wrap: anywhere; }
     .learning-body {
       display: grid;
       gap: 12px;
