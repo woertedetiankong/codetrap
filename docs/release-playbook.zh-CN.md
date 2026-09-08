@@ -8,6 +8,8 @@ Agent 安全边界：除非用户明确要求执行发布，不要运行 `git pu
 
 ## 当前发布渠道
 
+2026-09-08 已发布 `0.1.11`：npm `latest` 与 GitHub Release 均为此版本，包含互动 HTML／SVG 学习课件。`0.1.10` 未发布到 npm。其他电脑可运行 `npm install -g codetrap@latest`，再运行 `codetrap setup codex` 或 `codetrap setup claude` 刷新 Skills。npm 安装仍需要 Bun 运行时。
+
 codetrap 现在有三种安装方式：
 
 | 方式 | 面向用户 | 是否需要 Bun | 当前状态 |
