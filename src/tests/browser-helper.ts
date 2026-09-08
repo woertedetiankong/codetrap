@@ -1,7 +1,17 @@
 import { afterEach } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Browser } from 'playwright-core';
+import type { Browser, Page } from 'playwright-core';
+
+// Cold browser startup on hosted runners is part of a workflow's budget, not
+// its action deadline. Leave enough time for Playwright to report the failing
+// operation before Bun terminates the whole test and its cleanup.
+const startupTimeout = process.env.CI ? 30_000 : 10_000;
+export const browserTestTimeout = (localMs: number) => process.env.CI ? Math.max(localMs, 90_000) : localMs;
+export function configureBrowserPage(page: Page) {
+  page.setDefaultTimeout(process.env.CI ? 10_000 : 5_000);
+  page.setDefaultNavigationTimeout(process.env.CI ? 20_000 : 10_000);
+}
 
 // CSS string escapes differ from filesystem paths: a Windows backslash must
 // remain a literal character when matching data attributes.
@@ -17,6 +27,9 @@ export function chromeExecutablePath(): string | null {
     if (!existsSync(override)) throw new Error(`CODETRAP_TEST_BROWSER does not exist: ${override}`);
     return override;
   }
+  const managed = (require('playwright-core') as typeof import('playwright-core')).chromium.executablePath();
+  if (existsSync(managed)) return managed;
+  if (process.env.CI) throw new Error('CI requires the pinned Chromium build. Run node node_modules/playwright-core/cli.js install --with-deps --no-shell chromium, or set CODETRAP_TEST_BROWSER explicitly.');
   const candidates = [
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
@@ -28,7 +41,6 @@ export function chromeExecutablePath(): string | null {
     ...(process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, 'Google/Chrome/Application/chrome.exe')] : []),
   ];
   const path = candidates.find(candidate => existsSync(candidate)) ?? null;
-  if (!path && process.env.CI) throw new Error('CI requires Chromium; install it or set CODETRAP_TEST_BROWSER.');
   return path;
 }
 
@@ -42,6 +54,7 @@ afterEach(async () => {
 // extra stdio pipes and the WebSocket transport (oven-sh/bun#31105, #28450).
 type Driver = { playwright: Pick<typeof import("playwright-core"), "chromium">; stop(): Promise<void> };
 export async function launchBrowser(): Promise<Browser> {
+  const startedAt = performance.now();
   const executable = chromeExecutablePath();
   if (!executable) throw new Error('No Chromium executable found. Set CODETRAP_TEST_BROWSER.');
   const node = Bun.which('node');
@@ -60,14 +73,15 @@ export async function launchBrowser(): Promise<Browser> {
       starting.then(async value => { if (expired) await value.stop(); return value; }),
       new Promise<never>((_, reject) => { timer = setTimeout(() => {
         expired = true; reject(new Error('Playwright Node driver startup timed out.'));
-      }, 10_000); }),
+      }, startupTimeout); }),
     ]);
   } finally { clearTimeout(timer); }
   let stopping: Promise<void> | undefined;
   const stop = () => stopping ??= driver!.stop().finally(() => pendingCleanup.delete(stop));
   pendingCleanup.add(stop);
   try {
-    const browser = await driver.playwright.chromium.launch({ executablePath: executable, headless: true, timeout: 10_000 });
+    const browser = await driver.playwright.chromium.launch({ executablePath: executable, headless: true, timeout: startupTimeout });
+    if (process.env.CI) console.info(`Chromium ${browser.version()} ready in ${Math.round(performance.now() - startedAt)}ms (${executable})`);
     const close = browser.close.bind(browser);
     browser.close = async options => { try { await close(options); } finally { await stop(); } };
     return browser;

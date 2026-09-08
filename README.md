@@ -1493,11 +1493,18 @@ bun run eval:dogfood -- report --live  # Dogfood eval with configured embedding 
 ```
 
 Browser tests require Node.js 22+ and Chrome/Chromium (or
-`CODETRAP_TEST_BROWSER` pointing to its executable). They run the Playwright
+`CODETRAP_TEST_BROWSER` pointing to its executable). CI installs the Chromium
+build matching the pinned Playwright package; local runs can install it with
+`node node_modules/playwright-core/cli.js install --no-shell chromium` or use
+an existing Chrome installation. They run the Playwright
 driver under Node while application fixtures stay under Bun, avoiding Bun's
 Windows browser-pipe compatibility issue. CI fails if the browser is missing;
 local runs without a browser skip the browser suites. Playwright is pinned
 because the shared test helper uses its exported out-of-process driver adapter.
+CI allows 30 seconds for default integration tests and cold browser startup,
+with separate action/navigation limits and 90-second budgets for the longer
+browser workflows. Each test file remains capped at three minutes; failures
+are neither retried nor skipped.
 
 ## Tech Stack
 

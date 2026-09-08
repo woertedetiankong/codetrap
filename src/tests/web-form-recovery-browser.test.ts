@@ -1,4 +1,4 @@
-import { chromeExecutablePath, launchBrowser } from "./browser-helper";
+import { browserTestTimeout, chromeExecutablePath, configureBrowserPage, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -27,7 +27,7 @@ browserTest("Review reload recovery is explicit, raw, source-bound, and cannot r
   const f = reviewFixture(); let writes = 0;
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: req => { if (req.method === "POST") writes++; return f.handler(req); } }), browser = await launch();
   try {
-    const page = await browser.newPage(); page.setDefaultTimeout(5000); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
+    const page = await browser.newPage(); configureBrowserPage(page); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     const root = `http://127.0.0.1:${server.port}/?token=review-token`;
     await page.goto(root + f.a.hash()); await editLesson(page); await page.locator("#title").fill(" Raw <draft> "); await page.locator("#fix").fill("line one\nline two");
     await page.reload(); await page.locator(restore).waitFor(); expect(await page.locator("#title").inputValue()).toBe("First alpha");
@@ -40,13 +40,13 @@ browserTest("Review reload recovery is explicit, raw, source-bound, and cannot r
     await page.locator(".form-draft-recovery summary").click(); expect(await page.locator(".learning-recovery-preview").textContent()).toContain(" Raw <draft> ");
     expect(await page.locator(".learning-recovery-preview img").count()).toBe(0); expect(errors).toEqual([]);
   } finally { await browser.close(); server.stop(true); }
-}, 20000);
+}, browserTestTimeout(20000));
 
 browserTest("Review concurrent tabs keep independent backups and storage failures leave explicit Save usable", async () => {
   const f = reviewFixture(), server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: f.handler }), browser = await launch();
   try {
     const context = await browser.newContext(), a = await context.newPage(), b = await context.newPage();
-    for (const page of [a, b]) page.setDefaultTimeout(5000);
+    for (const page of [a, b]) configureBrowserPage(page);
     const url = `http://127.0.0.1:${server.port}/?token=review-token` + f.a.hash();
     await a.goto(url); await editLesson(a); await a.locator("#title").fill("A draft"); await b.goto(url); await editLesson(b); await b.locator("#title").fill("B draft"); expect(await b.locator(restore).isDisabled()).toBe(true);
     await b.reload(); await b.locator(restore).waitFor(); expect(await b.locator("[data-draft-choice] option").count()).toBe(2);
@@ -56,7 +56,7 @@ browserTest("Review concurrent tabs keep independent backups and storage failure
     await a.locator("#save").click(); await a.locator("#review-discard").waitFor({ state: "detached" });
     expect(f.a.operations.getCandidate(f.a.candidates[0]!.id, f.a.session.id).candidate.trap.title).toBe("Save despite quota");
   } finally { await browser.close(); server.stop(true); }
-}, 20000);
+}, browserTestTimeout(20000));
 
 browserTest("Evaluation case and run parameter recovery requires unchanged context and never replays preview or execution", async () => {
   const f = webSuiteFixture();
@@ -64,7 +64,7 @@ browserTest("Evaluation case and run parameter recovery requires unchanged conte
   let writes = 0;
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: req => { if (req.method === "POST") writes++; return f.handler(req); } }), browser = await launch();
   try {
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); page.setDefaultTimeout(5000); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); configureBrowserPage(page); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.port}/?token=suite-token#/impact/evals?project=${webProjectRouteRef(f.project)}`);
     await suiteAction(page, "case"); const dialog = page.locator(".suite-dialog");
     await dialog.locator('[name="query"]').fill(" raw transaction \nrollback "); await dialog.locator('[name="gold"]').check();
@@ -83,7 +83,7 @@ browserTest("Evaluation case and run parameter recovery requires unchanged conte
     await runRecovery.locator(restore).click(); expect(await page.locator('[data-controlled-eval-form] [name="seed"]').inputValue()).toBe(" Raw seed "); expect(writes).toBe(0);
     expect(readProjectSuite(f.project).fixture.queries).toHaveLength(1); expect(errors).toEqual([]);
   } finally { await browser.close(); server.stop(true); }
-}, 25000);
+}, browserTestTimeout(25000));
 
 browserTest("observed evaluation drafts survive switching findings and reload, and reject an unrelated mutation acknowledgment", async () => {
   const f = webSuiteFixture();
@@ -102,7 +102,7 @@ browserTest("observed evaluation drafts survive switching findings and reload, a
     return f.handler(req);
   } }), browser = await launch();
   try {
-    const page = await browser.newPage(); page.setDefaultTimeout(5000); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
+    const page = await browser.newPage(); configureBrowserPage(page); const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.port}/?token=suite-token#/impact/improve/intake?project=${webProjectRouteRef(f.project)}`);
     const choose = (id: string) => page.locator(`[data-eval-review="${id}"]`).click();
     const form = page.locator("[data-eval-review-form]");
@@ -123,7 +123,7 @@ browserTest("observed evaluation drafts survive switching findings and reload, a
     expect(await form.locator('[name="query"]').inputValue()).toBe("  First\nraw query ");
     await page.reload(); await choose(candidates[0]!); await page.locator(".eval-review-workbench " + restore).waitFor(); expect(writes).toBe(1); expect(errors).toEqual([]);
   } finally { await browser.close(); server.stop(true); }
-}, 25000);
+}, browserTestTimeout(25000));
 
 browserTest("accepting an earlier evaluation case cannot delete a new dialog's draft", async () => {
   const f = webSuiteFixture();
@@ -136,7 +136,7 @@ browserTest("accepting an earlier evaluation case cannot delete a new dialog's d
     return result;
   } }), browser = await launch();
   try {
-    const page = await browser.newPage(); page.setDefaultTimeout(5000);
+    const page = await browser.newPage(); configureBrowserPage(page);
     await page.goto(`http://127.0.0.1:${server.port}/?token=suite-token#/impact/evals?project=${webProjectRouteRef(f.project)}`);
     await suiteAction(page, "case"); const dialog = page.locator(".suite-dialog");
     await dialog.locator('[name="query"]').fill("first transaction"); await dialog.locator('[name="gold"]').check(); await dialog.locator('[data-case-preview-button]').click();
@@ -151,4 +151,4 @@ browserTest("accepting an earlier evaluation case cannot delete a new dialog's d
     await page.reload(); await suiteAction(page, "case"); await dialog.locator(restore).waitFor();
     await dialog.locator(".form-draft-recovery summary").click(); expect(await dialog.locator(".learning-recovery-preview").textContent()).toContain("second unsaved query");
   } finally { release(); await browser.close(); server.stop(true); }
-}, 20000);
+}, browserTestTimeout(20000));

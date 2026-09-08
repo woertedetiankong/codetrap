@@ -1,4 +1,4 @@
-import { chromeExecutablePath, launchBrowser } from "./browser-helper";
+import { browserTestTimeout, chromeExecutablePath, configureBrowserPage, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -36,7 +36,7 @@ const chrome = chromeExecutablePath();
     const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
-    page.setDefaultTimeout(5000);
+    configureBrowserPage(page);
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
     const url = `http://127.0.0.1:${server.port}/?token=suite-token#/impact/evals?project=${webProjectRouteRef(f.project)}`;
     await page.goto(url);
@@ -106,4 +106,4 @@ const chrome = chromeExecutablePath();
     expect(await page.locator('.controlled-run-button').isDisabled()).toBe(true);
     expect(errors).toEqual([]);
   } finally { await browser.close(); server.stop(true); }
-}, 25000);
+}, browserTestTimeout(25000));

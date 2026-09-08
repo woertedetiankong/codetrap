@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { chromeExecutablePath, dataSelector, launchBrowser } from './browser-helper';
+import { browserTestTimeout, chromeExecutablePath, configureBrowserPage, dataSelector, launchBrowser } from './browser-helper';
 
 (chromeExecutablePath() ? test : test.skip)('browser selectors match literal Windows paths and quoted project names', async () => {
   const bunPath = process.execPath;
@@ -7,6 +7,7 @@ import { chromeExecutablePath, dataSelector, launchBrowser } from './browser-hel
   try {
     expect(process.execPath).toBe(bunPath);
     const page = await browser.newPage();
+    configureBrowserPage(page);
     const values = ['C:\\Users\\runner\\Project one::ins-1', '/tmp/项目 "quoted"/one', "C:\\Users\\O'Brien\\project"];
     await page.evaluate(values => {
       for (const value of values) {
@@ -23,4 +24,4 @@ import { chromeExecutablePath, dataSelector, launchBrowser } from './browser-hel
       await target.click();
     }
   } finally { await browser.close(); }
-}, 15_000);
+}, browserTestTimeout(15_000));

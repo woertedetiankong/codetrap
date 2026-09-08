@@ -15,7 +15,10 @@ const files = testFiles('src/tests');
 if (!files.length) throw new Error('No test files found. Run from the repository root.');
 const failures = [];
 for (const file of files) {
-  const result = spawnSync('bun', ['test', file], { stdio: 'inherit', timeout: 180_000 });
+  // Hosted Windows filesystem/SQLite work can exceed Bun's 5s default even
+  // without a browser. Explicit per-test deadlines still take precedence.
+  const args = ['test', ...(process.env.CI ? ['--timeout', '30000'] : []), file];
+  const result = spawnSync('bun', args, { stdio: 'inherit', timeout: 180_000 });
   if (result.status !== 0 || result.error) {
     failures.push(file);
     console.error(`Suite failed: ${file} (${result.error?.message ?? result.signal ?? result.status})`);
