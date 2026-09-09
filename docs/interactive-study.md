@@ -94,3 +94,11 @@ storage, external resources or embedded frames. Child messages never change
 Learning records. Persistent state and automatic grading bridges are not part of
 this version. Downloaded HTML runs under the browser's normal file rules rather
 than Codetrap's player isolation.
+
+## 在网页里准备 AI 任务
+
+学习页现在提供“和 AI 开始一个任务”：选择文章、代码、已有 HTML 课件或编程经验，再选择只放学习库、只放经验库或两个库都保存。已有 HTML 课件关联学习库；经验规则仍单独提炼。可填写链接、文件路径或资料，也可以稍后在 AI 对话中补充。
+
+点击“复制请求，交给 AI”，把请求粘贴到具备 codetrap 的 AI 对话。请求包含当前项目、保存位置、互动课件选项和审核要求。复制不会发送资料或创建记录；AI 准备候选后，在审核页确认。项目内的任务草稿在当前网页会话中保留，刷新页面后不保留；本机文件路径不代表其他电脑也能访问。剪贴板不可用时展开请求并手动复制。
+
+AI 可先运行 `codetrap learn artifact schema --json` 查看导入字段、示例及查询现有条目的命令。缺少必要输入时，JSON 错误保留 `success: false`、`error`，并增加 `code: "MISSING_INPUT"`、`missing_fields`、`next_actions`。版本冲突返回 `code: "VERSION_CONFLICT"` 与读取最新版本的命令，AI 应检查并合并差异后再重试，不应直接覆盖。其他错误仍可能使用原有错误格式。

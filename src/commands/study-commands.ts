@@ -1,3 +1,4 @@
+import { ActionableError } from "../lib/actionable-error";
 import { writeFileSync } from "node:fs";
 import { StudyArtifacts, studyTarget, type StudyImport, type StudyTarget } from "../lib/study-artifacts";
 import { jsonObjectInput, parseArgs } from "./command-args";
@@ -20,12 +21,21 @@ export function cmdStudyArtifact(args: string[], projectRoot: string): CommandRe
   const id = positionals[0];
   let value: unknown;
   switch (action) {
+    case "schema":
+      value = { import: { required: ["file", "title", "target"], target: { kind: "insight | collection", id: "existing Learning record ID" }, update_requires: ["id", "expected_version"], file: "Local self-contained HTML file" },
+        next_actions: [{ command: "codetrap phase2 insights --json", description: "Find an existing Learning insight ID." }, { command: "codetrap learn artifact list --json", description: "Find existing artifacts before importing an update." }],
+        example: "codetrap learn artifact import --file <lesson.html> --title <title> --insight <existing-id> --json" }; break;
     case "import": {
       const input = opts["input-json"] !== undefined ? jsonObjectInput(opts) as unknown as StudyImport : {
         file: opts.file, title: opts.title, target: target(), id: opts.id,
         expected_version: number("expected-version"), source_refs: opts["source-ref"] ? [opts["source-ref"]] : [],
         source_revision: opts["source-revision"] ?? null,
       } as StudyImport;
+      const missing = ["file", "title", "target"].filter(key => !input[key as keyof StudyImport]);
+      if (missing.length) throw new ActionableError("Import is missing required inputs: " + missing.join(", ") + ".", "MISSING_INPUT", {
+        missing_fields: missing,
+        next_actions: [{ command: "codetrap learn artifact schema --json", description: "Inspect import fields and an example. Supply real paths and IDs, then retry." }, { command: "codetrap phase2 insights --json", description: "Look up a Learning target. If none exists, prepare a Learning candidate for user review first." }],
+      });
       value = { artifact: store.import(input) }; break;
     }
     case "list": value = { artifacts: store.list(target()) }; break;
@@ -42,7 +52,7 @@ export function cmdStudyArtifact(args: string[], projectRoot: string): CommandRe
       writeFileSync(opts.output, content.html, { flag: "wx" });
       value = { id, version: content.revision.version, output: opts.output }; break;
     }
-    default: throw new Error("Usage: codetrap learn artifact <import|list|show|versions|restore|export>. Import: --file <self-contained.html> --title <title> --insight <id> (or --collection <id>), or --input-json -. Update: --id <artifact-id> --expected-version <latest>.");
+    default: throw new Error("Usage: codetrap learn artifact <schema|import|list|show|versions|restore|export>. Import: --file <self-contained.html> --title <title> --insight <id> (or --collection <id>), or --input-json -. Update: --id <artifact-id> --expected-version <latest>.");
   }
   return opts.json !== undefined ? jsonResult({ success: true, ...value as Record<string, unknown> }) : textResult(JSON.stringify(value, null, 2));
 }

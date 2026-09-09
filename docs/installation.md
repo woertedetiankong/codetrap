@@ -540,3 +540,15 @@ codex mcp add codetrap -- "$(bun pm bin -g)/codetrap" serve
 ```
 
 Agents can also use the CLI directly when the project guidance tells them when to call it. `codetrap setup codex` installs that guidance in `AGENTS.md`.
+
+## Three default skills and optional history review
+
+Setup installs `codetrap-check`, `codetrap-capture` and `codetrap-study` for either
+client. Add `--with-review` to install `codetrap-review`; it runs only when users
+request a historical session review. Default setup preserves an already opted-in
+review skill. `--without-review` archives it; these flags are mutually exclusive.
+
+Legacy add/search/capture-external/learning-review directories are archived under
+client-home `skill-backups/` with all custom files preserved. Setup reports the
+backup paths. Their functions move into the three main entries; CLI commands and
+saved Learning/experience data are unchanged. Use `--dry-run` to preview migration.

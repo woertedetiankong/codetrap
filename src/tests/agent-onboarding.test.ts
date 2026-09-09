@@ -12,15 +12,7 @@ const agentAutomationFiles = [
   "plugins/codetrap-agent/skills/codetrap-capture/SKILL.md",
 ];
 
-const pluginSkillNames = [
-  "codetrap-add",
-  "codetrap-capture",
-  "codetrap-capture-external",
-  "codetrap-check",
-  "codetrap-learning-review",
-  "codetrap-search",
-  "codetrap-study",
-];
+const pluginSkillNames = ["codetrap-capture", "codetrap-check", "codetrap-study"];
 
 describe("agent first-run onboarding assets", () => {
   test("packaged post-task automation writes candidates instead of confirmed traps", () => {
@@ -38,15 +30,15 @@ describe("agent first-run onboarding assets", () => {
   });
 
   test("direct add skill is explicit-confirmation only", () => {
-    const text = read("plugins/codetrap-agent/skills/codetrap-add/SKILL.md");
-    expect(text).toContain("explicit user approval");
+    const text = read("plugins/codetrap-agent/skills/codetrap-capture/references/confirmed-memory.md");
+    expect(text).toContain("explicit confirmation");
     expect(text).toContain("codetrap session capture --trap-markdown");
     expect(text).toContain("Only after the user confirms");
   });
 
   test("user-study skills request an ASCII flow and a plain-language example", () => {
-    const external = read("plugins/codetrap-agent/skills/codetrap-capture-external/SKILL.md");
-    const review = read("plugins/codetrap-agent/skills/codetrap-learning-review/SKILL.md");
+    const external = read("plugins/codetrap-agent/skills/codetrap-study/references/external-source.md");
+    const review = read("plugins/codetrap-agent/optional-skills/codetrap-review/SKILL.md");
 
     for (const text of [external, review]) {
       expect(text).toContain("用ASCII流程图结合通俗易懂的例子讲解");
@@ -88,7 +80,6 @@ describe("agent first-run onboarding assets", () => {
     const canonicalGuidanceFiles = [
       "plugins/codetrap-agent/templates/AGENTS.codetrap.md",
       "plugins/codetrap-agent/skills/codetrap-check/SKILL.md",
-      "plugins/codetrap-agent/skills/codetrap-search/SKILL.md",
     ];
 
     for (const file of canonicalGuidanceFiles) {

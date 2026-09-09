@@ -1,7 +1,18 @@
----
-name: codetrap-capture-external
-description: Extract durable coding pitfalls or study-ready insights from an external article, blog post, issue, paper, repository, or reference, then save only user-confirmed lessons to codetrap with source evidence.
----
+# External source ingestion
+
+## Choose the destination first
+
+Honor the user's explicit choice: Learning only, experience memory only, or both.
+"Help me learn" defaults to Learning; "remember this for future coding" defaults
+to experience memory. Ask once only when intent is ambiguous. Never create a
+second destination without the user's request. Memory-only means extracting
+supported actionable rules, not converting every paragraph into a rule. Explain
+background that cannot be made into a rule; if full preservation is requested,
+offer a Learning source record instead of silently creating one.
+For Learning-only preserve all substantive source material across insights and
+collection context, with coverage accounting. For both, create purpose-specific
+records linked to the same source. Apply ONLY the selected destination branches
+in the procedure below. Do not ask the destination again when already specified.
 
 Use this when the user shares an external source and wants to save useful lessons
 for future AI coding work, their own study, or both.
@@ -19,9 +30,9 @@ argument quote rewriting on Windows PowerShell.
 
 Open or read the provided URL, article text, issue, paper, or reference. Identify lessons that could change future implementation behavior.
 
-Do not copy or summarize the whole source into codetrap. Extract only content
-that changes future agent behavior or materially improves the user's
-understanding.
+Do not copy the source verbatim. For Learning, teach all substantive content
+within the requested scope, including background and limitations. For experience
+memory, extract only supported actionable rules that change future agent behavior.
 
 ## Step 2: Extract And Route Candidate Lessons
 
@@ -77,7 +88,7 @@ instruction:
 
 > 用ASCII流程图结合通俗易懂的例子讲解
 
-When the user asks for animation or an interactive course, use the bundled
+When the user asks for animation or an interactive course, use the interactive lesson procedure in the parent
 `codetrap-study` skill to add a self-contained HTML attachment after the Learning
 target is approved. Keep this textual body useful without the attachment.
 

@@ -1,5 +1,5 @@
 ---
-name: codetrap-learning-review
+name: codetrap-review
 description: Look back over recent sessions and stage reusable lessons for codetrap review. Runs only when the user explicitly asks for it; never writes durable memory on its own.
 ---
 

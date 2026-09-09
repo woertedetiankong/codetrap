@@ -54,7 +54,7 @@ export function cmdSetup(args: string[]): CommandResult {
   const rest = args.slice(1);
   if (!isSetupClient(sub)) {
     return errorResult(
-      "Usage: codetrap setup <codex|claude> [--mcp] [--no-agents] [--agents-file <path>] [--codex-home <path> | --claude-home <path>] [--dry-run] [--json]"
+      "Usage: codetrap setup <codex|claude> [--mcp] [--no-agents] [--with-review|--without-review] [--agents-file <path>] [--codex-home <path> | --claude-home <path>] [--dry-run] [--json]"
     );
   }
   const { opts } = parseArgs(rest);
@@ -65,6 +65,8 @@ export function cmdSetup(args: string[]): CommandResult {
       agentsFile: opts["agents-file"],
       installMcp: opts.mcp !== undefined,
       skipAgents: opts["no-agents"] !== undefined,
+      withReview: opts["with-review"] !== undefined,
+      withoutReview: opts["without-review"] !== undefined,
       dryRun: opts["dry-run"] !== undefined,
     });
     if (opts.json !== undefined) return jsonResult(result, result.success ? 0 : 1);

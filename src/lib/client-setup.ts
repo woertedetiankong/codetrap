@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import codetrapStudySkill from "../../plugins/codetrap-agent/skills/codetrap-study/SKILL.md" with { type: "text" };
 import {
   appendFileSync,
@@ -6,6 +7,8 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  lstatSync,
+  renameSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -13,12 +16,12 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findProjectRoot } from "./scope";
 import agentsTemplateAsset from "../../plugins/codetrap-agent/templates/AGENTS.codetrap.md" with { type: "text" };
-import codetrapAddSkill from "../../plugins/codetrap-agent/skills/codetrap-add/SKILL.md" with { type: "text" };
+import confirmedMemory from "../../plugins/codetrap-agent/skills/codetrap-capture/references/confirmed-memory.md" with { type: "text" };
 import codetrapCaptureSkill from "../../plugins/codetrap-agent/skills/codetrap-capture/SKILL.md" with { type: "text" };
-import codetrapCaptureExternalSkill from "../../plugins/codetrap-agent/skills/codetrap-capture-external/SKILL.md" with { type: "text" };
+import externalSource from "../../plugins/codetrap-agent/skills/codetrap-study/references/external-source.md" with { type: "text" };
 import codetrapCheckSkill from "../../plugins/codetrap-agent/skills/codetrap-check/SKILL.md" with { type: "text" };
-import codetrapLearningReviewSkill from "../../plugins/codetrap-agent/skills/codetrap-learning-review/SKILL.md" with { type: "text" };
-import codetrapSearchSkill from "../../plugins/codetrap-agent/skills/codetrap-search/SKILL.md" with { type: "text" };
+import reviewSkill from "../../plugins/codetrap-agent/optional-skills/codetrap-review/SKILL.md" with { type: "text" };
+import interactiveHtml from "../../plugins/codetrap-agent/skills/codetrap-study/references/interactive-html.md" with { type: "text" };
 
 // Dual-client symmetry (roadmap §3.1): Codex and Claude Code are co-equal
 // first-class clients. One setup core, one guidance template, one skill
@@ -63,6 +66,8 @@ export type ClientSetupOptions = {
   agentsFile?: string;
   installMcp?: boolean;
   skipAgents?: boolean;
+  withReview?: boolean;
+  withoutReview?: boolean;
   dryRun?: boolean;
 };
 
@@ -79,7 +84,9 @@ export type ClientSetupStatus =
   | "would_install"
   | "would_update"
   | "would_run"
-  | "failed";
+  | "failed"
+  | "archived"
+  | "would_archive";
 
 export type ClientSetupResult = {
   success: boolean;
@@ -117,20 +124,18 @@ const AGENTS_TEMPLATE_PATH = "templates/AGENTS.codetrap.md";
 export const TEMPLATE_MARKER = "codetrap search \"<keywords>\" --mode hybrid --json";
 const EMBEDDED_PLUGIN_ROOT = "embedded://plugins/codetrap-agent";
 // Also the doctor's reference copy for per-client skill-currency checks (§13.3).
-export const BUNDLED_SKILLS = [
-  { name: "codetrap-study", skill: codetrapStudySkill },
-  { name: "codetrap-add", skill: codetrapAddSkill },
-  { name: "codetrap-capture", skill: codetrapCaptureSkill },
-  { name: "codetrap-capture-external", skill: codetrapCaptureExternalSkill },
-  { name: "codetrap-check", skill: codetrapCheckSkill },
-  // §3.1/§7.2: the learning-review entry point exists in BOTH clients and both
-  // delegate to the identical CLI commands. It ships in the shared bundle so
-  // there is no way to install it for one client and not the other.
-  { name: "codetrap-learning-review", skill: codetrapLearningReviewSkill },
-  { name: "codetrap-search", skill: codetrapSearchSkill },
+export type BundledSkill = { name: string; skill: string; resources: Record<string, string> };
+export const BUNDLED_SKILLS: BundledSkill[] = [
+  { name: "codetrap-check", skill: codetrapCheckSkill, resources: {} },
+  { name: "codetrap-capture", skill: codetrapCaptureSkill, resources: { "references/confirmed-memory.md": confirmedMemory } },
+  { name: "codetrap-study", skill: codetrapStudySkill, resources: { "references/external-source.md": externalSource, "references/interactive-html.md": interactiveHtml } },
 ];
+export const REVIEW_SKILL: BundledSkill = { name: "codetrap-review", skill: reviewSkill, resources: {} };
+export const LEGACY_SKILLS = ["codetrap-add", "codetrap-search", "codetrap-capture-external", "codetrap-learning-review"];
+export function skillFiles(entry: BundledSkill): Record<string, string> { return { "SKILL.md": entry.skill, ...entry.resources }; }
 
 export function runClientSetup(client: SetupClient, options: ClientSetupOptions): ClientSetupResult {
+  if (options.withReview && options.withoutReview) throw new Error("Choose only one of --with-review or --without-review.");
   const spec = CLIENT_SPECS[client];
   const cwd = resolve(options.cwd);
   const projectRoot = findProjectRoot(cwd) ?? cwd;
@@ -140,9 +145,7 @@ export function runClientSetup(client: SetupClient, options: ClientSetupOptions)
 
   const dryRun = options.dryRun === true;
   const project = ensureProjectCodetrap(projectRoot, dryRun);
-  const skills = useEmbeddedAssets
-    ? installEmbeddedSkills(clientHome, dryRun)
-    : installSkills(pluginRoot, clientHome, dryRun);
+  const skills = installSelectedSkills(clientHome, dryRun, options, useEmbeddedAssets ? EMBEDDED_PLUGIN_ROOT : pluginRoot);
   const agents = options.skipAgents
     ? { path: null, status: "skipped" as const }
     : installAgentsTemplate(projectRoot, useEmbeddedAssets ? null : pluginRoot, options.agentsFile ?? spec.guidanceFile, dryRun);
@@ -182,6 +185,7 @@ export function formatClientSetupText(result: ClientSetupResult): string {
   } else {
     lines.push(`MCP: skipped; pass --mcp to run '${result.mcp.command}'.`);
   }
+  for (const skill of result.skills.filter(s => ["archived", "would_archive"].includes(s.status))) lines.push(`${skill.name}: ${skill.status}${skill.backup ? " → " + skill.backup : " (backup outside skills/)"}`);
   if (result.dry_run) lines.unshift(`Dry run; no files or ${label} config were changed.`);
   return lines.join("\n");
 }
@@ -195,68 +199,59 @@ function ensureProjectCodetrap(projectRoot: string, dryRun: boolean): ClientSetu
   return { codetrap_dir: codetrapDir, status: dryRun ? "would_create" : "created" };
 }
 
-function installSkills(pluginRoot: string, clientHome: string, dryRun: boolean): ClientSetupResult["skills"] {
-  const sourceSkillsDir = join(pluginRoot, "skills");
-  const targetSkillsDir = join(clientHome, "skills");
-  if (!dryRun) mkdirSync(targetSkillsDir, { recursive: true });
-
-  return readdirSync(sourceSkillsDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .sort((left, right) => left.name.localeCompare(right.name))
-    .map((entry) => {
-      const source = join(sourceSkillsDir, entry.name);
-      const destination = join(targetSkillsDir, entry.name);
-      const sourceSkill = readFileSync(join(source, "SKILL.md"), "utf-8");
-      const destinationSkillPath = join(destination, "SKILL.md");
-      const exists = existsSync(destinationSkillPath);
-      const unchanged = exists && readFileSync(destinationSkillPath, "utf-8") === sourceSkill;
-      let status: ClientSetupStatus = unchanged ? "unchanged" : exists ? "updated" : "installed";
-      if (dryRun && status === "installed") status = "would_install";
-      if (dryRun && status === "updated") status = "would_update";
-      // L17: overwriting a user-edited skill used to discard their changes with
-      // no recovery path. Snapshot the existing directory first.
-      let backup: string | undefined;
-      if (!dryRun && exists && !unchanged) {
-        backup = backupExistingSkill(destination, clientHome);
-      }
-      if (!dryRun && !unchanged) cpSync(source, destination, { recursive: true, force: true });
-      return { name: entry.name, source, destination, status, ...(backup ? { backup } : {}) };
-    });
-}
-
-// L17: copy an about-to-be-overwritten skill directory into a sibling backup
-// folder (outside skills/ so it is never mistaken for a skill) and return the path.
 function backupExistingSkill(destination: string, clientHome: string): string {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupDir = join(clientHome, "skill-backups", `${basename(destination)}.${stamp}`);
+  const backupDir = join(clientHome, "skill-backups", `${basename(destination)}.${randomUUID()}`);
   mkdirSync(dirname(backupDir), { recursive: true });
-  cpSync(destination, backupDir, { recursive: true });
+  cpSync(destination, backupDir, { recursive: true, dereference: false });
   return backupDir;
 }
 
-function installEmbeddedSkills(clientHome: string, dryRun: boolean): ClientSetupResult["skills"] {
-  const targetSkillsDir = join(clientHome, "skills");
-  if (!dryRun) mkdirSync(targetSkillsDir, { recursive: true });
-
-  return BUNDLED_SKILLS.map((entry) => {
-    const destination = join(targetSkillsDir, entry.name);
-    const destinationSkillPath = join(destination, "SKILL.md");
-    const exists = existsSync(destinationSkillPath);
-    const unchanged = exists && readFileSync(destinationSkillPath, "utf-8") === entry.skill;
-    let status: ClientSetupStatus = unchanged ? "unchanged" : exists ? "updated" : "installed";
-    if (dryRun && status === "installed") status = "would_install";
-    if (dryRun && status === "updated") status = "would_update";
-    if (!dryRun && !unchanged) {
-      mkdirSync(destination, { recursive: true });
-      writeFileSync(destinationSkillPath, entry.skill);
+function installSelectedSkills(clientHome: string, dryRun: boolean, options: ClientSetupOptions, pluginRoot: string): ClientSetupResult["skills"] {
+  const root = join(clientHome, "skills");
+  const selected = [...BUNDLED_SKILLS];
+  if (!options.withoutReview && (options.withReview || existsSync(join(root, REVIEW_SKILL.name)))) selected.push(REVIEW_SKILL);
+  const retired = [...LEGACY_SKILLS, ...(options.withoutReview ? [REVIEW_SKILL.name] : [])];
+  // Validate all known destinations before changing anything. Never follow a skill-directory link.
+  for (const name of [...selected.map(e => e.name), ...retired]) {
+    const destination = join(root, name);
+    try { if (!lstatSync(destination).isDirectory() || lstatSync(destination).isSymbolicLink()) throw new Error(`Unsafe skill directory: ${destination}`); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+  }
+  const results: ClientSetupResult["skills"] = [];
+  for (const entry of selected) {
+    const destination = join(root, entry.name), files = skillFiles(entry);
+    for (const path of Object.keys(files)) {
+      let parent = destination;
+      for (const segment of path.split("/")) {
+        parent = join(parent, segment);
+        try { if (lstatSync(parent).isSymbolicLink()) throw new Error(`Unsafe skill resource: ${parent}`); }
+        catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+      }
     }
-    return {
-      name: entry.name,
-      source: `${EMBEDDED_PLUGIN_ROOT}/skills/${entry.name}`,
-      destination,
-      status,
-    };
-  });
+    const exists = existsSync(destination);
+    const unchanged = exists && Object.entries(files).every(([path, content]) => existsSync(join(destination, path)) && readFileSync(join(destination, path), "utf8") === content);
+    const status: ClientSetupStatus = unchanged ? "unchanged" : exists ? dryRun ? "would_update" : "updated" : dryRun ? "would_install" : "installed";
+    let backup: string | undefined;
+    if (!dryRun && !unchanged) {
+      if (exists) backup = backupExistingSkill(destination, clientHome);
+      for (const [path, content] of Object.entries(files)) {
+        const target = join(destination, path); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, content);
+      }
+    }
+    results.push({ name: entry.name, source: `${pluginRoot}/${entry.name === REVIEW_SKILL.name ? "optional-skills" : "skills"}/${entry.name}`, destination, status, ...(backup ? { backup } : {}) });
+  }
+  // Retire only named legacy entries, after their replacement resources are installed.
+  for (const name of retired) {
+    const destination = join(root, name);
+    if (!existsSync(destination)) continue;
+    let backup: string | undefined;
+    if (!dryRun) {
+      backup = join(clientHome, "skill-backups", `${name}.${randomUUID()}`);
+      mkdirSync(dirname(backup), { recursive: true }); renameSync(destination, backup);
+    }
+    results.push({ name, source: destination, destination, status: dryRun ? "would_archive" : "archived", ...(backup ? { backup } : {}) });
+  }
+  return results;
 }
 
 function installAgentsTemplate(

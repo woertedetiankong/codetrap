@@ -140,6 +140,8 @@ function showHelp(): void {
   console.log("  --codex-home <path>    With setup codex, override CODEX_HOME/default ~/.codex");
   console.log("  --claude-home <path>   With setup claude, override CLAUDE_CONFIG_DIR/default ~/.claude");
   console.log("  --agents-file <path>   With setup, choose the guidance file target (AGENTS.md / CLAUDE.md)");
+  console.log("  --with-review          Install optional historical-session review skill");
+  console.log("  --without-review       Archive optional review skill (default preserves installed review)");
   console.log("  --no-agents            With setup, install skills without editing the guidance file");
 }
 

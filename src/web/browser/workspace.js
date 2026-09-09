@@ -1,3 +1,4 @@
+import { mountAIHandoff } from "./ai-handoff";
 import { mountStudyPlayer } from "./study-player";
 import { createImpactRequests } from "../client-impact-requests";
 import { createImpactState } from "../client-impact-state";
@@ -879,7 +880,7 @@ export function mountWorkspace(boot) {
             <span class="meta">
               <span class="pill ${candidate.status} ${reviewCssClass(candidate)}">${escapeHtml(reviewLabel(candidate))}</span>
               <span class="pill scope">${escapeHtml(candidateKindLabel(candidate))}</span>
-              ${isInsightCandidate(candidate) ? "" : '<span class="pill">' + escapeHtml(t("pill.quality", { score: Number(candidate.quality_score).toFixed(2) })) + '</span>'}
+              ${isInsightCandidate(candidate) ? "" : '<span class="pill" title="' + escapeAttr(t("quality.help")) + '">' + escapeHtml(t("pill.quality", { score: Number(candidate.quality_score).toFixed(2) })) + '</span>'}
               ${!isInsightCandidate(candidate) && candidate.quality.warnings.length ? '<span class="pill warn">' + escapeHtml(t("pill.warnings", { count: candidate.quality.warnings.length })) + '</span>' : ''}
             </span>
           </button>
@@ -1154,7 +1155,8 @@ export function mountWorkspace(boot) {
       const empty = insights.length
         ? '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningMatchesTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningMatches")) + '</span></div>'
         : '<div class="empty learning-empty"><strong>' + escapeHtml(t("empty.noLearningInsightsTitle")) + '</strong><span>' + escapeHtml(t("empty.noLearningInsights")) + '</span>' + learningPromptCard('copy-learning-prompt-mobile') + '</div>';
-      el("candidates").innerHTML = controls + '<div class="learning-catalog">' + (visible.length ? collectionsHtml + standaloneHtml : empty) + '</div>';
+      const launcher = insights.length ? '<details class="ai-handoff-launch"><summary>' + (state.locale === 'zh' ? '和 AI 开始新任务' : 'Start a new task with AI') + '</summary>' + learningPromptCard('ai-handoff-catalog') + '</details>' : '';
+      el("candidates").innerHTML = controls + launcher + '<div class="learning-catalog">' + (visible.length ? collectionsHtml + standaloneHtml : empty) + '</div>';
       bindLearningPrompt(el("candidates"));
 
       el("learning-filters")?.querySelector("summary").addEventListener("click", () => {
@@ -1321,23 +1323,11 @@ export function mountWorkspace(boot) {
     }
 
     function learningPromptCard(id) {
-      return '<div class="learning-prompt-card"><span>' + escapeHtml(t("label.learningGenerationPrompt")) + '</span><code>' + escapeHtml(t("prompt.learningGeneration")) + '</code><button type="button" class="ghost" data-copy-learning-prompt id="' + id + '">' + escapeHtml(t("learningGuide.copy")) + '</button></div>';
+      return '<div data-ai-handoff id="' + id + '"></div>';
     }
 
     function bindLearningPrompt(container) {
-      container.querySelector("[data-copy-learning-prompt]")?.addEventListener("click", async (event) => {
-        const code = event.currentTarget.closest(".learning-prompt-card").querySelector("code");
-        try {
-          await navigator.clipboard.writeText(t("prompt.learningGeneration"));
-          showStatus(t("learningGuide.copied"));
-        } catch {
-          const range = document.createRange();
-          range.selectNodeContents(code);
-          const selection = getSelection();
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-      });
+      container.querySelectorAll("[data-ai-handoff]").forEach(host => mountAIHandoff(host, state.projectRoot, state.locale));
     }
 
     function renderLearningDetail() {
@@ -1948,7 +1938,7 @@ export function mountWorkspace(boot) {
           </form>
           <div class="section">
             <div class="meta">
-              <span class="pill">${escapeHtml(t("pill.quality", { score: Number(candidate.quality_score).toFixed(2) }))}</span>
+              <span class="pill" title="${escapeAttr(t("quality.help"))}">${escapeHtml(t("pill.quality", { score: Number(candidate.quality_score).toFixed(2) }))}</span>
               <span class="pill">${escapeHtml(t("pill.conflict", { status: valueLabel(candidate.quality.conflict_status) }))}</span>
               <span class="pill">${escapeHtml(t("pill.action", { action: valueLabel(effectiveCandidateSuggestedAction(candidate)) }))}</span>
             </div>

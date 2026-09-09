@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildClientHealth, clientNextActions } from "../lib/client-health";
-import { BUNDLED_SKILLS, TEMPLATE_MARKER } from "../lib/client-setup";
+import { BUNDLED_SKILLS, TEMPLATE_MARKER, skillFiles } from "../lib/client-setup";
 import { runCli, tempDir, tempHome } from "./helpers";
 
 describe("per-client integration health (roadmap §13.3)", () => {
@@ -24,8 +24,8 @@ describe("per-client integration health (roadmap §13.3)", () => {
     const currentSkill = BUNDLED_SKILLS.find((entry) => entry.name === "codetrap-check")!;
     mkdirSync(join(clientHome, "skills", "codetrap-check"), { recursive: true });
     writeFileSync(join(clientHome, "skills", "codetrap-check", "SKILL.md"), currentSkill.skill);
-    mkdirSync(join(clientHome, "skills", "codetrap-add"), { recursive: true });
-    writeFileSync(join(clientHome, "skills", "codetrap-add", "SKILL.md"), "locally edited\n");
+    mkdirSync(join(clientHome, "skills", "codetrap-capture"), { recursive: true });
+    writeFileSync(join(clientHome, "skills", "codetrap-capture", "SKILL.md"), "locally edited\n");
     const projectRoot = join(base, "project");
     mkdirSync(projectRoot, { recursive: true });
     writeFileSync(join(projectRoot, "CLAUDE.md"), "# my project, no codetrap section\n");
@@ -34,7 +34,7 @@ describe("per-client integration health (roadmap §13.3)", () => {
 
     expect(health.detected).toBe(true);
     expect(health.skills.current).toEqual(["codetrap-check"]);
-    expect(health.skills.outdated).toEqual(["codetrap-add"]);
+    expect(health.skills.outdated).toEqual(["codetrap-capture"]);
     expect(health.skills.missing).toHaveLength(BUNDLED_SKILLS.length - 2);
     expect(health.guidance).toMatchObject({ present: true, current: false });
 
@@ -49,7 +49,10 @@ describe("per-client integration health (roadmap §13.3)", () => {
     const clientHome = join(base, "codex-home");
     for (const entry of BUNDLED_SKILLS) {
       mkdirSync(join(clientHome, "skills", entry.name), { recursive: true });
-      writeFileSync(join(clientHome, "skills", entry.name, "SKILL.md"), entry.skill);
+      for (const [path, content] of Object.entries(skillFiles(entry))) {
+        const target = join(clientHome, "skills", entry.name, path);
+        mkdirSync(join(target, ".."), { recursive: true }); writeFileSync(target, content);
+      }
     }
     const projectRoot = join(base, "project");
     mkdirSync(projectRoot, { recursive: true });

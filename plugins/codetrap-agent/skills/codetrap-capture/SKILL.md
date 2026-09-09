@@ -1,9 +1,25 @@
 ---
 name: codetrap-capture
-description: Propose a new codetrap candidate after repeated failures, user corrections, or review feedback without writing confirmed memory automatically.
+description: Capture coding experience from current tasks, corrections or external sources; stage agent-discovered candidates and save explicitly confirmed user-authored rules.
 ---
 
-Use this after a task exposes a recurring mistake pattern. Draft a candidate trap with:
+## Select the mode
+
+- Current-task mistakes and agent discoveries: use the candidate procedure below.
+- User explicitly asks to save confirmed memory: read
+  [confirmed-memory.md](references/confirmed-memory.md); retain draft confirmation.
+- External article/document/code: read the shared
+  [source procedure](../codetrap-study/references/external-source.md), bundled with
+  the default study skill. Honor memory-only, Learning-only or both. Learning-only
+  requests belong to `codetrap-study`; do not additionally save coding rules.
+
+User intent selects the destination. Memory-only does not mean inventing rules
+for background facts. For both destinations, keep concise rules separate from
+complete teaching content and retain the same source references.
+
+## Stage an agent-discovered candidate
+
+Use this after a task exposes a recurring mistake pattern. Draft a candidate with:
 
 Use `codetrap` when it is available on `PATH`. In a Codetrap source checkout
 where the global command is intentionally absent, run the same arguments with

@@ -1,3 +1,4 @@
+import { ActionableError } from "../lib/actionable-error";
 import { readFileSync } from "node:fs";
 import { errorResult, jsonResult, type CommandResult } from "./command-result";
 
@@ -93,6 +94,10 @@ export function jsonObjectInput(
 }
 
 export function errorFrom(error: unknown, rawArgs?: string[]): CommandResult {
+  if (error instanceof ActionableError) {
+    if (rawArgs && wantsJsonRaw(rawArgs)) return jsonResult({ success: false, error: error.message, code: error.code, ...error.recovery }, 1);
+    return failureMessage(error.message + "\nNext: " + error.recovery.next_actions.map(action => action.command + " — " + action.description).join("\n"), rawArgs);
+  }
   return failureMessage(errorMessage(error), rawArgs);
 }
 

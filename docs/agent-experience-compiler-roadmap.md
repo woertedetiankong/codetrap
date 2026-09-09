@@ -1,7 +1,7 @@
 # codetrap Mature Product Roadmap v2.3: Agent Experience Compiler
 
 Date: 2026-06-22 (v1)
-Updated: 2026-09-05 (v2.3 implementation status)
+Updated: 2026-09-08 (skill entry consolidation)
 Status: Product direction / long-term roadmap — authoritative parent plan
 Scope: Parent plan for codetrap mature product evolution
 Clients served: **Codex and Claude Code, symmetrically** (Cursor and others: future)
@@ -17,6 +17,7 @@ handoff) — see §19.
 
 | Milestone | Status | Updated | Evidence | Note |
 |---|---|---|---|---|
+| Three default skill entries | **Done (source/local)** | 2026-09-08 | [handoff](tasks/2026-09-08-three-skill-entries/handoff.md) | Check/capture/study defaults; review opt-in; backed-up migration and resource-aware health. npm 0.1.11 retains the prior bundle until a new release. |
 | Phase 0 — proof point | Closed with waived gate | 2026-07-25 | [proof-point handoff](tasks/2026-07-25-phase0-claude-code-proof-point/handoff.md) | Candidate-quality gate was waived, not passed; later wide-lens review measured 20% at n=5. |
 | Phase 1 — MVP compiler loop | **Done** | 2026-08-08 | [closeout handoff](tasks/2026-08-08-phase1-closeout/handoff.md) | All five slices pass; trap #5 travelled from Claude Code mining to useful Codex recall. |
 | Phase 2 – low-risk destinations | **Done** | 2026-08-08 | [handoff](tasks/2026-08-08-phase2-low-risk-destinations/handoff.md) | Four review-bound destinations, insight study, currency/graduation, metrics, and decision rule pass end to end. |
@@ -522,7 +523,7 @@ feature, doc, or example that assumes Codex-only is a defect. Concretely:
 | Concern | Codex | Claude Code |
 |---|---|---|
 | Setup command | `codetrap setup codex` | `codetrap setup claude` (shipped 2026-07-10) |
-| Skills / entry points | `~/.codex/skills` bundle | `~/.claude/skills` bundle (shipped 2026-07-10; `/codetrap-learning-review` command comes with Phase 1) |
+| Skills / entry points | Three defaults in `~/.codex/skills`; review opt-in with `--with-review` | Same three defaults in `~/.claude/skills`; review opt-in with `--with-review` |
 | Project guidance | `AGENTS.md` (template append) | `CLAUDE.md` (same template) |
 | History source (pull mode) | Codex local sessions, task/rollout summaries | `~/.claude/projects/<slug>/` JSONL transcripts |
 | Agent-native sources | Codex Memories | Claude Code session summaries / memory dir |
@@ -535,9 +536,10 @@ Symmetry rules:
   not require touching the compiler layer.
 - The packaged template (`plugins/codetrap-agent/templates/AGENTS.codetrap.md`)
   remains the single source of truth for agent guidance in both clients.
-- The learning-review entry point exists in both clients
-  (`$codetrap-learning-review` as a Codex skill AND as a Claude Code
-  skill/command) and both delegate to the identical CLI commands.
+- The optional `codetrap-review` entry point is available to both clients with
+  `codetrap setup <codex|claude> --with-review`. It delegates to the same CLI
+  commands and requires an explicit historical review request. Default setup
+  installs check/capture/study and preserves an already opted-in review entry.
 - The shared behavioral contract is additionally embedded in the MCP server's
   initialize instructions (§13.2), so a client that only speaks MCP still
   learns the workflow without per-client prompt configuration.
@@ -798,13 +800,15 @@ Codex Skill / Claude Code skill or command
 
 The codetrap core owns only the stable contract.
 
-### 7.2 Entry points (one per client, same contract)
+### 7.2 Optional history entry points (one per client, same contract)
 
 ```text
-$codetrap-learning-review     (Codex skill)
-/codetrap-learning-review     (Claude Code skill or slash command)
+$codetrap-review     (Codex skill)
+/codetrap-review     (Claude Code skill or slash command)
 ```
 
+Install with `codetrap setup codex --with-review` or `codetrap setup claude
+--with-review`. This is an optional fourth skill, not a default historical scan.
 Both delegate to identical CLI commands and produce identical artifacts under
 `.codetrap/learning/reviews/<review-id>/`.
 
@@ -1566,8 +1570,8 @@ and source manifest shape from both adapters; per-client doctor passes.
 > Both criteria met, and the adapter independently reproduced a Phase 0
 > measurement (exactly 2 Codex sessions in the 30-day window) from shipped code
 > rather than a throwaway script. `learn sources | review | evidence-pack |
-> stage` ship with the shared `codetrap-learning-review` skill installed to both
-> clients. Staging deterministically verifies every claimed evidence ref, which
+> stage` shipped to both clients at this milestone. The current optional
+> history entry and installation policy are described in §7.2. Staging deterministically verifies every claimed evidence ref, which
 > closes Phase 0 risk 5 for refs; review artifacts are gitignored at creation,
 > which closes Phase 0 risk 6.
 > A pre-commit review caught three privacy bugs, including a bearer token that
@@ -1861,7 +1865,7 @@ has two consumers: the next agent run, and the user's own expertise (§1.7).
 Minimal architecture:
 
 ```text
-$codetrap-learning-review (Codex) / /codetrap-learning-review (Claude Code)
+$codetrap-review (Codex) / /codetrap-review (Claude Code)
   -> confirm scope + red lines
   -> agent-native discovery
   -> LessonCandidate shortlist (source_agent tagged)

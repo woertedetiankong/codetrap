@@ -837,34 +837,30 @@ export const WEB_INDEX_HTML = `<!doctype html>
       gap: 8px;
     }
 
-    .learning-prompt-card {
-      width: min(680px, 100%);
-      margin-top: 8px;
-      padding: 12px 14px;
-      display: grid;
-      gap: 7px;
-      text-align: left;
-      border: 1px solid color-mix(in srgb, var(--accent), var(--line) 68%);
-      border-left: 3px solid var(--accent);
-      border-radius: 8px;
-      background: var(--accent-soft);
-    }
-
-    .learning-prompt-card span {
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    .learning-prompt-card code {
-      color: var(--text);
-      font-family: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
-      font-size: 14px;
-      line-height: 1.65;
-      white-space: normal;
-    }
+    .ai-handoff { width: 100%; max-width: 680px; min-width: 0; box-sizing: border-box; padding: 20px; display: grid; gap: 16px; text-align: left; border: 1px solid var(--line); border-radius: 16px; background: var(--surface, #fff); color: var(--text); }
+    .ai-handoff h3, .ai-handoff p { margin: 0; }
+    .ai-handoff-project { overflow-wrap: anywhere; }
+    .ai-handoff h3 { font-size: 20px; letter-spacing: -.025em; }
+    .ai-handoff p { font-size: 13px; line-height: 1.6; color: var(--muted); }
+    .ai-handoff-steps { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 0 0 0 20px; margin: 0; font-size: 12px; color: var(--muted); }
+    .ai-handoff-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; }
+    .ai-handoff label { display: grid; gap: 7px; min-width: 0; font-size: 13px; font-weight: 500; }
+    .ai-handoff select, .ai-handoff textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--line); border-radius: 9px; background: var(--surface, #fff); color: var(--text); padding: 10px; font: inherit; font-size: 14px; line-height: 1.5; }
+    .ai-handoff select { min-height: 44px; }
+    .ai-handoff textarea { resize: vertical; }
+    .ai-handoff .ai-handoff-check { display: flex; align-items: center; min-height: 44px; gap: 10px; }
+    .ai-handoff .ai-handoff-check[hidden] { display: none; }
+    .ai-handoff-check input { width: 18px; height: 18px; accent-color: var(--accent); }
+    .ai-handoff summary, .ai-handoff-launch > summary { min-height: 44px; box-sizing: border-box; padding: 12px 0; cursor: pointer; font-size: 13px; }
+    .ai-handoff-launch { margin: 8px 12px; }
+    .ai-handoff button { min-height: 44px; padding: 10px 18px; border-radius: 10px; transition: background-color 150ms ease, box-shadow 150ms ease; }
+    .ai-handoff button:active { transform: scale(.98); transition: none; }
+    .ai-handoff :is(button, select, textarea, input, summary):focus-visible, .ai-handoff-launch > summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+    .ai-handoff-status:empty { display: none; }
+    .ai-handoff .ai-handoff-status { color: var(--text); }
+    @media (max-width: 480px) { .ai-handoff { padding: 14px; } .ai-handoff-fields { grid-template-columns: 1fr; } .ai-handoff-actions button { width: 100%; } }
+    @media (prefers-reduced-motion: reduce) { .ai-handoff button { transition: none; } .ai-handoff button:active { transform: none; } }
+    @media (prefers-contrast: more) { .ai-handoff, .ai-handoff select, .ai-handoff textarea { border-color: currentColor; } .ai-handoff p, .ai-handoff-steps { color: var(--text); } }
 
     .learning-title { font-size: 18px; }
     .learning-summary { font-size: 14px; line-height: 1.55; }
@@ -2947,7 +2943,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
       .experience-heading h3, .learning-practice h3 { font-size: 18px; }
     }
     .reader-back { display: none; }
-    .learning-catalog .learning-prompt-card { display: none; }
+    .learning-catalog .ai-handoff { display: none; }
     .library-filters { min-width: 0; }
     .learning-filters { grid-column: 1 / -1; }
     .learning-filter-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(132px, 0.62fr); gap: 7px; }
@@ -2955,7 +2951,7 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .route-unavailable { line-height: 1.8; }
     @media (min-width: 1061px) { .library-filters > summary { display: none; } }
     @media (max-width: 1060px) {
-      .learning-catalog .learning-prompt-card { display: grid; }
+      .learning-catalog .ai-handoff { display: grid; }
       .shell.reader-mode { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
       .reader-mode .app-topbar { width: 100%; flex-shrink: 0; }
       .reader-mode .rail, .reader-mode .detail { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }

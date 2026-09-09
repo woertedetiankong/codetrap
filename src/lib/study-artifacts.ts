@@ -1,3 +1,4 @@
+import { ActionableError } from "./actionable-error";
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -161,6 +162,6 @@ export class StudyArtifacts {
     }).value;
   }
   private expectVersion(a: StudyArtifact, expected: number | undefined) {
-    if (positive(expected, "expected_version") !== a.revisions.length) throw new Error("Study artifact changed. Reload its latest version before updating.");
+    if (positive(expected, "expected_version") !== a.revisions.length) throw new ActionableError("Study artifact changed. Reload its latest version before updating.", "VERSION_CONFLICT", { next_actions: [{ command: "codetrap learn artifact show " + a.id + " --json", description: "Read the latest revision and reconcile your changes before retrying with its expected_version." }] });
   }
 }

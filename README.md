@@ -627,8 +627,8 @@ Deleting leaves a tombstone with only non-sensitive metadata — counts, roots,
 file hashes, dates — because a trap committed from that review still needs its
 provenance to resolve.
 
-The `codetrap-learning-review` skill drives this flow and installs for both
-clients.
+The optional `codetrap-review` skill drives this flow. Install it with
+`codetrap setup codex --with-review` or `codetrap setup claude --with-review`.
 
 ### Feedback Improver loop
 
@@ -1214,22 +1214,34 @@ codetrap maintainers working on this repository can also append `plugins/codetra
 
 ### Plugin Skills
 
-The same skill bundle installs for **both** Codex and Claude Code from `plugins/codetrap-agent/skills/`:
+Three default skills install for **both** Codex and Claude Code:
 
-- `codetrap-check` — pre-flight check before code changes.
-- `codetrap-search` — search existing lessons.
-- `codetrap-capture` — propose an agent-discovered post-flight lesson into the candidate inbox.
-- `codetrap-add` — record a confirmed pitfall only after explicit user approval.
-- `codetrap-capture-external` — extract concise Agent pitfalls, user-study insights, or both from an external article, post, repository, issue, paper, or reference; study extraction uses a two-pass source inventory, explicit skip reasons, atomic batch validation, an ASCII flow diagram, and a plain-language example, and Codetrap stores only user-confirmed lessons.
-- `codetrap-learning-review` — look back over recent sessions and stage reusable lessons from a fingerprinted evidence sample with an explicit source-unit account; runs only on explicit invocation and never claims full-conversation coverage from sampled history.
+- `codetrap-check` — search experience on request and apply relevant lessons before coding.
+- `codetrap-capture` — stage discovered experience or save explicitly confirmed rules, including source-backed rules.
+- `codetrap-study` — organize articles/code into Learning content and optionally create HTML/SVG lessons.
 
-The plugin skill directory is the single source of truth for skill packaging in both clients. The repo does not keep a duplicate root `skills/` tree.
+`codetrap-review` is optional, installed with `setup codex --with-review` or
+`setup claude --with-review`; it reads historical sessions only on explicit request.
+Ordinary setup preserves an already installed review skill. `--without-review`
+archives it. The two flags cannot be combined.
+
+Setup migrates the former add/search/capture-external/learning-review skill
+folders into uniquely named `skill-backups/` directories outside agent discovery.
+Customized files are retained in those backups. Old slash-command skill names
+are retired; the underlying CLI commands and saved data are unchanged.
+The old history skill is archived, not automatically opted into the new review
+entry. Other skills are not removed. Resources ship with both source and binary
+installs, and doctor checks their currency as well as the entrypoint.
+
+Default entrypoints live in `plugins/codetrap-agent/skills/`; the optional review
+lives in `plugins/codetrap-agent/optional-skills/`. Detailed teaching/import
+procedures are loaded from linked references only when needed.
 
 Skills are a convenience layer. They do not replace MCP or `AGENTS.md` / `CLAUDE.md`; they make manual triggers like "run codetrap-check" easier.
 
 External lessons should keep codetrap local-first: let the agent read the URL or
-pasted source, ask which candidates to save and whether each belongs in Agent
-memory or the user's Learning shelf, then attach the source as evidence instead
+pasted source, honor the user's choice of Learning only, experience only or both,
+and ask about the destination only when ambiguous. Attach source evidence instead
 of making the CLI crawl the web. For study material, the bundled skill uses the
 request `用ASCII流程图结合通俗易懂的例子讲解` and stages a reviewed Phase 2
 `insight`; it does not turn the CLI into a web crawler.
@@ -1530,3 +1542,7 @@ are neither retried nor skipped.
 ## License
 
 MIT
+
+### Start Learning with your AI
+
+The Learning page has a task card for articles, code, existing HTML lessons and coding experience. Choose Learning, Experience or both, preview the request, then copy it into your AI conversation. Copying does not save or send content; review prepared candidates before saving. Requests include the current project, and local file paths refer to that computer. See [interactive study](docs/interactive-study.md) for the workflow and `codetrap learn artifact schema --json` for import discovery and structured recovery.

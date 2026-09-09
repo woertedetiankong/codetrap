@@ -1,7 +1,9 @@
 ---
 name: codetrap-check
-description: Check the codetrap pitfall database before code changes and apply relevant lessons. Use before non-trivial coding work, when touching risky areas, or when the user runs /codetrap-check.
+description: Search codetrap experience on request or before non-trivial coding work, then assess relevance and apply matching lessons.
 ---
+
+For an explicit search request, search and report relevant results without implying a code change. This entry also replaces codetrap-search.
 
 Before generating any non-trivial code, pause and check the codetrap database for relevant pitfalls. This is a "pre-flight check" that prevents you from repeating known mistakes.
 

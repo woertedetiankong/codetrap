@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   BUNDLED_SKILLS,
+  REVIEW_SKILL,
+  skillFiles,
   CLIENT_SPECS,
   resolveClientHome,
   TEMPLATE_MARKER,
@@ -93,7 +95,7 @@ export function clientNextActions(clients: ClientHealth[]): DoctorNextAction[] {
 
 export function formatClientHealthText(clients: ClientHealth[]): string[] {
   return clients.map((health) => {
-    const total = BUNDLED_SKILLS.length;
+    const total = health.skills.current.length + health.skills.outdated.length + health.skills.missing.length;
     if (!health.detected) {
       return `  ${health.client}: not detected (${health.home} missing); run '${health.setup_command}' to integrate`;
     }
@@ -119,11 +121,11 @@ function skillsHealth(home: string): ClientHealth["skills"] {
   const current: string[] = [];
   const outdated: string[] = [];
   const missing: string[] = [];
-  for (const bundled of BUNDLED_SKILLS) {
+  for (const bundled of [...BUNDLED_SKILLS, ...(existsSync(join(home, "skills", REVIEW_SKILL.name)) ? [REVIEW_SKILL] : [])]) {
     const installedPath = join(home, "skills", bundled.name, "SKILL.md");
     const installed = safeRead(installedPath);
     if (installed === null) missing.push(bundled.name);
-    else if (installed === bundled.skill) current.push(bundled.name);
+    else if (Object.entries(skillFiles(bundled)).every(([path, content]) => safeRead(join(home, "skills", bundled.name, path)) === content)) current.push(bundled.name);
     else outdated.push(bundled.name);
   }
   return { current, outdated, missing };

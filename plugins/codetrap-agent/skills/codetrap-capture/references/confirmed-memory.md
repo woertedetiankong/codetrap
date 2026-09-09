@@ -1,8 +1,3 @@
----
-name: codetrap-add
-description: Record a confirmed coding pitfall as a structured codetrap entry after explicit user approval. For agent-discovered post-flight lessons, prefer codetrap-capture and the session candidate inbox.
----
-
 You are helping the user record a "coding pitfall" (a mistake pattern that AI coding assistants tend to make, and the correct approach). These pitfalls are stored in a local database and will be used to warn AI in future sessions.
 
 Use `codetrap` when it is available on `PATH`. In a Codetrap source checkout

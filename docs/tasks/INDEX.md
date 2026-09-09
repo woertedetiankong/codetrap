@@ -1,9 +1,11 @@
 # Task Index
 
-Current session entry (2026-09-08): [npm 0.1.11 release](2026-09-08-release-0.1.10/task-brief.md). Public npm and GitHub releases are complete. Read the [handoff](2026-09-08-release-0.1.10/handoff.md).
+Current session entry (2026-09-08): [AI-assisted UX](2026-09-08-ai-assisted-ux/task-brief.md). Builds on the completed three-skill consolidation; source committed; not released to npm. Read the [handoff](2026-09-08-ai-assisted-ux/handoff.md).
 
 | Module / Slice | Status | Task Dossier | Latest Handoff | Depends On | Referenced By | Notes |
 |---|---|---|---|---|---|---|
+| AI-assisted UX | Done | [task](2026-09-08-ai-assisted-ux/task-brief.md) | [handoff](2026-09-08-ai-assisted-ux/handoff.md) | Usability audit, three skills | Interactive study docs | Explicit task/destination handoff, honest status, responsive drafts, CLI recovery; 107/107 suites pass. |
+| Three default skill entries | Done | [task](2026-09-08-three-skill-entries/task-brief.md) | [handoff](2026-09-08-three-skill-entries/handoff.md) | Interactive study, client setup | README, installation | Three defaults and opt-in history; backed-up legacy migration and resource-aware health. |
 | npm 0.1.11 release | Done | [task](2026-09-08-release-0.1.10/task-brief.md) | [handoff](2026-09-08-release-0.1.10/handoff.md) | Interactive study artifacts | Release playbook | npm latest and GitHub release 0.1.11; Windows/Linux CI passed. |
 | Interactive study artifacts | Done | [task](2026-09-08-interactive-study/task-brief.md) | [handoff](2026-09-08-interactive-study/handoff.md) | Learning insights/collections, agent setup | README, interactive study documentation | Versioned local HTML, CLI, authenticated player, and bundled generation skill; 104/104 test files pass. |
 | Whole Impact production migration | Done | [task](2026-09-08-impact-production-migration/task-brief.md) | [handoff](2026-09-08-impact-production-migration/handoff.md) | Approved prototype, revisions, observation, evaluations | Impact feature documentation | Entire UI replaced; real workbench, readonly lesson sheets and inline revision flow. |
