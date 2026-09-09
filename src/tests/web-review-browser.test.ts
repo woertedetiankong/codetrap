@@ -83,10 +83,9 @@ browserTest("Review save stays bound during selection changes and accept/reject/
     await page.locator(`[data-candidate='${f.a.candidates[0]!.id}']`).click();
     expect(await page.locator("#title").inputValue()).toBe("Saved from visible draft");
     await editLesson(page); await page.locator("#title").fill("Approved visible draft");
-    await page.locator(".candidate-more-actions summary").click(); await page.locator("#approve").click();
-    await page.locator("#receipt.show").waitFor();
-    expect(f.a.operations.getCandidate(f.a.candidates[0]!.id, f.a.session.id).candidate.trap.title).toBe("Approved visible draft");
-    f.a.traps.add(f.a.operations.getCandidate(f.a.candidates[0]!.id, f.a.session.id).candidate.trap);
+    expect(await page.locator("#approve").count()).toBe(0);
+    expect(await page.locator(".candidate-more-actions").count()).toBe(0);
+    f.a.traps.add({ ...f.a.operations.getCandidate(f.a.candidates[0]!.id, f.a.session.id).candidate.trap, title: "Approved visible draft" });
     await page.locator("#accept").click(); await page.locator("#accept-anyway").waitFor({ state: "attached" });
     expect(await page.locator("#title").inputValue()).toBe("Approved visible draft");
     await page.locator(".candidate-more-actions summary").click(); await page.locator("#accept-anyway").click();

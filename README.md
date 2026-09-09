@@ -1546,3 +1546,15 @@ MIT
 ### Start Learning with your AI
 
 The Learning page has a task card for articles, code, existing HTML lessons and coding experience. Choose Learning, Experience or both, preview the request, then copy it into your AI conversation. Copying does not save or send content; review prepared candidates before saving. Requests include the current project, and local file paths refer to that computer. See [interactive study](docs/interactive-study.md) for the workflow and `codetrap learn artifact schema --json` for import discovery and structured recovery.
+
+### Search the Learning library
+
+`codetrap learn search "<question>" --json` searches Learning titles, summaries,
+full insight text and collection context using hybrid text/semantic retrieval.
+Use `learn show <insight-id> --json` to read the result, `learn index-status --json`
+to inspect coverage, and `learn reindex --json` to build/update vectors with the
+configured embedding provider. The web Learning search uses the same retrieval
+and shows matching passages. Missing/stale indexes produce explicit diagnostics;
+ordinary search never downloads a model. Learning results are educational content,
+not experience rules. HTML-only content is not yet indexed; see
+[Learning search](docs/interactive-study.md#搜索学习内容).

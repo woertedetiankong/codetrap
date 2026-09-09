@@ -1,9 +1,10 @@
 # Task Index
 
-Current session entry (2026-09-08): [release 0.1.12](2026-09-08-release-0.1.12/task-brief.md). npm latest and GitHub binaries published. Read the [handoff](2026-09-08-release-0.1.12/handoff.md).
+Current session entry (2026-09-08): [Learning search](2026-09-08-learning-search/task-brief.md). Source implementation verified; npm remains 0.1.12.
 
 | Module / Slice | Status | Task Dossier | Latest Handoff | Depends On | Referenced By | Notes |
 |---|---|---|---|---|---|---|
+| Learning search | Complete | [task](2026-09-08-learning-search/task-brief.md) | [handoff](2026-09-08-learning-search/handoff.md) | Learning bodies, embedding runtime | Interactive study docs, study skill | Body keywords, semantic/hybrid passages, explicit indexing and project-safe web search. |
 | Release 0.1.12 | Published | [task](2026-09-08-release-0.1.12/task-brief.md) | [handoff](2026-09-08-release-0.1.12/handoff.md) | Three skills, AI-assisted UX | Release playbook | npm latest and five-platform binaries published; full preflight and isolated installation verified. |
 | AI-assisted UX | Done | [task](2026-09-08-ai-assisted-ux/task-brief.md) | [handoff](2026-09-08-ai-assisted-ux/handoff.md) | Usability audit, three skills | Interactive study docs | Explicit task/destination handoff, honest status, responsive drafts, CLI recovery; 107/107 suites pass. |
 | Three default skill entries | Done | [task](2026-09-08-three-skill-entries/task-brief.md) | [handoff](2026-09-08-three-skill-entries/handoff.md) | Interactive study, client setup | README, installation | Three defaults and opt-in history; backed-up legacy migration and resource-aware health. |

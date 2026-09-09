@@ -1,3 +1,4 @@
+import { createLearningSearch } from "./learning-search";
 import { mountAIHandoff } from "./ai-handoff";
 import { mountStudyPlayer } from "./study-player";
 import { createImpactRequests } from "../client-impact-requests";
@@ -81,6 +82,18 @@ export function mountWorkspace(boot) {
 
 
 
+
+    const learningSearch = createLearningSearch({
+      context: () => ({project:state.projectRoot,scope:state.learningScope,query:state.learningFilters.query,active:state.mainView === "learning",revision:JSON.stringify([state.learningInsights,state.learningCollections])}),
+      api,
+      changed: () => {
+        if (state.mainView !== "learning") return;
+        const input=el("learning-search"), focused=document.activeElement===input, start=input?.selectionStart, end=input?.selectionEnd;
+        snapshotLearningDraftFromDom();
+        renderLearningShelf();renderLearningDetail();
+        if(focused){const next=el("learning-search");next?.focus();next?.setSelectionRange(start,end);}
+      }
+    });
 
     const impactRequests = createImpactRequests({ state, api, route: () => syncWorkspaceRoute(true), changed: background => {
       if (state.mainView === "impact") renderImpactAfterRefresh(background ? captureImpactScrollPosition() : null, background);
@@ -633,7 +646,7 @@ export function mountWorkspace(boot) {
 
     function replaceLearningImpact(key, impact) { catalog.replace(key, impact); }
     function loadLearningRunsForCurrentInsight() { return catalog.runs(); }
-    function loadLearningInsights() { return catalog.load(); }
+    function loadLearningInsights() { learningSearch.ensure(); return catalog.load(); }
 
     function renderLearningLoad(container) {
       if (state.learningLoad !== "loading" && state.learningLoad !== "error") return false;
@@ -725,6 +738,7 @@ export function mountWorkspace(boot) {
     }
 
     function renderActiveView() {
+      learningSearch.ensure();
       renderMainViewButtons();
       syncDocumentTitle();
       if (state.routeError) {
@@ -1027,6 +1041,7 @@ export function mountWorkspace(boot) {
       return [
         insight.title,
         insight.summary,
+        insight.body,
         ...(insight.tags || []),
         ...(insight.topics || []),
         ...(insight.source_refs || []),
@@ -1044,7 +1059,10 @@ export function mountWorkspace(boot) {
         const collection = membership ? learningCollection(membership.collection_key) : null;
         const status = learningStatus(insight);
         const sourceType = insight.source_type || collection?.source_type || "other";
-        if (query && !learningInsightSearchText(insight).includes(query)) return false;
+        if (query) {
+          const match=learningSearch.matches(insight.library_key);
+          if(match === false || (match === null && !learningInsightSearchText(insight).includes(query))) return false;
+        }
         if (state.learningFilters.status && state.learningFilters.status !== status) return false;
         if (state.learningFilters.sourceType && sourceType !== state.learningFilters.sourceType) return false;
         if (state.learningFilters.tag && !(insight.tags || []).includes(state.learningFilters.tag)) return false;
@@ -1061,6 +1079,7 @@ export function mountWorkspace(boot) {
     function renderLearningShelf() {
       if (state.mainView !== "learning") return;
       if (renderLearningLoad(el("candidates"))) return;
+      learningSearch.ensure();
       const insights = state.learningInsights;
       const visible = filteredLearningInsights();
       if (!state.routeInsightKey && !visible.some((insight) => insight.library_key === state.insightId)) {
@@ -1158,6 +1177,13 @@ export function mountWorkspace(boot) {
       const launcher = insights.length ? '<details class="ai-handoff-launch"><summary>' + (state.locale === 'zh' ? '和 AI 开始新任务' : 'Start a new task with AI') + '</summary>' + learningPromptCard('ai-handoff-catalog') + '</details>' : '';
       el("candidates").innerHTML = controls + launcher + '<div class="learning-catalog">' + (visible.length ? collectionsHtml + standaloneHtml : empty) + '</div>';
       bindLearningPrompt(el("candidates"));
+      el("learning-search")?.after(learningSearch.controls(state.locale === "zh"));
+      if(state.learningFilters.query.trim()) el("candidates").querySelectorAll("[data-learning-insight]").forEach(button => {
+        const hit=learningSearch.hit(button.dataset.learningInsight);if(!hit)return;
+        const note=document.createElement("span");note.className="learning-match-snippet";
+        note.textContent=(hit.sources.includes("semantic") ? (state.locale === "zh" ? "语义相关 · " : "Semantic · ") : "")+hit.snippet;
+        button.append(note);
+      });
 
       el("learning-filters")?.querySelector("summary").addEventListener("click", () => {
         state.learningFiltersOpen = !el("learning-filters").open;
@@ -2047,7 +2073,6 @@ export function mountWorkspace(boot) {
         const approved = candidate.review?.status === "approved";
         return `<div class="actions insight-actions">
           <button id="save" ${disabled}>${escapeHtml(t("action.saveDraft"))}</button>
-          <button id="approve" ${disabled}>${escapeHtml(t(approved ? "action.reapprove" : "action.approveForAgent"))}</button>
           <button id="apply-insight" class="primary" ${disabled}>${escapeHtml(t(approved ? "action.addToLearning" : "action.approveAndAddLearning"))}</button>
           <button id="reject" class="danger" ${disabled}>${escapeHtml(t("action.reject"))}</button>
           <span id="candidate-draft-state" class="action-hint">${escapeHtml(t("hint.insightReviewActions"))}</span>
@@ -2068,7 +2093,6 @@ export function mountWorkspace(boot) {
           : "";
         return `<div class="actions"><span class="pill ${reviewCssClass(candidate)}">${escapeHtml(reviewLabel(candidate))}</span>${viewTrap}${cleanDeleted}${rollback}</div>`;
       }
-      const approved = candidate.review?.status === "approved";
       const conflictActions = review.conflicts().length ? `<div class="candidate-conflict-actions">
         <button id="accept-anyway" ${disabled}>${escapeHtml(t("action.acceptAnyway"))}</button>
         <input id="supersedes" placeholder="${escapeAttr(t("placeholder.supersedesId"))}" style="width:180px" ${disabled}>
@@ -2080,10 +2104,10 @@ export function mountWorkspace(boot) {
           <button id="accept" class="primary" ${disabled}>${escapeHtml(t("action.accept"))}</button>
           <button id="reject" class="danger" ${disabled}>${escapeHtml(t("action.reject"))}</button>
         </div>
-        <details class="candidate-more-actions">
+        ${conflictActions ? `<details class="candidate-more-actions">
           <summary>${escapeHtml(t("action.moreReviewOptions"))}</summary>
-          <div class="candidate-more-panel"><button id="approve" ${disabled}>${escapeHtml(t(approved ? "action.reapprove" : "action.approve"))}</button>${conflictActions}</div>
-        </details>
+          <div class="candidate-more-panel">${conflictActions}</div>
+        </details>` : ""}
         <span id="candidate-draft-state" class="action-hint">${escapeHtml(t("hint.acceptUsesCurrentDraft"))}</span>
       </div>`;
     }

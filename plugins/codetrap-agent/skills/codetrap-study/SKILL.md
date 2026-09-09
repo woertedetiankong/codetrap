@@ -8,6 +8,18 @@ description: Help users learn from blogs, documentation, code or existing Learni
 Use `codetrap` from the intended project; in this source checkout use
 `bun run src/index.ts` if the CLI is unavailable. Match the user's language.
 
+## Find existing learning
+
+Use `codetrap learn search "<question>" --json` in the intended project to find
+existing Learning content before recreating it. This hybrid search covers titles,
+summaries, full insight bodies and collection context. Inspect `diagnostics` for
+missing/stale indexes or unavailable semantic search; read a match with
+`codetrap learn show <insight-id> --json`. Results are study material, not approved
+experience rules. HTML-only text is not indexed yet; follow the associated record
+to its lesson. Use `codetrap learn index-status --json` to inspect coverage and
+`codetrap learn reindex --json` when building or refreshing the Learning index is
+within the user's request. Reindex uses the configured embedding provider.
+
 ## Choose what to save
 
 A learning request defaults to Learning only. Honor an explicit request for

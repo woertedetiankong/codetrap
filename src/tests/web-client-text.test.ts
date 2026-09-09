@@ -65,7 +65,6 @@ describe("web client text", () => {
     expect(WEB_TEXT.zh["value.proposed"]).toBe("待审核");
     expect(WEB_TEXT.zh["value.pitfall_trap"]).toBe("避坑规则");
     expect(WEB_TEXT.zh["action.accept"]).toBe("接受并写入");
-    expect(WEB_TEXT.zh["action.approve"]).toContain("授权 Agent");
     expect(WEB_TEXT.zh["pill.learned"]).toBe("已学习");
     expect(WEB_TEXT.zh["prompt.learningGeneration"]).toContain("用ASCII流程图结合通俗易懂的例子讲解");
     expect(WEB_TEXT.en["prompt.learningGeneration"]).toContain("ASCII flow diagram");

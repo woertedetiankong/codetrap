@@ -93,6 +93,7 @@ function showHelp(): void {
   console.log("  supersede_trap        Mark one trap as superseded by another");
   console.log("  embed                 Generate embeddings for semantic search (local Hugging Face, Ollama, or Jina)");
   console.log("  embeddings            Manage embedding profiles, provider config, and reindexing");
+  console.log("  learn                 Search/read Learning content, rebuild its index, or manage lessons/history");
   console.log("  session               Record implementation notes and capture candidate traps");
   console.log("  phase2                Manage authorized patches, insights, currency, and learning metrics");
   console.log("  phase3                Govern cross-client skills and inspect bounded snapshot storage");

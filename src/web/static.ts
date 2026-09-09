@@ -832,6 +832,9 @@ export const WEB_INDEX_HTML = `<!doctype html>
 
     .health-metric.active { box-shadow: inset 3px 0 0 var(--accent); }
 
+    .learning-search-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 0 12px; font-size: 12px; color: var(--muted); }
+    .learning-search-tools button { min-height: 36px; font-size: 12px; }
+    .learning-match-snippet { grid-column: 1 / -1; display: block; font-size: 12px; line-height: 1.6; color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; text-align: left; }
     .learning-empty {
       display: grid;
       gap: 8px;

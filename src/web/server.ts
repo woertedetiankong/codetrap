@@ -1,3 +1,5 @@
+import { LearningSearch, type LearningSearchMode } from "../lib/learning-search";
+import { EmbeddingRuntime } from "../lib/embedding-runtime";
 import { StudyArtifacts } from "../lib/study-artifacts";
 import { EvalSuiteOperations } from "../lib/eval-suite-operations";
 import { ExperienceRevisions } from "../lib/experience-revisions";
@@ -386,6 +388,28 @@ async function routeApi(request: Request, url: URL, context: WebContext): Promis
     }
   }
 
+  if (request.method === "GET" && url.pathname === "/api/learning/search") {
+    const projectRoot = projectRootFromQuery(url, context), scope = learningScopeQuery(url);
+    const roots = scope === "all" ? loadWebProjectRegistry(context.home).projects.map(p => p.root) : [projectRoot];
+    const query = requiredQuery(url, "q"), mode = (url.searchParams.get("mode") ?? "hybrid") as LearningSearchMode;
+    if (!query.trim() || query.length > 2000 || !["fts", "semantic", "hybrid"].includes(mode)) throw new WebHttpError(400, "Provide a query of 1–2000 characters and mode fts, semantic or hybrid.");
+    const runtime = EmbeddingRuntime.fromEnvironment(process.env, loadCodetrapConfig(context.home), context.home);
+    const results = [], diagnostics = [];
+    // Share the local runtime and process projects sequentially to bound inference memory.
+    for (const root of roots) {
+      const response = await new LearningSearch(root, runtime).search(query, mode, 100);
+      results.push(...response.results.map(item => ({...item, library_key:learningKey(root,item.insight_id)})));
+      diagnostics.push(...response.diagnostics.map(item => ({...item, project_root:root})));
+    }
+    return jsonResponse({success:true,project_root:projectRoot,scope,query,mode,results:results.sort((a,b)=>b.score-a.score),diagnostics});
+  }
+  if (request.method === "POST" && url.pathname === "/api/learning/reindex") {
+    const body = await readJsonBody(request);
+    stringBodyField(body, "projectRoot");
+    const projectRoot = projectRootFromBody(body, context);
+    const runtime = EmbeddingRuntime.fromEnvironment(process.env, loadCodetrapConfig(context.home), context.home);
+    return jsonResponse(await new LearningSearch(projectRoot, runtime).reindex());
+  }
   if (request.method === "GET" && url.pathname === "/api/learning/artifacts") {
     requiredQuery(url, "project");
     const projectRoot = projectRootFromQuery(url, context);

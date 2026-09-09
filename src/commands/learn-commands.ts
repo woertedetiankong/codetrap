@@ -1,3 +1,5 @@
+import { LearningSearch, type LearningSearchMode } from "../lib/learning-search";
+import { Phase2Store } from "../lib/phase2-store";
 import { cmdStudyArtifact } from "./study-commands";
 import { homedir } from "node:os";
 import type { TrapStore } from "../lib/store";
@@ -10,9 +12,9 @@ import { parseLearningSourceId, type LearningSourceId } from "../domain/learning
 import { errorResult, jsonResult, textResult, type CommandResult } from "./command-result";
 import { errorFrom, parseArgs } from "./command-args";
 
-const USAGE = "Usage: codetrap learn <sources|evidence-pack|review|stage|reviews|delete|artifact>";
+const USAGE = "Usage: codetrap learn <sources|evidence-pack|review|stage|reviews|delete|artifact|search|show|reindex|index-status>";
 
-export function cmdLearn(args: string[], store: TrapStore, trapOperations: TrapOperations): CommandResult {
+export async function cmdLearn(args: string[], store: TrapStore, trapOperations: TrapOperations): Promise<CommandResult> {
   const sub = args[0];
   const rest = args.slice(1);
   const projectRoot = store.getProjectRoot();
@@ -28,6 +30,19 @@ export function cmdLearn(args: string[], store: TrapStore, trapOperations: TrapO
 
   try {
     switch (sub) {
+      case "search": case "show": case "reindex": case "index-status": {
+        const {opts, positionals} = parseArgs(rest), search = new LearningSearch(projectRoot);
+        let value: unknown;
+        if (sub === "search") value = await search.search(positionals.join(" "), (opts.mode ?? "hybrid") as LearningSearchMode, Number(opts.limit ?? 20));
+        else if (sub === "reindex") value = await search.reindex();
+        else if (sub === "index-status") value = {success:true,...search.status()};
+        else {
+          const insight = new Phase2Store(projectRoot).listInsights().find(item => item.id === positionals[0]);
+          if (!insight) throw new Error("Learning insight not found. Use codetrap learn search <query> --json.");
+          value = {success:true,kind:"learning",project_root:projectRoot,insight};
+        }
+        return opts.json !== undefined ? jsonResult(value) : textResult(JSON.stringify(value,null,2));
+      }
       case "artifact": return cmdStudyArtifact(rest, projectRoot);
       case "sources":
         return cmdLearnSources(rest, learning);
