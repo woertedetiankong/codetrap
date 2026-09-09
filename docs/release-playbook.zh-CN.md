@@ -218,7 +218,9 @@ git status --short
 
 ### 2. 更新版本号
 
-修改 [package.json](../package.json)：
+同步更新 `package.json`、`src/lib/version.ts` 和 `plugins/codetrap-agent/.codex-plugin/plugin.json` 的版本；插件清单也必须与 npm 包版本一致。
+
+例如 [package.json](../package.json)：
 
 ```json
 {
