@@ -1,9 +1,10 @@
 # Task Index
 
-Current session entry (2026-09-08): [AI-assisted UX](2026-09-08-ai-assisted-ux/task-brief.md). Builds on the completed three-skill consolidation; source committed; not released to npm. Read the [handoff](2026-09-08-ai-assisted-ux/handoff.md).
+Current session entry (2026-09-08): [release 0.1.12](2026-09-08-release-0.1.12/task-brief.md). npm latest and GitHub binaries published. Read the [handoff](2026-09-08-release-0.1.12/handoff.md).
 
 | Module / Slice | Status | Task Dossier | Latest Handoff | Depends On | Referenced By | Notes |
 |---|---|---|---|---|---|---|
+| Release 0.1.12 | Published | [task](2026-09-08-release-0.1.12/task-brief.md) | [handoff](2026-09-08-release-0.1.12/handoff.md) | Three skills, AI-assisted UX | Release playbook | npm latest and five-platform binaries published; full preflight and isolated installation verified. |
 | AI-assisted UX | Done | [task](2026-09-08-ai-assisted-ux/task-brief.md) | [handoff](2026-09-08-ai-assisted-ux/handoff.md) | Usability audit, three skills | Interactive study docs | Explicit task/destination handoff, honest status, responsive drafts, CLI recovery; 107/107 suites pass. |
 | Three default skill entries | Done | [task](2026-09-08-three-skill-entries/task-brief.md) | [handoff](2026-09-08-three-skill-entries/handoff.md) | Interactive study, client setup | README, installation | Three defaults and opt-in history; backed-up legacy migration and resource-aware health. |
 | npm 0.1.11 release | Done | [task](2026-09-08-release-0.1.10/task-brief.md) | [handoff](2026-09-08-release-0.1.10/handoff.md) | Interactive study artifacts | Release playbook | npm latest and GitHub release 0.1.11; Windows/Linux CI passed. |

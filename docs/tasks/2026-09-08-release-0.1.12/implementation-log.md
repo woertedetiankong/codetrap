@@ -5,3 +5,5 @@
 - Verify installation in a fresh temporary prefix, preserving the maintainer's source-linked CLI.
 
 - Initial preflight caught plugin manifest version drift (106/107 suites passed). Aligned the plugin version and documented all three version sources in the release playbook, then reran preflight.
+
+- Public npm latest returned 0.1.12. First install used cached 0.1.11 metadata; a fresh cache with --prefer-online installed 0.1.12 successfully and setup dry-run passed.

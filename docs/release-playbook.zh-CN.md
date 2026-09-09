@@ -8,7 +8,7 @@ Agent 安全边界：除非用户明确要求执行发布，不要运行 `git pu
 
 ## 当前发布渠道
 
-2026-09-08 已发布 `0.1.11`：npm `latest` 与 GitHub Release 均为此版本，包含互动 HTML／SVG 学习课件。`0.1.10` 未发布到 npm。其他电脑可运行 `npm install -g codetrap@latest`，再运行 `codetrap setup codex` 或 `codetrap setup claude` 刷新 Skills。npm 安装仍需要 Bun 运行时。
+2026-09-08 已发布 `0.1.12`：npm `latest` 与 GitHub Release 均为此版本，包含三个默认 Skill、可选历史审核入口，以及 AI 学习任务卡和课件导入错误指引。其他电脑可运行 `npm install -g codetrap@latest`，再运行 `codetrap setup codex` 或 `codetrap setup claude` 刷新 Skills；如需历史审核，可加 `--with-review`。npm 安装仍需要 Bun 运行时。`0.1.10` 未发布到 npm。
 
 codetrap 现在有三种安装方式：
 
@@ -27,9 +27,9 @@ npm view codetrap version bin dist-tags
 期望看到类似：
 
 ```text
-version = '0.1.7'
+version = '0.1.12'
 bin = { codetrap: 'bin/codetrap' }
-dist-tags = { latest: '0.1.7' }
+dist-tags = { latest: '0.1.12' }
 ```
 
 如果之后已经发布更高版本，实际查询结果应是最新版本。
@@ -37,7 +37,7 @@ dist-tags = { latest: '0.1.7' }
 当前 GitHub Release：
 
 ```bash
-gh release view v0.1.7 --repo woertedetiankong/codetrap
+gh release view v0.1.12 --repo woertedetiankong/codetrap
 ```
 
 ## 普通用户安装命令
@@ -342,12 +342,12 @@ npm view codetrap version bin dist-tags --json
 
 ```json
 {
-  "version": "0.1.7",
+  "version": "0.1.12",
   "bin": {
     "codetrap": "bin/codetrap"
   },
   "dist-tags": {
-    "latest": "0.1.7"
+    "latest": "0.1.12"
   }
 }
 ```
