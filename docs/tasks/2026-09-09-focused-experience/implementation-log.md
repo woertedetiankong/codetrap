@@ -21,3 +21,13 @@ Keep recorded exposure, feedback and task validation separate; do not infer
 adoption or prevented mistakes. Reuse Run/revision links and the scoped archive
 command instead of introducing another mutation API. Update Skill reporting
 examples and the shared agent template to match those evidence boundaries.
+
+### 2026-09-09 — Preserve browser assertions while budgeting CI startup and navigation
+
+Remote commit `82c6cd0` passed Linux CI and both retrieval benchmarks. Windows
+passed the new tests but timed out two existing workbench browser journeys at
+their fixed 15/30-second test deadlines, before reporting an action failure.
+Use the existing shared browser timeout/page configuration for that suite and
+settle breakpoint rendering before interacting. Keep all assertions and local
+deadlines; CI receives the same bounded workflow budget used by other browser
+suites, with shorter per-action/navigation deadlines for actionable failures.

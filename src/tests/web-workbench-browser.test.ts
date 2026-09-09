@@ -1,4 +1,4 @@
-import { chromeExecutablePath, launchBrowser } from "./browser-helper";
+import { browserTestTimeout, chromeExecutablePath, configureBrowserPage, launchBrowser } from "./browser-helper";
 import { expect, test } from "bun:test";
 import { learningFixture } from "./web-learning-fixture";
 import { ObservationRunRecorder } from "../lib/observation-recorder";
@@ -22,7 +22,7 @@ browserTest("search settings recover from a failed load and preserve unsaved pro
   } });
   const browser = await launch();
   try {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }); page.setDefaultTimeout(5000);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }); configureBrowserPage(page);
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.port}/?token=learning-token#/embeddings`);
     await page.locator("#detail [data-embedding-retry]").waitFor();
@@ -44,12 +44,12 @@ browserTest("search settings recover from a failed load and preserve unsaved pro
     expect(writes).toBe(1);
     expect(errors).toEqual([]);
   } finally { release(); await browser.close(); server.stop(true); }
-}, 20000);
+}, browserTestTimeout(20000));
 
 browserTest("Learning distinguishes filtered results from an empty library and keeps filters usable after resizing", async () => {
   const fixture = learningFixture(), server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: fixture.handler }), browser = await launch();
   try {
-    const page = await browser.newPage({ viewport: { width: 1487, height: 900 } }); page.setDefaultTimeout(5000);
+    const page = await browser.newPage({ viewport: { width: 1487, height: 900 } }); configureBrowserPage(page);
     await page.goto(`http://127.0.0.1:${server.port}/?token=learning-token#/learning`);
     await page.locator("#learning-search").waitFor();
     expect(await page.locator("#learning-filters").getAttribute("open")).toBeNull();
@@ -58,6 +58,8 @@ browserTest("Learning distinguishes filtered results from an empty library and k
     expect(await page.locator("#copy-learning-prompt").count()).toBe(0);
     await page.locator("#learning-filters summary").click();
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await page.locator("#clear-learning-filters").waitFor({ state: "visible" });
     expect(await page.locator("#clear-learning-filters").isVisible()).toBe(true);
     await page.locator("#clear-learning-filters").click();
     await page.locator("[data-learning-insight]").first().click();
@@ -65,7 +67,7 @@ browserTest("Learning distinguishes filtered results from an empty library and k
     expect(await page.locator(".learning-title").evaluate(node => node.tagName)).toBe("H1");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   } finally { await browser.close(); server.stop(true); }
-}, 15000);
+}, browserTestTimeout(15000));
 
 browserTest("Impact navigation works by keyboard and all remaining destinations fit narrow and wide viewports", async () => {
   const fixture = learningFixture();
@@ -77,7 +79,7 @@ browserTest("Impact navigation works by keyboard and all remaining destinations 
   }
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: fixture.handler }), browser = await launch();
   try {
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); page.setDefaultTimeout(5000);
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); configureBrowserPage(page);
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.port}/?token=learning-token#/impact/overview`);
     await page.locator('[data-ia="menu"]').click();
@@ -89,6 +91,7 @@ browserTest("Impact navigation works by keyboard and all remaining destinations 
     expect(await page.locator('.rail').isVisible()).toBe(false);
     for(const width of [320,390,768,1024,1280,1487]){
       await page.setViewportSize({width,height:900});
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       if(width<=760){await page.locator('[data-ia="menu"]').click();await page.locator('.ia-sheet [data-ia="workspace"]').click();await page.locator('.ia-sheet').waitFor({state:'hidden'});}
       else await page.locator('.ia-root [data-ia="workspace"]').click();
       for(const view of ['learning','embeddings','impact']){
@@ -101,4 +104,4 @@ browserTest("Impact navigation works by keyboard and all remaining destinations 
     }
     expect(errors).toEqual([]);
   } finally { await browser.close(); server.stop(true); }
-}, 30000);
+}, browserTestTimeout(30000));

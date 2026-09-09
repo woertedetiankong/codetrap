@@ -33,6 +33,11 @@ diff-whitespace checks pass. Browser screenshots use disposable fixtures under
 [visual evidence](../../reviews/2026-09-09-focused-experience-assets/).
 Skill frontmatter validation passed using an ephemeral uv PyYAML environment.
 
+Remote `82c6cd0` passed all Linux tests and both retrieval benchmarks; Windows
+passed the new suites but timed out two existing workbench journeys. The follow-up
+uses shared CI browser deadlines and waits for breakpoint rendering, preserving
+all assertions. Check the final pushed commit's CI, not only the first run.
+
 ## Next Steps
 
 Invite a small number of developers to try their own correction/reuse flow.
