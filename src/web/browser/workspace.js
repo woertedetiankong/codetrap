@@ -116,7 +116,7 @@ export function mountWorkspace(boot) {
     const { renderImpactQueue, syncImpactOverviewLayout, renderImpactDetail, syncEvalDeferredNotice, snapshotEvalReviewDraftFromDom } = createImpactUI({ state, evalSuiteUI, revisionUI, el, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, api, syncWorkspaceRoute, showStatus, captureImpactScrollPosition, restoreImpactScrollPosition, loadImpactRun, loadImpactEvals, loadImpact, jumpToTrap, selectProject: (root) => { selectExperienceProject(root); syncWorkspaceRoute(); renderActiveView(); void loadImpact(); } });
     const { selectExperienceProject, openLearningConfirmedTrap, openLearningLinkedRun, openExperienceRun, openExperienceInsight } = createExperienceActions({ state, t, resetLibrary: () => library.reset(state.projectRoot), resetReview: () => review.reset(state.projectRoot), currentLearningInsight, snapshotLearningDraftFromDom, showStatus, resetObservationState, renderProjects, renderSessions, renderActiveView, revealCompactDetail, jumpToTrap, loadImpactRun, loadLearningInsights, selectLearningInsight });
     const library = createLibraryUI({
-      context: () => ({ project: state.projectRoot, active: state.mainView === "library" && !state.routeError, options: state.options }),
+      context: () => ({ project: state.projectRoot, locale: state.locale, active: state.mainView === "library" && !state.routeError, options: state.options }),
       api, t, escapeHtml, escapeAttr, valueLabel, formatDisplayDate, optionPairs, kv, textBlock, renderEvidence,
       isCompactShell, syncWorkspaceRoute, restoreWorkspacePosition, showStatus,
       revisionHistory: (...args) => revisionUI.history(...args),
@@ -900,7 +900,13 @@ export function mountWorkspace(boot) {
           </button>
           ${renderCandidateRowAction(candidate)}
         </div>
-      `).join("") : '<div class="empty">' + escapeHtml(t(review.state.view === "inbox" ? "empty.noPending" : "empty.noReviewed")) + '</div>';
+      `).join("") : '<div class="empty"><p>' + escapeHtml(t(review.state.view === "inbox" ? "empty.noPending" : "empty.noReviewed")) + '</p>' +
+        (state.projectRoot && !review.state.candidates.length && !review.state.candidateId
+          ? '<button type="button" id="review-start-experience">' + escapeHtml(t("action.rememberCorrection")) + '</button>' : '') + '</div>';
+      el("review-start-experience")?.addEventListener("click", () => {
+        revealCompactDetail();
+        el("detail").querySelector("textarea")?.focus();
+      });
       document.querySelectorAll("[data-candidate]").forEach((button) => {
         button.addEventListener("click", () => {
           review.selectCandidate(button.dataset.candidate);
@@ -1924,7 +1930,11 @@ export function mountWorkspace(boot) {
       const candidate = review.current();
       el("detail-meta").textContent = candidate ? candidate.id + " / " + valueLabel(candidate.status) : t("meta.selectCandidate");
       if (!candidate) {
-        el("detail").innerHTML = '<div class="empty">' + escapeHtml(t(review.state.candidateId ? "route.itemMissing" : "empty.noCandidateSelected")) + '</div>';
+        const start = state.projectRoot && !review.state.candidateId && !review.state.candidates.length;
+        el("detail").innerHTML = start
+          ? '<div class="scroll experience-start"><div data-ai-handoff="memory" id="review-memory-handoff"></div></div>'
+          : '<div class="empty">' + escapeHtml(t(review.state.candidateId ? "route.itemMissing" : "empty.noCandidateSelected")) + '</div>';
+        if (start) mountAIHandoff(el("review-memory-handoff"), state.projectRoot, state.locale, "memory");
         review.attachMissingRecovery();
         return;
       }

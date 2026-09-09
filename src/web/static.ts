@@ -860,6 +860,10 @@ export const WEB_INDEX_HTML = `<!doctype html>
     .ai-handoff button:active { transform: scale(.98); transition: none; }
     .ai-handoff :is(button, select, textarea, input, summary):focus-visible, .ai-handoff-launch > summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
     .ai-handoff-status:empty { display: none; }
+    .experience-start { padding: clamp(16px, 3vw, 32px); }
+    .experience-start .ai-handoff { margin-inline: auto; }
+    .experience-maintenance p { line-height: 1.7; }
+    .experience-maintenance pre { overflow-x: auto; }
     .ai-handoff .ai-handoff-status { color: var(--text); }
     @media (max-width: 480px) { .ai-handoff { padding: 14px; } .ai-handoff-fields { grid-template-columns: 1fr; } .ai-handoff-actions button { width: 100%; } }
     @media (prefers-reduced-motion: reduce) { .ai-handoff button { transition: none; } .ai-handoff button:active { transform: none; } }

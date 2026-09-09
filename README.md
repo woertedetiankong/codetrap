@@ -80,6 +80,14 @@ The packaged template is the source of truth for exact agent behavior. It tells 
 
 For a quick manual check, agents can run `codetrap search "<task keywords>" --mode hybrid --json` from the project cwd.
 
+Search applies `--limit` across project and global results. CLI/MCP action cards
+and recorded exposure ranks use the same merged order, including searches below
+the limit. Semantic scores and successful hybrid fusion scores sort across scopes.
+FTS scores depend on each database's corpus; hybrid fallback also changes scale.
+For those cases, results interleave the scopes' local rankings (project first on
+ties), with a `cross_scope_rank_merge` diagnostic. Raw scores remain available
+but are not a cross-scope confidence measure. Scope and ID together identify a lesson.
+
 ## Features
 
 - **Structured trap recording** — title, category, context, mistake, fix, severity, tags, lifecycle, evidence, before/after code
@@ -868,7 +876,15 @@ observation events.
 
 Accepted Learning candidates expose **View confirmed lesson**, using the actual
 accepted scope and ID. Related task links select the Insight's source project.
-Each Library detail has an **experience path**: explicit Learning provenance,
+Empty Review and Library views offer **Remember this correction**. Describe a
+real correction, copy the request to the AI conversation where it happened, then
+review the candidate before saving. Copying does not send data or create a record.
+Correction drafts stay in the current tab, shared between Review and Library;
+Learning uses a separate draft and destination. Filtered-empty Library views
+offer **Clear filters**, rather than suggesting that no experience exists.
+
+Each Library detail opens with applicability and original source evidence after
+the lesson itself. Its **Recorded use** section shows linked Learning content,
 confirmed lesson, recorded exposures, and current feedback. Source links return
 to Learning; task rows open the original Run evidence. Counts are project-local,
 including for global lessons, and the Run list pages through 20 items at a time.
@@ -878,6 +894,10 @@ are excluded. Run checks describe the whole task and do not establish adoption
 or a causal effect. Missing/corrupt observation and Learning sources degrade
 independently without hiding the confirmed lesson. Reading this view does not
 initialize observation or modify stored history.
+**Correct or pause this experience** explains the existing feedback/revision
+path and shows the scoped archive command; archiving retains the record and history.
+Agent reports describe actual actions and verification rather than imagined
+mistakes or unmeasured benefit.
 
 **Create Agent experience candidate** prepares a deterministic local
 Trigger/Mistake/Fix draft for editing. Preview makes zero model calls and writes

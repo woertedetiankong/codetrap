@@ -1,5 +1,6 @@
 import type { TrapActionCard, TrapSearchResult } from "../domain/trap";
 import type { Scope } from "./constants";
+import { orderedSearchResults } from "./search-order";
 
 const MAX_CARD_FIELD_LENGTH = 220;
 
@@ -21,9 +22,7 @@ export function toTrapActionCard(result: TrapSearchResult, scope: Scope): TrapAc
 }
 
 export function toTrapActionCards(groups: { results: TrapSearchResult[]; scope: string }[]): TrapActionCard[] {
-  return groups.flatMap((group) =>
-    group.results.map((result) => toTrapActionCard(result, group.scope as Scope))
-  );
+  return orderedSearchResults(groups).map(({ result, scope }) => toTrapActionCard(result, scope as Scope));
 }
 
 function compact(value: string): string {

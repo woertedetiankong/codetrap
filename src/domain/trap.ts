@@ -66,6 +66,8 @@ export interface TrapInput {
 export interface TrapSearchResult {
   trap: Trap;
   rank: number;
+  /** One-based merged position, independent of transport scope grouping. */
+  position?: number;
   sources?: ("fts" | "semantic")[];
   score?: number;
   diagnostics?: TrapSearchDiagnostic[];

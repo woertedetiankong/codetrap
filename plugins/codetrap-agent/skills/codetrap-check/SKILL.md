@@ -5,7 +5,7 @@ description: Search codetrap experience on request or before non-trivial coding 
 
 For an explicit search request, search and report relevant results without implying a code change. This entry also replaces codetrap-search.
 
-Before generating any non-trivial code, pause and check the codetrap database for relevant pitfalls. This is a "pre-flight check" that prevents you from repeating known mistakes.
+Before generating any non-trivial code, check the codetrap database for relevant pitfalls that may apply to the task.
 
 Use `codetrap` when it is available on `PATH`. In a Codetrap source checkout
 where the global command is intentionally absent, run the same arguments with
@@ -60,14 +60,16 @@ For each relevant trap found in the reviewed top cards:
 1. Confirm the trap context matches the current task, file, module, or failure mode
 2. For matching cards, run `next_action.command` from CLI JSON before editing when the card is highly relevant or has `critical`/`error` severity; with MCP, call `get_trap` with `next_action.details_args.id` and `next_action.details_args.scope`
 3. Adjust your code generation to follow the correct approach
-4. If a trap matches exactly what you were about to do, explicitly tell the user: "I was about to [avoid], but the codetrap database says [do_instead]. I'll do it the right way."
+4. Describe the relevant lesson and the action you actually took. Do not invent a counterfactual mistake ("I would have done X") or claim the lesson prevented an error without evidence.
 
 ## Step 4: Report
 
-Briefly tell the user which traps you found and how you adjusted:
+Briefly tell the user which traps applied, what you did, and any verification completed (or still missing):
 ```
-Checked codetrap: found 2 relevant pitfalls. Avoiding [X] and using [Y] instead.
+Checked codetrap: [scope] #[id] applies to [condition]. Used [approach]; [check] passed / has not been run.
 ```
+
+Retrieval shows that a lesson was surfaced. An agent's application report and a passing task check do not, by themselves, establish user-confirmed usefulness or prove that the lesson prevented a mistake.
 
 If this is an explicit `/codetrap-check` run or first-run setup and no traps match, say: "Checked codetrap: no applicable traps found; continuing." For routine automatic checks, keep the report short.
 

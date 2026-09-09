@@ -1,9 +1,10 @@
 # Task Index
 
-Current session entry (2026-09-08): [Learning search](2026-09-08-learning-search/task-brief.md). Source implementation verified; npm remains 0.1.12.
+Current session entry (2026-09-09): [Focused experience workflow](2026-09-09-focused-experience/task-brief.md). Implementation and local validation complete; both installed clients refreshed. Source delivery uses main; npm publication is separate.
 
 | Module / Slice | Status | Task Dossier | Latest Handoff | Depends On | Referenced By | Notes |
 |---|---|---|---|---|---|---|
+| Focused experience workflow | Complete | [task](2026-09-09-focused-experience/task-brief.md) | [handoff](2026-09-09-focused-experience/handoff.md) | Search, Library state, AI-assisted UX | CLI/MCP, observation, Review/Library | Unified result order, correction handoff, readable evidence; 110 other suites plus corrected browser suite pass. |
 | Learning search | Complete | [task](2026-09-08-learning-search/task-brief.md) | [handoff](2026-09-08-learning-search/handoff.md) | Learning bodies, embedding runtime | Interactive study docs, study skill | Body keywords, semantic/hybrid passages, explicit indexing and project-safe web search. |
 | Release 0.1.12 | Published | [task](2026-09-08-release-0.1.12/task-brief.md) | [handoff](2026-09-08-release-0.1.12/handoff.md) | Three skills, AI-assisted UX | Release playbook | npm latest and five-platform binaries published; full preflight and isolated installation verified. |
 | AI-assisted UX | Done | [task](2026-09-08-ai-assisted-ux/task-brief.md) | [handoff](2026-09-08-ai-assisted-ux/handoff.md) | Usability audit, three skills | Interactive study docs | Explicit task/destination handoff, honest status, responsive drafts, CLI recovery; 107/107 suites pass. |

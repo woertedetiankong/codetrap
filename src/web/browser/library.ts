@@ -3,8 +3,9 @@ import type { LibraryEvidence, LibraryScope, LibraryTrap } from "../client-libra
 import { experiencePathContent } from "../client-experience";
 import type { Translate } from "./platform";
 import { readerIcon } from "./reader-icons";
+import { mountAIHandoff } from "./ai-handoff";
 
-interface LibraryContext { project: string | null; active: boolean; options: { scopes: string[]; categories: string[]; stale_after_days: number } }
+interface LibraryContext { project: string | null; locale?: string; active: boolean; options: { scopes: string[]; categories: string[]; stale_after_days: number } }
 interface Dependencies {
   context(): LibraryContext;
   api(path: string, options?: RequestInit): Promise<unknown>;
@@ -124,16 +125,24 @@ export function createLibraryUI(deps: Dependencies) {
         });
       }
       const clear = el("trap-filter-clear");
-      if (clear) {
-        clear.addEventListener("click", async () => {
-          state.filters = { scope: "", status: "", category: "", module: "", owner: "" };
-          state.search = "";
-          state.health = "all";
-          model.clearSelection();
-          syncWorkspaceRoute(true);
-          await load();
-        });
-      }
+      clear?.addEventListener("click", () => { void clearFilters(); });
+    }
+
+    async function clearFilters() {
+      state.filters = emptyLibraryFilters();
+      state.search = "";
+      state.health = "all";
+      model.clearSelection();
+      syncWorkspaceRoute(true);
+      await load();
+    }
+
+    function hasFilters() {
+      return Boolean(state.search.trim() || state.health !== "all" || Object.values(state.filters).some(Boolean));
+    }
+
+    function canStartExperience() {
+      return Boolean(state.project && state.list.status === "ready" && !model.traps().length && !hasFilters() && !state.routeKey);
     }
 
     function bindTrapFilter(id: string, key: keyof LibraryFilters) {
@@ -170,7 +179,7 @@ export function createLibraryUI(deps: Dependencies) {
         document.getElementById("library-list-retry")?.addEventListener("click", () => { void load(); });
         return;
       }
-      insights.innerHTML = renderLibraryHealth(model.traps());
+      insights.innerHTML = model.traps().length ? renderLibraryHealth(model.traps()) : "";
       rows.innerHTML = visible.length ? visible.map((trap) => `
         <button class="row ${trapKey(trap) === state.selectedKey ? "active" : ""}" aria-pressed="${trapKey(trap) === state.selectedKey}" data-trap-key="${escapeAttr(trapKey(trap))}">
           <span class="row-title">${escapeHtml(trap.title)}</span>
@@ -183,7 +192,15 @@ export function createLibraryUI(deps: Dependencies) {
           </span>
           <span class="subtle">${escapeHtml(trap.updated_at || trap.created_at || "")}</span>
         </button>
-      `).join("") : '<div class="empty">' + escapeHtml(t("empty.noTrapMatches")) + '</div>';
+      `).join("") : `<div class="empty"><p>${escapeHtml(t(canStartExperience() ? "empty.noActiveExperience" : "empty.noTrapMatches"))}</p>${canStartExperience()
+        ? `<button type="button" id="library-start-experience">${escapeHtml(t("action.rememberCorrection"))}</button>`
+        : hasFilters() ? `<button type="button" id="library-clear-empty">${escapeHtml(t("action.clearFilters"))}</button>` : ""}</div>`;
+      el("library-start-experience")?.addEventListener("click", () => {
+        activate(true);
+        renderTrapDetail();
+        el("detail").querySelector<HTMLTextAreaElement>("textarea")?.focus();
+      });
+      el("library-clear-empty")?.addEventListener("click", () => { void clearFilters(); });
       document.querySelectorAll<HTMLButtonElement>("[data-trap-key]").forEach((button) => {
         button.addEventListener("click", () => {
           model.select(button.dataset.trapKey || null, true);
@@ -241,7 +258,11 @@ export function createLibraryUI(deps: Dependencies) {
         return;
       }
       if (!trap) {
-        el("detail").innerHTML = '<div class="empty">' + escapeHtml(t("empty.noTrapSelected")) + '</div>';
+        el("detail").innerHTML = canStartExperience()
+          ? '<div class="scroll experience-start"><div data-ai-handoff="memory" id="library-memory-handoff"></div></div>'
+          : '<div class="empty">' + escapeHtml(t("empty.noTrapSelected")) + '</div>';
+        const handoff = document.getElementById("library-memory-handoff");
+        if (handoff) mountAIHandoff(handoff, state.project!, context().locale ?? "en", "memory");
         return;
       }
 
@@ -281,16 +302,29 @@ export function createLibraryUI(deps: Dependencies) {
             ${renderTrapCode(t("title.before"), detailTrap.before_code)}
             ${renderTrapCode(t("title.after"), detailTrap.after_code)}
           </div>
+          <details class="section reader-disclosure experience-applicability" open><summary>${escapeHtml(t("experience.applicability"))}</summary>
+            <div class="detail-kv">
+              ${kv(t("label.scope"), valueLabel(details.scope))}
+              ${kv(t("label.pathGlobs"), (detailTrap.path_globs || []).join(", ") || t("experience.unrestricted"))}
+              ${kv(t("label.module"), detailTrap.module || t("experience.unrestricted"))}
+              ${kv(t("label.owner"), detailTrap.owner || t("experience.unrestricted"))}
+            </div>
+          </details>
+          <details class="section reader-disclosure experience-evidence" open><summary>${escapeHtml(t("experience.provenance"))} · ${details.evidence.length}</summary>
+            ${details.evidence.length ? details.evidence.map(renderEvidence).join("") : '<p class="subtle">' + escapeHtml(t("empty.noEvidence")) + '</p>'}
+          </details>
           <details class="section reader-disclosure" open><summary>${escapeHtml(t("reader.activity"))}</summary>
             <section class="section experience-panel" id="trap-experience-panel"></section>
             <section class="section" id="trap-revisions-panel"></section>
           </details>
+          <details class="section reader-disclosure experience-maintenance"><summary>${escapeHtml(t("experience.maintain"))}</summary>
+            <p>${escapeHtml(t("experience.maintainHelp"))}</p>
+            <p>${escapeHtml(t("experience.pauseHelp"))}</p>
+            <pre><code>codetrap archive ${detailTrap.id} --scope ${escapeHtml(details.scope)}</code></pre>
+          </details>
           <details class="section library-metadata"><summary>${escapeHtml(t("experience.metadata"))}</summary>
             <div class="detail-kv">
               ${kv(t("label.tags"), (detailTrap.tags || []).join(", ") || "-")}
-              ${kv(t("label.pathGlobs"), (detailTrap.path_globs || []).join(", ") || "-")}
-              ${kv(t("label.module"), detailTrap.module || "-")}
-              ${kv(t("label.owner"), detailTrap.owner || "-")}
               ${kv(t("label.created"), detailTrap.created_at || "-")}
               ${kv(t("label.updated"), detailTrap.updated_at || "-")}
               ${kv(t("label.stateKey"), detailTrap.state_key || "-")}
@@ -298,9 +332,6 @@ export function createLibraryUI(deps: Dependencies) {
               ${kv(t("label.validFrom"), detailTrap.valid_from || "-")}
               ${kv(t("label.validUntil"), detailTrap.valid_until || "-")}
             </div>
-          </details>
-          <details class="section reader-disclosure"><summary>${escapeHtml(t("title.evidence"))}</summary>
-            ${details.evidence.length ? details.evidence.map(renderEvidence).join("") : '<div class="empty">' + escapeHtml(t("empty.noEvidence")) + '</div>'}
           </details>
         </div>
       `;

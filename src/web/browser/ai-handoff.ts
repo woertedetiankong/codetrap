@@ -54,7 +54,11 @@ export function handoffPrompt(
     (zh
       ? "我会在这条请求后附上资料。"
       : "I will attach the source after this request.");
-  const instruction = zh
+  const instruction = draft.destination === "memory"
+    ? zh
+      ? "使用 codetrap-capture，保留纠正的原始依据、适用条件和具体做法，不推断未发生的错误或收益。复用已有项目范围，先查重，不编造 ID。先展示精简候选供我审核，不替我批准；确认入库后返回记录 ID 和打开方式。"
+      : "Use codetrap-capture. Preserve the correction's source, applicability and concrete action; do not infer errors or benefits that did not occur. Reuse the project scope, check for duplicates and never invent IDs. Present concise candidates for my review; do not approve on my behalf. After confirmation, return saved record IDs and opening instructions."
+    : zh
     ? "沿用已有记录和项目范围，不要编造 ID。学习内容保留 ASCII 流程图和通俗例子，交代来源覆盖与限制。先展示草稿供我审核，不替我批准；确认入库后返回记录和课件的 ID，以及打开它们的具体方式。已有课件先查找可关联的学习条目；没有条目则先准备候选。"
     : "Reuse existing records and project scope; never invent IDs. Keep ASCII flows and concrete examples in Learning, with source coverage and limitations. Present drafts for my review; do not approve on my behalf. After saving, return record/artifact IDs and exact opening instructions. For existing HTML, find a Learning target or prepare a candidate first.";
   return [
@@ -84,20 +88,26 @@ export function mountAIHandoff(
   host: HTMLElement,
   project: string,
   locale: string,
+  mode: "learning" | "memory" = "learning",
 ) {
   const zh = locale.startsWith("zh");
-  const draft = drafts.get(project) ?? {
-    task: "article",
-    destination: "learning",
+  const draftKey = `${mode}:${project}`;
+  const memory = mode === "memory";
+  const draft: Draft = drafts.get(draftKey) ?? {
+    task: memory ? "memory" : "article",
+    destination: memory ? "memory" : "learning",
     source: "",
-    interactive: true,
+    interactive: !memory,
   };
-  drafts.set(project, draft);
+  drafts.set(draftKey, draft);
   const text = (en: string, cn: string) => (zh ? cn : en);
   const heading = document.createElement("h3");
-  heading.textContent = text("Start with your AI", "和 AI 开始一个任务");
+  heading.textContent = memory ? text("Remember this correction", "记住刚才这条纠正") : text("Start with your AI", "和 AI 开始一个任务");
   const intro = document.createElement("p");
-  intro.textContent = text(
+  intro.textContent = memory ? text(
+    "Describe what went wrong and what should happen next time. Copy the request into the AI conversation where it happened.",
+    "写下哪里做错了、下次应该怎么做。将请求复制到发生这次纠正的 AI 对话中。",
+  ) : text(
     "Prepare a request here, then paste it into your AI conversation.",
     "在这里准备请求，再粘贴到你正在使用的 AI 对话中。",
   );
@@ -138,7 +148,7 @@ export function mountAIHandoff(
     fields.append(wrap);
     node.onchange = () => {
       change(node.value as T);
-      refreshProject(project);
+      refreshProject(draftKey);
     };
     return node;
   }
@@ -171,7 +181,7 @@ export function mountAIHandoff(
     },
   );
   const sourceLabel = document.createElement("label");
-  sourceLabel.textContent = text(
+  sourceLabel.textContent = memory ? text("Your correction and when it applies", "你的纠正，以及什么情况下适用") : text(
     "Link, file path or material (optional)",
     "链接、文件路径或资料（可稍后提供）",
   );
@@ -179,7 +189,10 @@ export function mountAIHandoff(
   source.rows = 3;
   source.maxLength = 20000;
   source.value = draft.source;
-  source.placeholder = text(
+  source.placeholder = memory ? text(
+    "For example: after changing this project's API response, update the client parser and verify both together.",
+    "例如：修改这个项目的 API 返回结构后，要同步更新客户端解析，并一起验证。",
+  ) : text(
     "Paste a link, code or a local HTML file path",
     "粘贴文章链接、代码或本机 HTML 文件路径",
   );
@@ -233,11 +246,11 @@ export function mountAIHandoff(
   }
   source.oninput = () => {
     draft.source = source.value;
-    refreshProject(project);
+    refreshProject(draftKey);
   };
   checkbox.onchange = () => {
     draft.interactive = checkbox.checked;
-    refreshProject(project);
+    refreshProject(draftKey);
   };
   copy.onclick = async () => {
     const seq = generation;
@@ -261,16 +274,16 @@ export function mountAIHandoff(
       }
     }
   };
-  mounted.set(host, { project, refresh });
+  mounted.set(host, { project: draftKey, refresh });
   host.classList.add("ai-handoff");
   host.replaceChildren(
     heading,
     intro,
     projectNote,
     steps,
-    fields,
+    ...(memory ? [] : [fields]),
     sourceLabel,
-    animation,
+    ...(memory ? [] : [animation]),
     details,
     actions,
     status,

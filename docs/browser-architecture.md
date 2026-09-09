@@ -176,6 +176,13 @@ failure and ready states; it should not restore ambient globals or source string
 
 ## Review drafts and operation identity
 
+The empty Review/Library correction entry reuses `ai-handoff.ts` in memory-only
+mode. Handoff drafts are keyed by project and entry mode: Review and Library
+share a correction draft; Learning keeps its own task/destination draft. These
+copy-only drafts live in tab memory and are separate from the durable candidate
+and Learning editors below. Empty filtered Library results offer filter recovery;
+loading/error/missing-link states never become a first-experience prompt.
+
 `review-model.ts` owns session/candidate selection, loading/error states, background
 refresh, conflicts and action state. The workspace reads its state and uses explicit
 transitions; it does not write Review arrays, selected IDs, conflicts or dirty flags.

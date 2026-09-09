@@ -32,6 +32,7 @@ import { localEmbeddingModelChoices, type LocalEmbeddingModelChoice } from "./lo
 import { ensureProjectIdentity, type ProjectIdentity } from "./project-identity";
 import { normalizeScope, ScopedRepositoryContext, type ScopedRepository } from "./scope-context";
 import { importTrapArchive, type TrapArchiveImportResult } from "./trap-archive";
+import { mergeSearchGroups } from "./search-order";
 import { importRecordToTrapRecordInsert } from "./trap-codec";
 import {
   resolveScopedMutation,
@@ -148,7 +149,19 @@ export class TrapStore {
       diagnostics.push(...outcome.diagnostics.map((diagnostic) => ({ ...diagnostic, scope: scoped.scope })));
     }
 
-    return { groups: limitAcrossScopes(groups, limit), diagnostics };
+    const mode = opts.mode ?? "hybrid";
+    const fallback = diagnostics.some(item =>
+      groups.some(group => group.scope === item.scope) &&
+      ["semantic_unavailable", "semantic_failed", "semantic_no_candidates"].includes(item.code));
+    const comparableScores = mode === "semantic" || (mode === "hybrid" && !fallback);
+    if (groups.length > 1 && !comparableScores) {
+      diagnostics.push({
+        scope: "all",
+        code: "cross_scope_rank_merge",
+        message: "Scores use independent FTS corpora or hybrid fallback scales. Results interleave each scope's ranking, with project first on ties; raw scores are retained.",
+      });
+    }
+    return { groups: mergeSearchGroups(groups, limit, comparableScores), diagnostics };
   }
 
   async embedTrapBestEffort(id: number, scope: string): Promise<boolean> {
@@ -490,33 +503,4 @@ export class TrapStore {
       fallback
     );
   }
-}
-
-// L14: each scope is searched with the full `limit`, so an unconstrained merge
-// returned up to 2×limit cards and always listed global behind project. Treat
-// `limit` as a total budget and keep the globally top-scored results, then
-// regroup preserving the per-scope display order.
-function limitAcrossScopes(
-  groups: { results: TrapSearchResult[]; scope: string }[],
-  limit: number
-): { results: TrapSearchResult[]; scope: string }[] {
-  const total = groups.reduce((sum, group) => sum + group.results.length, 0);
-  if (total <= limit) return groups;
-
-  const flat = groups.flatMap((group) => group.results);
-  const scoreOf = (result: TrapSearchResult): number => result.score ?? result.rank ?? 0;
-  const keep = new Set(
-    flat
-      .map((_, index) => index)
-      .sort((a, b) => scoreOf(flat[b]) - scoreOf(flat[a]) || a - b)
-      .slice(0, limit)
-  );
-
-  let index = 0;
-  const trimmed: { results: TrapSearchResult[]; scope: string }[] = [];
-  for (const group of groups) {
-    const results = group.results.filter(() => keep.has(index++));
-    if (results.length > 0) trimmed.push({ results, scope: group.scope });
-  }
-  return trimmed;
 }

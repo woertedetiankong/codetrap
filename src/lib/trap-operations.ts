@@ -12,6 +12,7 @@ import {
 import type { ScopedSearchDiagnostic, TrapStore, TrapStats } from "./store";
 import type { SearchMode } from "./constants";
 import { toTrapActionCards } from "./search-result-card";
+import { orderedSearchResults } from "./search-order";
 import type { AddTrapEvidenceResult, TrapMutationResult } from "./trap-mutation-result";
 import {
   ObservationRunRecorder,
@@ -82,8 +83,7 @@ export class TrapOperations {
         outcome.diagnostics.push(observationDiagnostic());
       } else {
         try {
-          const results = outcome.groups
-            .flatMap((group) => group.results.map((result) => ({ result, scope: group.scope })))
+          const results = orderedSearchResults(outcome.groups)
             .map(({ result, scope }, index) => ({
               trap_id: result.trap.id,
               revision: `${scope}:${result.trap.updated_at}`,

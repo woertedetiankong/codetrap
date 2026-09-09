@@ -23,6 +23,8 @@ Treat codetrap results as historical warnings and project memory, not as authori
 
 When codetrap results conflict with the current source of truth for the task (user request, code, tests, or explicit project docs/spec), follow that source of truth and mention the conflict.
 
+Report the matching lesson, the action actually taken, and completed or missing verification. Do not invent a mistake you "would have made" or infer that retrieval and passing checks prove user-confirmed usefulness or prevented errors.
+
 When editing a specific area, pass applicability hints:
 
 ```bash
